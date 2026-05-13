@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+from aegis.core.action_timeline import project_action_timeline
+from aegis.core.protocol import ProtocolEventType, create_event
+
+
+def test_action_timeline_projects_completed_evidence_in_sequence_order() -> None:
+    trace_id = "11111111-1111-4111-8111-111111111111"
+    started = create_event(
+        ProtocolEventType.ACTION_STARTED,
+        {"action_id": "action-1", "tool": "open_app", "target": "steam"},
+        trace_id=trace_id,
+        session_id="session-one",
+    ).to_dict()
+    completed = create_event(
+        ProtocolEventType.ACTION_COMPLETED,
+        {
+            "action_id": "action-1",
+            "success": True,
+            "latency_ms": 42,
+            "execution_evidence": {
+                "action": "open_app",
+                "target": "steam",
+                "target_type": "application",
+                "method": "launch",
+                "verification_state": "verified",
+                "pids": [4242],
+                "retry_count": 1,
+                "recovery_triggered": True,
+                "attempts": [],
+                "fallback_chain": [{"method": "start_menu"}],
+                "warnings": [],
+            },
+        },
+        trace_id=trace_id,
+        session_id="session-one",
+    ).to_dict()
+
+    timeline = project_action_timeline([started, completed], session_id="session-one")
+
+    assert timeline == [
+        {
+            "action_id": "action-1",
+            "tool": "open_app",
+            "status": "success",
+            "target": "steam",
+            "started_at": started["timestamp"],
+            "completed_at": completed["timestamp"],
+            "latency_ms": 42,
+            "execution_evidence": completed["payload"]["execution_evidence"],
+            "trace_id": trace_id,
+            "sequence_num": completed["sequence_num"],
+        }
+    ]
+
+
+def test_action_timeline_projects_failed_or_active_actions_without_fake_evidence() -> None:
+    active = create_event(
+        ProtocolEventType.ACTION_STARTED,
+        {"action_id": "action-active", "tool": "click", "target": "button"},
+        session_id="session-one",
+    ).to_dict()
+    failed = create_event(
+        ProtocolEventType.ACTION_FAILED,
+        {
+            "action_id": "action-failed",
+            "error": "window not found",
+            "execution_evidence": {
+                "action": "open_app",
+                "target": "notepad",
+                "target_type": "application",
+                "method": "launch",
+                "verification_state": "failed",
+                "pids": [],
+                "retry_count": 0,
+                "recovery_triggered": False,
+                "attempts": [],
+                "fallback_chain": [],
+                "warnings": ["window not found"],
+            },
+        },
+        session_id="session-one",
+    ).to_dict()
+    other_session = create_event(
+        ProtocolEventType.ACTION_STARTED,
+        {"action_id": "other", "tool": "open_app", "target": "calculator"},
+        session_id="session-two",
+    ).to_dict()
+
+    timeline = project_action_timeline([active, failed, other_session], session_id="session-one")
+
+    assert [item["action_id"] for item in timeline] == ["action-active", "action-failed"]
+    assert timeline[0]["status"] == "active"
+    assert timeline[0]["execution_evidence"] is None
+    assert timeline[1]["status"] == "error"
+    assert timeline[1]["execution_evidence"]["verification_state"] == "failed"
+
+
+def test_action_timeline_is_bounded_to_latest_actions() -> None:
+    events = [
+        create_event(
+            ProtocolEventType.ACTION_STARTED,
+            {"action_id": f"action-{index}", "tool": "open_app", "target": str(index)},
+            session_id="session-one",
+        ).to_dict()
+        for index in range(5)
+    ]
+
+    timeline = project_action_timeline(events, limit=2, session_id="session-one")
+
+    assert [item["action_id"] for item in timeline] == ["action-3", "action-4"]

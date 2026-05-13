@@ -1,0 +1,33 @@
+/* src/styles/tokens.css */
+:root {
+  --background: #070B14;
+  --foreground: #E2E8F0;
+  --surface: #0F1724;
+  --surface-secondary: #131C2E;
+  --accent: #6EE7FF;
+  --accent-glow: rgba(110, 231, 255, 0.3);
+  --secondary: #8B5CF6;
+  --secondary-glow: rgba(139, 92, 246, 0.3);
+  --danger: #FF4D6D;
+  --success: #10B981;
+  --warning: #F59E0B;
+}
+
+/* src/styles/glass.css */
+.glass-panel {
+  @apply bg-surface/80 backdrop-blur-xl border border-white/5;
+}
+
+.glass-card {
+  @apply bg-surface/40 backdrop-blur-md border border-surface-secondary;
+}
+
+/* src/styles/animations.css */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.05); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s infinite ease-in-out;
+}

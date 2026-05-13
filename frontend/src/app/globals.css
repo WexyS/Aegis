@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #050814;
+  --foreground: #F8FAFC;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Runtime Background Pattern */
+.bg-grid {
+  background-image: 
+    linear-gradient(to right, rgba(255,255,255,0.018) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.018) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Operational panels */
+.glass-panel {
+  @apply bg-surface backdrop-blur-xl border border-white/10;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.glass-card {
+  @apply bg-surface-secondary backdrop-blur-md border border-white/10 transition-colors duration-150;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.glass-card:hover {
+  @apply border-white/15;
+}
+
+/* Text Gradients */
+.text-gradient {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-white to-white/50;
+}
+.text-gradient-accent {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-accent-light to-secondary-light;
+}
+
+/* Glowing Elements */
+.glow-accent {
+  box-shadow: 0 0 12px rgba(6, 182, 212, 0.12);
+}
+.glow-accent-strong {
+  box-shadow: 0 0 18px rgba(6, 182, 212, 0.22), inset 0 0 8px rgba(6, 182, 212, 0.12);
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-white/10 rounded-full;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  @apply bg-accent/50;
+}

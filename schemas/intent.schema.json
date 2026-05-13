@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aegis://schemas/intent",
+  "title": "IntentResult",
+  "description": "Output of the intent parser — structured representation of user command",
+  "type": "object",
+  "required": ["intent", "confidence", "params", "risk", "source", "raw_input", "timestamp"],
+  "additionalProperties": false,
+  "properties": {
+    "intent": {
+      "type": "string",
+      "description": "Canonical intent identifier",
+      "pattern": "^[a-z][a-z0-9_]{1,63}$",
+      "examples": ["open_url", "read_file", "search_web", "general_chat", "unknown"]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Confidence score of the intent classification"
+    },
+    "params": {
+      "type": "object",
+      "description": "Structured parameters extracted from user input",
+      "additionalProperties": true
+    },
+    "risk": {
+      "type": "string",
+      "enum": ["none", "low", "medium", "high", "critical"],
+      "description": "Assessed risk level of this intent"
+    },
+    "source": {
+      "type": "string",
+      "enum": ["rule", "model", "hybrid"],
+      "description": "How the intent was determined"
+    },
+    "raw_input": {
+      "type": "string",
+      "description": "Original user input text"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of parsing"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional extra context from the parser",
+      "additionalProperties": true
+    }
+  }
+}

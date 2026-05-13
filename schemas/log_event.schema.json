@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aegis://schemas/log_event",
+  "title": "LogEvent",
+  "description": "Structured log event for audit trail and replay",
+  "type": "object",
+  "required": ["event_id", "event_type", "timestamp", "trace_id"],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "command_received",
+        "intent_parsed",
+        "model_routed",
+        "memory_retrieved",
+        "plan_created",
+        "guard_evaluated",
+        "tool_executed",
+        "tool_result",
+        "error",
+        "feedback_received",
+        "replay_started",
+        "replay_completed",
+        "system_event"
+      ]
+    },
+    "trace_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Groups all events from a single command lifecycle"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "data": {
+      "type": "object",
+      "description": "Event-specific payload",
+      "additionalProperties": true
+    },
+    "source_component": {
+      "type": "string",
+      "description": "Which component emitted this event",
+      "examples": ["intent_parser", "guard", "executor", "memory", "model_router"]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["debug", "info", "warning", "error", "critical"],
+      "default": "info"
+    },
+    "duration_ms": {
+      "type": ["number", "null"],
+      "minimum": 0
+    }
+  }
+}

@@ -1,0 +1,54 @@
+# ============================================================
+# AEGIS — Action Guard Rules
+# ============================================================
+
+rate_limits:
+  max_actions_per_minute: 30
+  max_high_risk_per_minute: 3
+  max_critical_per_hour: 5
+  cooldown_between_actions_ms: 500
+
+loop_protection:
+  max_repeated_action: 3          # same action type in sequence
+  max_same_target: 5              # same target (URL, file, coordinate)
+  detection_window_seconds: 60
+
+approval_gates:
+  always_require:
+    - "run_command"
+    - "click"
+    - "type_text"
+    - "hotkey"
+    - "download_resource"
+  skip_for_low_risk: true
+
+validation:
+  reject_empty_payload: true
+  reject_unknown_tool: true
+  reject_unknown_intent: true
+  max_plan_steps: 10
+  max_param_length: 10000
+
+url_policy:
+  allowed_schemes: ["https", "http"]
+  blocked_domains:
+    - "localhost:*"  # prevent self-targeting
+  require_tld: true
+
+file_policy:
+  blocked_paths:
+    - "C:\\Windows\\System32"
+    - "/etc"
+    - "/usr/bin"
+  max_read_size_mb: 50
+
+command_policy:
+  blocked_patterns:
+    - "rm -rf /"
+    - "format c:"
+    - "del /s /q"
+    - ":(){:|:&};:"
+    - "shutdown"
+    - "mkfs"
+  require_sandbox: true
+  max_execution_time_seconds: 120

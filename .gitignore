@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Runtime data
+logs/*.jsonl
+logs/*.log
+logs/*.err
+logs/*.lock
+logs/archive/
+data/
+!data/.gitkeep
+!logs/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Node (for UI)
+node_modules/
+frontend/.next/
+frontend/test-results/
+frontend/logs/
+frontend/tsconfig.tsbuildinfo
+ui/dist/
+ui/build/
+ui/.next/
+
+# Scratch artifacts
+scratch/
+scratch/*.png
+scratch/*.log
+
+# Tauri
+ui/src-tauri/target/
+
+# Test / Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

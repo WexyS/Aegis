@@ -1,0 +1,211 @@
+"""
+API smoke tests for the stabilized command pipeline.
+"""
+
+from __future__ import annotations
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from aegis.main import app
+from aegis.api.routes_command import clean_text
+
+
+class TestHealthEndpoint:
+    @pytest.mark.asyncio
+    async def test_health(self) -> None:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.get("/health")
+            assert r.status_code == 200
+            assert r.json()["status"] == "ok"
+
+
+class TestCommandEndpoint:
+    def test_clean_text_preserves_windows_paths(self) -> None:
+        text = r"write nope to c:\windows\temp\aegis-test.txt"
+
+        assert clean_text(text) == text
+
+    def test_clean_text_decodes_hex_escapes(self) -> None:
+        assert clean_text(r"a\xc3\xa7") == "aç"
+
+    @pytest.mark.asyncio
+    async def test_unknown_command_blocks_at_plan(self) -> None:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post("/command", json={"text": "bilinmeyen komut"})
+            assert r.status_code == 200
+            data = r.json()
+            assert data["intent"] == "unknown"
+            assert data["status"] == "blocked"
+            assert data["actions"][0]["status"] == "blocked"
+            assert "not allowed" in data["actions"][0]["output"]
+
+    @pytest.mark.asyncio
+    async def test_guard_blocks_excessive_clicks_before_execution(self) -> None:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post("/command", json={"text": "click 50 times"})
+            assert r.status_code == 200
+            data = r.json()
+            assert data["intent"] == "click"
+            assert data["status"] == "blocked"
+            assert data["actions"][0]["status"] == "blocked"
+            assert "exceeds maximum" in data["actions"][0]["output"]
+
+    @pytest.mark.asyncio
+    async def test_forbidden_write_path_blocks_instead_of_crashing_parser(self) -> None:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post("/command", json={"text": "write nope to c:\\windows\\temp\\aegis-test.txt"})
+            assert r.status_code == 200
+            data = r.json()
+            assert data["intent"] == "write_file"
+            assert data["status"] == "blocked"
+            assert data["actions"][0]["status"] == "blocked"
+            assert "forbidden" in data["actions"][0]["output"]
+
+    @pytest.mark.asyncio
+    async def test_empty_text_rejected(self) -> None:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post("/command", json={"text": ""})
+            assert r.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_trace_id_present(self) -> None:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post("/command", json={"text": "bilinmeyen komut"})
+            assert "trace_id" in r.json()
+
+    @pytest.mark.asyncio
+    async def test_duration_measured(self) -> None:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post("/command", json={"text": "bilinmeyen komut"})
+            assert r.json()["duration_ms"] > 0
+
+    @pytest.mark.asyncio
+    async def test_http_approval_emits_protocol_event_before_resume(self, monkeypatch) -> None:
+        from aegis.core.commands import get_approval_manager
+        from aegis.core.constants import CommandStatus, RiskLevel
+        from aegis.core.schemas import CommandResponse
+
+        manager = get_approval_manager()
+        manager.reset_for_tests()
+        manager.create_received("open notepad", command_id="cmd-http-approve")
+        manager.register_pending(
+            command_id="cmd-http-approve",
+            text="open notepad",
+            trace_id="trace-http-approve",
+            risk_level=RiskLevel.MEDIUM,
+            reason="medium risk command requires approval",
+        )
+        emitted: list[tuple[str, dict]] = []
+
+        async def fake_emit_event(event_type, payload, **kwargs):
+            emitted.append((event_type.value, payload))
+
+        class FakeOrchestrator:
+            async def process(self, request):
+                return CommandResponse(
+                    trace_id="trace-http-approve",
+                    status=CommandStatus.EXECUTED,
+                    intent="open_app",
+                    message="ok",
+                )
+
+        monkeypatch.setattr("aegis.api.ws_bridge.emit_event", fake_emit_event)
+        monkeypatch.setattr("aegis.api.routes_command.get_orchestrator", lambda: FakeOrchestrator())
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post("/command/cmd-http-approve/approve")
+
+        assert r.status_code == 200
+        assert r.json()["status"] == CommandStatus.EXECUTED.value
+        assert emitted[0][0] == "COMMAND_APPROVED"
+        assert emitted[0][1]["command"]["command_id"] == "cmd-http-approve"
+
+
+class TestMaintenanceEndpoint:
+    @pytest.mark.asyncio
+    async def test_maintenance_scan_is_read_only_report(self) -> None:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.get("/maintenance/scan")
+            assert r.status_code == 200
+            data = r.json()
+            assert data["read_only"] is True
+            assert data["scan_version"] == "maintenance-scan/1"
+            assert "event_journal" in data["checks"]
+            assert "integrity_status" in data["checks"]["event_journal"]
+            assert "historical_integrity_status" in data["checks"]["event_journal"]
+            assert data["checks"]["evidence_audit"]["scan_version"] == "evidence-audit/1"
+            assert data["checks"]["evidence_audit"]["read_only"] is True
+            assert "missing_evidence_count" in data["checks"]["evidence_audit"]
+            assert "app_registry" in data["checks"]
+            assert data["checks"]["app_registry"]["scan_version"] == "app-registry/1"
+            assert data["checks"]["app_registry"]["read_only"] is True
+            assert data["checks"]["app_registry"]["entry_count"] >= 1
+            assert data["checks"]["tool_registry"]["registry"]["scan_version"] == "tool-registry/1"
+            assert data["checks"]["tool_registry"]["registry"]["read_only"] is True
+            assert data["checks"]["tool_registry"]["registry"]["status"] == "ok"
+            assert data["checks"]["environment"]["scan_version"] == "environment-diagnostics/1"
+            assert data["checks"]["environment"]["read_only"] is True
+
+    @pytest.mark.asyncio
+    async def test_environment_diagnostics_endpoint_is_read_only_report(self) -> None:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.get("/environment/diagnostics")
+            assert r.status_code == 200
+            data = r.json()
+            assert data["read_only"] is True
+            assert data["scan_version"] == "environment-diagnostics/1"
+            assert "python" in data["checks"]
+            assert "git" in data["checks"]
+            assert "node" in data["checks"]
+            assert "npm" in data["checks"]
+
+
+class TestAppRegistryEndpoint:
+    @pytest.mark.asyncio
+    async def test_app_registry_endpoint_is_read_only_and_runtime_independent(self) -> None:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.get("/apps/registry")
+            assert r.status_code == 200
+            data = r.json()
+            assert data["read_only"] is True
+            assert data["scan_version"] == "app-registry/1"
+            assert data["configured_count"] >= 1
+            assert data["entry_count"] >= data["configured_count"]
+            assert isinstance(data["entries"], list)
+
+    @pytest.mark.asyncio
+    async def test_app_registry_endpoint_can_refresh_read_only_scan(self) -> None:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.get("/apps/registry?refresh=true")
+            assert r.status_code == 200
+            data = r.json()
+            assert data["read_only"] is True
+            assert data["scan_version"] == "app-registry/1"
+
+
+class TestToolRegistryEndpoint:
+    @pytest.mark.asyncio
+    async def test_tool_registry_endpoint_is_read_only_backend_snapshot(self) -> None:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.get("/tools/registry")
+            assert r.status_code == 200
+            data = r.json()
+            assert data["read_only"] is True
+            assert data["scan_version"] == "tool-registry/1"
+            assert data["status"] == "ok"
+            assert data["registered_count"] == len(data["tools"])
+            assert any(tool["name"] == "run_command" for tool in data["tools"])

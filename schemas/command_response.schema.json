@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aegis://schemas/command_response",
+  "title": "CommandResponse",
+  "description": "Response from the Aegis backend after processing a command",
+  "type": "object",
+  "required": ["trace_id", "status", "intent", "timestamp"],
+  "additionalProperties": false,
+  "properties": {
+    "trace_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Trace identifier — use to look up full event log"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["completed", "partial", "failed", "blocked", "awaiting_approval", "dry_run"],
+      "description": "Overall outcome"
+    },
+    "intent": {
+      "type": "string",
+      "description": "Resolved intent"
+    },
+    "message": {
+      "type": "string",
+      "description": "Human-readable response to the user"
+    },
+    "results": {
+      "type": "array",
+      "items": {"$ref": "tool_result.schema.json"},
+      "description": "Results of executed tools (if any)"
+    },
+    "plan_summary": {
+      "type": ["string", "null"],
+      "description": "Brief description of what was planned"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Non-fatal warnings"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "duration_ms": {
+      "type": "number",
+      "minimum": 0
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "aegis://schemas/command_request",
+  "title": "CommandRequest",
+  "description": "Incoming user command via POST /command",
+  "type": "object",
+  "required": ["text"],
+  "additionalProperties": false,
+  "properties": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 10000,
+      "description": "User's command text"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["auto", "dry_run", "live"],
+      "default": "auto",
+      "description": "Execution mode override"
+    },
+    "context": {
+      "type": "object",
+      "description": "Optional context (active file, screenshot hash, etc.)",
+      "additionalProperties": true
+    },
+    "session_id": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "Session identifier for memory continuity"
+    },
+    "language": {
+      "type": "string",
+      "default": "auto",
+      "description": "Preferred response language"
+    }
+  }
+}

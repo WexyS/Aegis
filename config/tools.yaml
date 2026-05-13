@@ -1,0 +1,204 @@
+# ============================================================
+# AEGIS - Canonical Tool Registry Contract
+# ============================================================
+# This file mirrors the runtime ToolSpec map. Maintenance scan
+# reports drift if config and code diverge.
+
+tools:
+  open_app:
+    category: desktop
+    risk: medium
+    requires_approval: true
+    timeout_seconds: 15.0
+    cancellation_supported: false
+    evidence_policy: desktop_verifier
+    dry_run_supported: false
+
+  close_app:
+    category: desktop
+    risk: medium
+    requires_approval: true
+    timeout_seconds: 10.0
+    cancellation_supported: false
+    evidence_policy: desktop_verifier
+    dry_run_supported: false
+
+  focus_app:
+    category: desktop
+    risk: medium
+    requires_approval: true
+    timeout_seconds: 8.0
+    cancellation_supported: false
+    evidence_policy: desktop_verifier
+    dry_run_supported: false
+
+  type:
+    category: desktop
+    risk: medium
+    requires_approval: true
+    timeout_seconds: 10.0
+    cancellation_supported: false
+    evidence_policy: desktop_verifier
+    dry_run_supported: false
+
+  open_url:
+    category: web
+    risk: low
+    requires_approval: false
+    timeout_seconds: 15.0
+    cancellation_supported: false
+    evidence_policy: browser_context
+    dry_run_supported: false
+
+  search_web:
+    category: web
+    risk: low
+    requires_approval: false
+    timeout_seconds: 20.0
+    cancellation_supported: false
+    evidence_policy: read_only_hash
+    dry_run_supported: false
+
+  click:
+    category: web
+    risk: medium
+    requires_approval: true
+    timeout_seconds: 8.0
+    cancellation_supported: false
+    evidence_policy: browser_context
+    dry_run_supported: false
+
+  scroll:
+    category: web
+    risk: low
+    requires_approval: false
+    timeout_seconds: 5.0
+    cancellation_supported: false
+    evidence_policy: browser_context
+    dry_run_supported: false
+
+  read_page:
+    category: web
+    risk: low
+    requires_approval: false
+    timeout_seconds: 10.0
+    cancellation_supported: false
+    evidence_policy: read_only_hash
+    dry_run_supported: false
+
+  list_directory:
+    category: file
+    risk: low
+    requires_approval: false
+    timeout_seconds: 10.0
+    cancellation_supported: false
+    evidence_policy: read_only_hash
+    dry_run_supported: false
+
+  search_files:
+    category: file
+    risk: low
+    requires_approval: false
+    timeout_seconds: 15.0
+    cancellation_supported: false
+    evidence_policy: read_only_hash
+    dry_run_supported: false
+
+  grep_in_files:
+    category: file
+    risk: low
+    requires_approval: false
+    timeout_seconds: 20.0
+    cancellation_supported: false
+    evidence_policy: read_only_hash
+    dry_run_supported: false
+
+  file_info:
+    category: file
+    risk: low
+    requires_approval: false
+    timeout_seconds: 5.0
+    cancellation_supported: false
+    evidence_policy: read_only_hash
+    dry_run_supported: false
+
+  read_file:
+    category: file
+    risk: low
+    requires_approval: false
+    timeout_seconds: 10.0
+    cancellation_supported: false
+    evidence_policy: read_only_hash
+    dry_run_supported: false
+
+  write_file:
+    category: file
+    risk: medium
+    requires_approval: true
+    timeout_seconds: 10.0
+    cancellation_supported: false
+    evidence_policy: file_diff
+    dry_run_supported: true
+
+  create_file:
+    category: file
+    risk: medium
+    requires_approval: true
+    timeout_seconds: 10.0
+    cancellation_supported: false
+    evidence_policy: file_diff
+    dry_run_supported: true
+
+  edit_file:
+    category: file
+    risk: medium
+    requires_approval: true
+    timeout_seconds: 10.0
+    cancellation_supported: false
+    evidence_policy: file_diff
+    dry_run_supported: true
+
+  delete_file:
+    category: file
+    risk: critical
+    requires_approval: false
+    timeout_seconds: 5.0
+    cancellation_supported: false
+    evidence_policy: blocked
+    dry_run_supported: false
+
+  move_file:
+    category: file
+    risk: critical
+    requires_approval: false
+    timeout_seconds: 5.0
+    cancellation_supported: false
+    evidence_policy: blocked
+    dry_run_supported: false
+
+  run_command:
+    category: shell
+    risk: low
+    requires_approval: false
+    timeout_seconds: 10.0
+    cancellation_supported: true
+    evidence_policy: shell_result
+    dry_run_supported: false
+
+  git_action:
+    category: git
+    risk: low
+    requires_approval: false
+    timeout_seconds: 10.0
+    cancellation_supported: false
+    evidence_policy: git_status
+    dry_run_supported: false
+
+  general_chat:
+    category: system
+    risk: none
+    requires_approval: false
+    timeout_seconds: 5.0
+    cancellation_supported: false
+    evidence_policy: none
+    dry_run_supported: false

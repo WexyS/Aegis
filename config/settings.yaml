@@ -1,0 +1,37 @@
+# ============================================================
+# AEGIS — Global Settings
+# ============================================================
+
+server:
+  host: "127.0.0.1"
+  port: 8400
+  workers: 1
+  reload: false  # keep the runtime stable; opt into dev reload manually
+
+safety:
+  safe_mode: true
+  dry_run_default: true
+  require_approval_high_risk: true
+  max_actions_per_command: 10
+  max_plan_depth: 5
+  cooldown_seconds: 1.0
+
+logging:
+  level: "DEBUG"
+  format: "jsonl"
+  directory: "./logs"
+  max_file_size_mb: 50
+  retention_days: 30
+
+memory:
+  stm_max_turns: 20
+  episodic_retention_days: 90
+  semantic_auto_index: true
+  procedural_enabled: true
+
+features:
+  cloud_fallback: false
+  multimodal: false
+  speech_io: false
+  agent_loop: false
+  replay_enabled: true
