@@ -1,33 +1,27 @@
-# AEGIS — UI Layer
+# Aegis UI Notes
 
-This directory will contain the desktop UI application.
+The active user interface now lives in `frontend/`.
 
-## Status: Phase 6 (Not Yet Started)
+This `ui/` directory is kept only for historical notes and should not be treated as the active UI contract.
 
-The UI framework choice (Electron / Tauri / other) is intentionally deferred.
-The backend API is designed to be UI-agnostic.
+## Active UI Source
 
-## Planned Panels
+- `frontend/src/app/page.tsx`
+- `frontend/src/lib/socket.ts`
+- `frontend/src/store/useRuntimeStore.ts`
+- `frontend/src/features/runtime/components/`
+- `frontend/src/contracts/protocol.ts`
 
-- Command input (text + voice)
-- System status indicator
-- Action / decision panel
-- Memory / trace / replay viewer
-- Security status panel
-- Model routing status
-- Vision panel (placeholder for Phase 7)
+## Contract Rule
 
-## API Contract
+The UI must render backend-derived state only:
 
-The UI communicates with the backend exclusively via:
+- protocol events
+- runtime snapshots
+- event journal projections
+- tool registry snapshots
+- app registry snapshots
+- evidence audit reports
+- maintenance scan reports
 
-```
-POST /command       → send user command
-GET  /status        → system health
-GET  /trace/latest  → latest trace events
-GET  /memory/query  → search memory
-GET  /tools/list    → available tools
-GET  /models/status → model health
-POST /feedback      → user feedback
-POST /replay/run    → replay a trace
-```
+Do not add fake telemetry, fake verification, or frontend-only runtime truth.

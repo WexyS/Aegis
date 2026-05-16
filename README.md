@@ -1,92 +1,212 @@
-# <p align="center"><img src="./aegis_logo_1778327031983.png" width="150" alt="Aegis Logo"><br>AEGIS</p>
+# Aegis
 
-<p align="center">
-  <b>Autonomous Runtime Operating System & AI Copilot</b><br>
-  <i>Stabilite • Kontrol • Genişletilebilirlik • Zeka • Otonomi</i>
-</p>
+**Aegis is a local-first, verification-backed desktop automation runtime for Windows.**
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Version-0.9.0--assisted--autonomy-blue?style=for-the-badge" alt="Version">
-  <img src="https://img.shields.io/badge/Security-Hardened-success?style=for-the-badge" alt="Security">
-  <img src="https://img.shields.io/badge/Runtime-Deterministic-orange?style=for-the-badge" alt="Runtime">
-</p>
+It is designed to operate as a reliable computer assistant: it receives a user command, evaluates risk, asks for approval when needed, executes through bounded tools, verifies observable side effects, records evidence, and keeps the frontend synchronized from backend truth surfaces.
 
----
+Aegis is not trying to be an uncontrolled autonomous agent. The project is intentionally built around deterministic runtime state, auditability, replayability, and approval-aware operation.
 
-## 🛡️ Overview
+## Current Position
 
-Aegis is a **production-grade autonomous runtime system** designed to act as a secure, local-first desktop AI copilot. Unlike traditional agents, Aegis operates on a **deterministic core** with formal state management, ensuring that every action is verifiable, reproducible, and resilient to failure.
+Aegis is currently focused on the reliability foundation for a future local AI computer operator:
 
-It understands your screen, manages your files, and executes complex automation tasks through a hardened execution pipeline.
+- deterministic runtime authority
+- separate command lifecycle state
+- approval and cancellation governance
+- canonical tool registry and sandbox policy
+- protocol-backed WebSocket events
+- append-only runtime event journal
+- replayable action timeline
+- execution evidence and evidence audit
+- process/window verification for desktop side effects
+- backend-derived UI state with no frontend fake inference
+- read-only maintenance diagnostics
 
-## 🚀 Key Features
+The long-term product direction is a trustworthy local assistant that can inspect a system, explain what it finds, recommend safe actions, request approval for risky actions, and prove what it did.
 
-- **🧠 Hardened Orchestrator**: Formal State Machine (FSM) driven execution flow with bi-directional command processing.
-- **🛡️ Deterministic Core**: Tier 4.5 formal verification enforcing pre-conditions, transitions, and post-condition invariants.
-- **👁️ Vision Lab & Observability**: Real-time multi-modal vision processing with desktop mirroring and "Ghost Cursor" feedback.
-- **🔥 Chaos Shield**: Advanced safety layer and action guardrails to prevent unauthorized or risky system interactions.
-- **🔄 Event Sourcing**: Append-only event logging for full auditability and state replayability.
-- **💻 Local-First Intelligence**: Native integration with **LM Studio** and **Ollama**, ensuring privacy and low-latency performance.
+## Core Principles
 
-## 🏗️ System Architecture
+- **No fake systems**: UI panels must render backend snapshot, protocol event, event journal, registry, verifier, or maintenance data.
+- **Smart brain, dumb hands**: tools perform bounded operations; runtime, policy, audit, and verification decide whether work is trusted.
+- **Evidence before success**: action output is not treated as proof. Desktop actions require process/window evidence when applicable.
+- **Approval-aware execution**: low-risk actions may run automatically, medium-risk actions require approval, and critical actions are blocked.
+- **Replayable behavior**: journaled events can rebuild the action timeline and provide audit context.
+- **Bounded autonomy**: Aegis may assist, inspect, recommend, and execute approved actions, but it should not mutate the system or itself without governance.
 
-Aegis follows a strict deterministic pipeline to ensure system stability:
+## Architecture
 
 ```mermaid
 graph TD
-    User[User Intent] --> Gateway[FastAPI Gateway]
-    Gateway --> Orchestrator[FSM Orchestrator]
-    Orchestrator --> Guard[Action Guardrails]
+    User[User Command] --> API[FastAPI / Socket.IO Bridge]
+    API --> Command[CommandRecord / CommandStatus]
+    Command --> Guard[Risk and Approval Gate]
     Guard --> Executor[Deterministic Executor]
-    Executor --> OS[OS Level Interaction]
-    OS --> Feedback[Visual Feedback]
-    Feedback --> Logger[Event Sourcing / Replay]
+    Executor --> Tools[Bounded Tools]
+    Tools --> Verifier[Evidence and Verifier Layer]
+    Verifier --> Journal[Runtime Event Journal]
+    Journal --> Snapshot[Runtime Snapshot and Replay]
+    Snapshot --> UI[Next.js Runtime UI]
 ```
 
-## 🛠️ Technology Stack
+### Truth Surfaces
+
+The frontend should not invent runtime state. These backend surfaces are the source of truth:
+
+- `src/aegis/core/protocol.py`
+- `src/aegis/api/ws_bridge.py`
+- `src/aegis/core/event_journal.py`
+- `src/aegis/core/action_timeline.py`
+- `src/aegis/core/evidence_audit.py`
+- `src/aegis/tools/registry.py`
+- `frontend/src/lib/socket.ts`
+- `frontend/src/store/useRuntimeStore.ts`
+
+## Implemented Runtime Capabilities
+
+### Command Governance
+
+- `CommandRecord` and `CommandStatus`
+- approval manager
+- cancellation token support
+- low / medium / critical risk policy
+- approval, rejection, cancellation, blocked, and status-change events
+
+### Tool Contract and Sandbox v1
+
+- canonical `ToolSpec` registry
+- registry drift validation
+- `/tools/registry` endpoint
+- frontend tool registry panel hydrated from backend state
+- file tools v1
+- allowlisted shell v1
+- standardized risk, approval, timeout, cancellation, and evidence metadata
+
+### Verified Desktop Evidence
+
+Desktop side-effect actions such as `open_app`, `focus_app`, and `close_app` use a process/window verifier layer.
+
+The evidence model includes:
+
+- process name
+- PID list
+- HWND
+- window title
+- foreground window evidence
+- process-alive / process-not-alive checks
+- matching window count
+- check-level evidence with expected and observed values
+- graceful close and kill fallback evidence
+
+Ambiguous desktop windows are treated as failed or unverified instead of optimistic success.
+
+### Evidence Audit and Completion Gate
+
+Process/window actions are gated by backend evidence audit before completion is trusted.
+
+The audit layer protects against:
+
+- missing critical checks
+- failed critical checks
+- optimistic success without evidence
+- UI-generated verification results
+- snapshot / journal / live socket drift
+
+### Maintenance Diagnostics
+
+The current maintenance path is read-only. It reports runtime health from backend-owned sources:
+
+- runtime snapshot health
+- command lifecycle state
+- WebSocket runtime context
+- action timeline health
+- app registry health
+- tool registry health
+- environment checks
+
+Future maintenance actions should remain approval-gated and evidence-backed.
+
+## Technology Stack
 
 | Layer | Technology |
-| :--- | :--- |
-| **Backend** | Python 3.11+, FastAPI, Pydantic V2 |
-| **Frontend** | Next.js 15, TailwindCSS, Framer Motion |
-| **Desktop** | Electron Bridge |
-| **Automation** | PyAutoGUI, Playwright, PyGetWindow |
-| **Database** | Qdrant (Vector), JSONL (Event Sourcing) |
-| **Models** | Ollama, LM Studio (Qwen 2.5, Llama 3.1) |
+| --- | --- |
+| Backend | Python 3.11+, FastAPI, Pydantic v2, Socket.IO |
+| Runtime | FSM authority, command lifecycle, event journal, evidence audit |
+| Desktop | PyGetWindow, psutil, ctypes, PyAutoGUI |
+| Browser automation | Playwright |
+| Frontend | Next.js, React, TypeScript, Zustand, Tailwind CSS |
+| Local model integrations | Ollama / local model endpoints where configured |
 
-## ⚡ Quick Start
+## Repository Layout
+
+```text
+src/aegis/                 Backend runtime, API, verifier, tools, orchestration
+frontend/                  Next.js runtime UI
+tests/                     Backend and source-contract tests
+config/                    Runtime configuration
+schemas/                   Schema and contract assets
+ui/                        Historical UI notes
+logs/                      Local runtime journals and logs (ignored)
+data/                      Local runtime data (ignored)
+scratch/                   Local temporary test/smoke artifacts (ignored)
+```
+
+## Quick Start
 
 ### Prerequisites
-- **Python**: 3.11+
-- **Node.js**: 20+
-- **Hardware**: RTX 3080+ (Recommended for local vision models)
 
-### Installation
+- Windows
+- Python 3.11+
+- Node.js 20+
+- Git for Windows
 
-1. **Clone & Setup Environment**
-   ```powershell
-   git clone https://github.com/your-repo/aegis.git
-   cd aegis
-   python -m venv .venv
-   .\.venv\Scripts\activate
-   pip install -e ".[dev]"
-   ```
+### Backend Setup
 
-2. **Configure Environment**
-   ```powershell
-   copy .env.example .env
-   # Edit .env with your local model endpoints (e.g., LM Studio/Ollama)
-   ```
+```powershell
+git clone https://github.com/WexyS/Aegis.git
+cd Aegis
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -e ".[dev]"
+```
 
-3. **Launch the System**
-   ```powershell
-   # Launch both Backend and Frontend via the automated script
-   .\launch_aegis.bat
-   ```
+### Frontend Setup
+
+```powershell
+cd frontend
+npm.cmd install
+npm.cmd run build
+```
+
+### Run
+
+From the repository root:
+
+```powershell
+.\launch_aegis.bat
+```
+
+The default backend port is `8400`. The default frontend port is `3000`.
+
+## Validation
+
+Run the backend test suite:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Build the frontend:
+
+```powershell
+cd frontend
+npm.cmd run build
+```
+
+For browser smoke testing, Aegis uses the Python Playwright dependency from the backend environment. A separate JavaScript Playwright stack is not required.
 
 ## Windows Troubleshooting
 
-### PATH checks
+### PATH Checks
 
 Use explicit Windows commands when a tool exists but PowerShell cannot find it:
 
@@ -97,8 +217,7 @@ where.exe npm.cmd
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-If Git is installed but `where.exe git` does not find it, add Git for Windows to
-your user PATH and open a new terminal:
+If Git is installed but `where.exe git` does not find it, add Git for Windows to your user PATH and open a new terminal:
 
 ```powershell
 [Environment]::SetEnvironmentVariable(
@@ -108,13 +227,13 @@ your user PATH and open a new terminal:
 )
 ```
 
-For the current terminal only, use:
+For the current terminal only:
 
 ```powershell
 $env:Path += ";C:\Program Files\Git\cmd"
 ```
 
-### Node and UI testing
+### Node Commands
 
 Prefer `npm.cmd` on Windows:
 
@@ -123,16 +242,52 @@ cd frontend
 npm.cmd run build
 ```
 
-Aegis keeps browser smoke testing on the Python Playwright dependency already in
-the backend environment, so a missing Codex Node REPL/browser helper does not
-require adding a separate JavaScript test stack.
+## Roadmap
 
-## 📊 Project Status
+### Near Term
 
-Aegis is currently in **Phase 9: Assisted Autonomy**. We are transitioning towards full agentic loops (Phase 10) with a focus on self-healing capabilities and complex multi-intent routing.
+- Runtime debt audit
+- Maintenance scan productization
+- Safer read-only system inspection
+- Approval-gated maintenance actions
+- Reliable desktop workflow expansion
 
----
+### Later
 
-<p align="center">
-  <i>Developed with precision for the next generation of autonomous computing.</i>
-</p>
+- voice interaction
+- screen/vision assistance
+- richer system profiling
+- layered memory and briefing
+- controlled self-improvement proposals
+- packaging and installer flow
+
+These later capabilities should be added only after the runtime, evidence, approval, and replay foundations remain stable.
+
+## Non-Goals for the Current Stage
+
+- uncontrolled agent loops
+- fake telemetry
+- frontend-inferred verification
+- unsandboxed tool execution
+- plugin marketplace
+- voice-first control
+- memory graph
+- self-modifying code without approval, tests, and rollback
+
+## Project Status
+
+Latest stable checkpoint:
+
+- verified desktop process/window evidence
+- evidence audit and completion gate
+- WebSocket runtime truth sync
+- replay parity hardening
+- real Windows desktop smoke for open/focus/close
+- full backend tests passing
+- frontend production build passing
+
+The current product target is:
+
+**Reliable AI Computer Operator**
+
+The first commercializable direction is likely an evidence-backed local computer maintenance assistant.
