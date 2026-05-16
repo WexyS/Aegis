@@ -131,7 +131,9 @@ export interface ExecutionEvidence {
   target?: string | null;
   target_type: string;
   method: string;
+  verifier?: string | null;
   verification_state: string;
+  verification_reason?: string | null;
   started_at_ms?: number;
   completed_at_ms?: number;
   launch_target?: string | null;
@@ -140,6 +142,10 @@ export interface ExecutionEvidence {
   pids: number[];
   process_alive?: boolean | null;
   window?: Record<string, unknown> | null;
+  expected: Record<string, unknown>;
+  observed: Record<string, unknown>;
+  verification_checks: Array<Record<string, unknown>>;
+  matching_windows: Array<Record<string, unknown>>;
   retry_count: number;
   recovery_triggered: boolean;
   attempts: Array<Record<string, unknown>>;
@@ -223,7 +229,74 @@ export interface EvidenceAudit {
   error_count: number;
   evidence_backed_count: number;
   missing_evidence_count: number;
+  verified_action_count: number;
+  unverified_evidence_count: number;
+  failed_evidence_count: number;
+  check_pass_count: number;
+  check_fail_count: number;
+  check_unknown_count: number;
+  critical_failure_count: number;
+  critical_failures: Array<Record<string, unknown>>;
   verification_counts: Record<string, number>;
+  verifier_counts: Record<string, number>;
   latest_sequence_num: number;
   limit: number;
+}
+
+export interface RuntimeHealth {
+  scan_version: string;
+  read_only: boolean;
+  status: string;
+  source_of_truth: string;
+  component_statuses: Record<string, string>;
+  attention: string[];
+}
+
+export interface CommandLifecycleDiagnostics {
+  scan_version: string;
+  read_only: boolean;
+  status: string;
+  record_count: number;
+  pending_count: number;
+  active_count: number;
+  active_record_count: number;
+  unverified_completed_count: number;
+  latest_status?: string | null;
+  latest_verification_state?: string | null;
+}
+
+export interface RuntimeSnapshotDiagnostics {
+  scan_version: string;
+  read_only: boolean;
+  status: string;
+  session_id?: string | null;
+  fsm_state?: string | null;
+  queue_depth: number;
+  queue_capacity: number;
+  recovery_depth: number;
+  active_trace_id?: string | null;
+  last_event_sequence: number;
+  journal_last_sequence_num: number;
+  sequence_aligned: boolean;
+}
+
+export interface WebSocketDiagnostics {
+  scan_version: string;
+  read_only: boolean;
+  status: string;
+  session_id?: string | null;
+  connected_clients?: number | null;
+  queue_depth?: number | null;
+  queue_capacity?: number | null;
+}
+
+export interface ActionTimelineDiagnostics {
+  scan_version: string;
+  read_only: boolean;
+  status: string;
+  action_count: number;
+  active_count: number;
+  error_count: number;
+  evidence_backed_count: number;
+  latest_sequence_num: number;
 }

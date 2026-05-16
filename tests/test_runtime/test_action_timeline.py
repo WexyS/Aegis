@@ -96,6 +96,98 @@ def test_action_timeline_projects_failed_or_active_actions_without_fake_evidence
     assert timeline[1]["execution_evidence"]["verification_state"] == "failed"
 
 
+def test_action_timeline_updates_evidence_from_verification_events() -> None:
+    started = create_event(
+        ProtocolEventType.ACTION_STARTED,
+        {"action_id": "action-verify", "tool": "focus_app", "target": "notepad"},
+        session_id="session-one",
+    ).to_dict()
+    completed = create_event(
+        ProtocolEventType.ACTION_COMPLETED,
+        {"action_id": "action-verify", "success": True, "latency_ms": 25},
+        session_id="session-one",
+    ).to_dict()
+    verification = create_event(
+        ProtocolEventType.VERIFICATION_FAILED,
+        {
+            "action_id": "action-verify",
+            "passed": False,
+            "verification_state": "unverified",
+            "verifier": "process-window-verifier/2",
+            "execution_evidence": {
+                "action": "focus_app",
+                "target": "notepad",
+                "target_type": "application",
+                "method": "focus_window",
+                "verifier": "process-window-verifier/2",
+                "verification_state": "unverified",
+                "verification_reason": "active window did not match target",
+                "pids": [4242],
+                "retry_count": 0,
+                "recovery_triggered": False,
+                "attempts": [],
+                "fallback_chain": [],
+                "warnings": ["active window did not match target"],
+            },
+        },
+        session_id="session-one",
+    ).to_dict()
+
+    timeline = project_action_timeline([started, completed, verification], session_id="session-one")
+
+    assert timeline[0]["action_id"] == "action-verify"
+    assert timeline[0]["status"] == "error"
+    assert timeline[0]["execution_evidence"]["verifier"] == "process-window-verifier/2"
+    assert timeline[0]["execution_evidence"]["verification_state"] == "unverified"
+
+
+def test_action_timeline_replay_is_sequence_ordered() -> None:
+    trace_id = "11111111-1111-4111-8111-111111111111"
+    started = create_event(
+        ProtocolEventType.ACTION_STARTED,
+        {"action_id": "action-shuffled", "tool": "close_app", "target": "notepad"},
+        trace_id=trace_id,
+        session_id="session-one",
+    ).to_dict()
+    completed = create_event(
+        ProtocolEventType.ACTION_COMPLETED,
+        {"action_id": "action-shuffled", "success": True, "latency_ms": 20},
+        trace_id=trace_id,
+        session_id="session-one",
+    ).to_dict()
+    verification = create_event(
+        ProtocolEventType.VERIFICATION_FAILED,
+        {
+            "action_id": "action-shuffled",
+            "passed": False,
+            "execution_evidence": {
+                "action": "close_app",
+                "target": "notepad",
+                "target_type": "application",
+                "method": "close_window",
+                "verifier": "process-window-verifier/2",
+                "verification_state": "failed",
+                "verification_reason": "process still alive",
+                "pids": [4242],
+                "retry_count": 0,
+                "recovery_triggered": False,
+                "attempts": [],
+                "fallback_chain": [],
+                "warnings": ["process still alive"],
+            },
+        },
+        trace_id=trace_id,
+        session_id="session-one",
+    ).to_dict()
+
+    ordered = project_action_timeline([started, completed, verification], session_id="session-one")
+    shuffled = project_action_timeline([verification, completed, started], session_id="session-one")
+
+    assert shuffled == ordered
+    assert shuffled[0]["status"] == "error"
+    assert shuffled[0]["execution_evidence"]["verification_reason"] == "process still alive"
+
+
 def test_action_timeline_is_bounded_to_latest_actions() -> None:
     events = [
         create_event(

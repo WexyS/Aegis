@@ -5,7 +5,6 @@ import difflib
 import hashlib
 import logging
 import time
-import ctypes
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -21,13 +20,13 @@ from aegis.core.state_manager import get_state_manager
 from aegis.core.transition_model import get_transition_model
 from aegis.tools.registry import TOOLS, get_tool_spec
 from aegis.tools.file_tools import _resolve_write_path
-from aegis.executor.utils import verify_path, get_running_pids, get_window_pid
+from aegis.executor.utils import verify_path
 from aegis.executor.desktop_verifier import (
-    make_desktop_execution_evidence,
+    DesktopVerificationResult,
     now_ms,
-    observe_desktop_target,
+    verification_to_execution_evidence,
+    verify_desktop_action,
 )
-import pygetwindow as gw
 
 logger = logging.getLogger(__name__)
 
@@ -265,46 +264,145 @@ DESKTOP_EVIDENCE_TOOLS = {"open_app", "focus_app", "close_app"}
 PROOF_EVIDENCE_KEYS = ("read_only_evidence", "browser_evidence", "write_evidence", "type_evidence", "git_evidence", "shell_evidence")
 
 
+def _close_evidence_updates(close_attempts: list[dict[str, Any]] | None) -> dict[str, Any]:
+    if not close_attempts:
+        return {}
+    extra_checks: list[dict[str, Any]] = []
+    fallback_chain = [
+        {
+            "method": "kill_after_graceful_timeout",
+            "process_name": attempt.get("process_name"),
+            "pids": list(attempt.get("kill_sent_pids") or []),
+            "reason": "graceful terminate timeout",
+        }
+        for attempt in close_attempts
+        if attempt.get("kill_sent_pids")
+    ]
+    for attempt in close_attempts:
+        initial = set(int(pid) for pid in attempt.get("initial_pids") or [])
+        graceful = set(int(pid) for pid in attempt.get("graceful_terminated_pids") or [])
+        killed = set(int(pid) for pid in attempt.get("killed_pids") or [])
+        remaining = set(int(pid) for pid in attempt.get("remaining_pids") or [])
+        accounted = initial <= (graceful | killed | remaining)
+        extra_checks.append(_evidence_check(
+            "close_initial_pids_accounted_for",
+            accounted if initial else True,
+            sorted(initial),
+            {
+                "graceful_terminated_pids": sorted(graceful),
+                "killed_pids": sorted(killed),
+                "remaining_pids": sorted(remaining),
+            },
+            "Every initially matched PID should be observed as gracefully terminated, killed, or still remaining.",
+        ))
+        extra_checks.append(_evidence_check(
+            "close_no_remaining_after_fallback",
+            not remaining,
+            [],
+            sorted(remaining),
+            "Close fallback is complete only when no target PID remains after terminate/kill.",
+        ))
+    return {
+        "attempts": list(close_attempts),
+        "fallback_chain": fallback_chain,
+        "recovery_triggered": bool(fallback_chain),
+        "verification_checks": extra_checks,
+    }
+
+
+def _evidence_check(name: str, passed: bool | None, expected: Any, observed: Any, reason: str) -> dict[str, Any]:
+    return {
+        "check_name": name,
+        "name": name,
+        "passed": passed,
+        "expected": expected,
+        "observed": observed,
+        "actual": observed,
+        "reason": reason,
+        "detail": reason,
+    }
+
+
+def _focus_evidence_updates(focus_attempts: list[dict[str, Any]] | None) -> dict[str, Any]:
+    if not focus_attempts:
+        return {}
+    latest = focus_attempts[-1]
+    selected = latest.get("selected_window") if isinstance(latest.get("selected_window"), dict) else {}
+    foreground = latest.get("foreground_after") if isinstance(latest.get("foreground_after"), dict) else {}
+    selected_hwnd = selected.get("hwnd")
+    foreground_hwnd = foreground.get("hwnd")
+    checks = [
+        _evidence_check(
+            "focus_attempt_recorded",
+            True,
+            "focus tool attempt evidence",
+            latest.get("outcome"),
+            "Focus tool should record the candidate selection and activation attempt.",
+        ),
+        _evidence_check(
+            "focus_single_tool_candidate",
+            latest.get("candidate_count") == 1,
+            1,
+            latest.get("candidate_count"),
+            "Focus tool should choose exactly one visible candidate window.",
+        ),
+        _evidence_check(
+            "focus_activate_called",
+            latest.get("activate_called") is True,
+            True,
+            latest.get("activate_called"),
+            "Focus tool should call activate on the selected window.",
+        ),
+        _evidence_check(
+            "focus_selected_hwnd_matches_foreground",
+            selected_hwnd == foreground_hwnd if selected_hwnd is not None and foreground_hwnd is not None else None,
+            selected_hwnd,
+            foreground_hwnd,
+            "Foreground HWND after focus should match the selected window HWND.",
+        ),
+    ]
+    return {
+        "attempts": list(focus_attempts),
+        "verification_checks": checks,
+    }
+
+
 def _desktop_evidence_from_verification(
     intent: str,
     params: Dict[str, Any],
     started_at_ms: int,
     verification: "VerificationEvidence",
+    close_attempts: list[dict[str, Any]] | None = None,
+    focus_attempts: list[dict[str, Any]] | None = None,
 ) -> ExecutionEvidence | None:
     if intent not in DESKTOP_EVIDENCE_TOOLS:
         return None
+    evidence_updates = _close_evidence_updates(close_attempts) if intent == "close_app" else _focus_evidence_updates(focus_attempts) if intent == "focus_app" else {}
+    extra_checks = list(evidence_updates.pop("verification_checks", []))
+    if verification.execution_evidence is not None:
+        checks = list(verification.execution_evidence.verification_checks)
+        checks.extend(extra_checks)
+        return verification.execution_evidence.model_copy(update={
+            "started_at_ms": started_at_ms,
+            "verification_checks": checks,
+            **evidence_updates,
+        })
     app = str(params.get("app") or params.get("window") or "")
     if not app:
         return None
-    observation = observe_desktop_target(
-        app,
+    desktop_verification = verify_desktop_action(
+        action=intent,
+        app=app,
         process_name=params.get("_process_name"),
         window_keywords=params.get("_keywords"),
     )
-    if intent == "close_app":
-        verified = observation.process_alive is False
-        method = "terminate_process"
-    elif intent == "focus_app":
-        verified = observation.focus_verified
-        method = "focus_window"
-    else:
-        verified = verification.verified
-        method = "open_or_focus_window"
-    if verification.status == "AMBIGUOUS":
-        verification_state = "failed"
-    elif verified:
-        verification_state = "verified"
-    else:
-        verification_state = "unverified"
-    warnings = [] if verified else [verification.details]
-    return make_desktop_execution_evidence(
-        action=intent,
+    return verification_to_execution_evidence(
+        verification=desktop_verification,
         app=app,
-        method=method,
         started_at_ms=started_at_ms,
-        observation=observation,
-        verification_state=verification_state,
-        warnings=warnings,
+        attempts=evidence_updates.get("attempts"),
+        fallback_chain=evidence_updates.get("fallback_chain"),
+        recovery_triggered=bool(evidence_updates.get("recovery_triggered", False)),
     )
 
 
@@ -313,24 +411,46 @@ def _desktop_failure_evidence(
     params: Dict[str, Any],
     started_at_ms: int,
     output_text: str,
+    close_attempts: list[dict[str, Any]] | None = None,
+    focus_attempts: list[dict[str, Any]] | None = None,
 ) -> ExecutionEvidence | None:
     if intent not in DESKTOP_EVIDENCE_TOOLS:
         return None
     app = str(params.get("app") or params.get("window") or "")
     if not app:
         return None
-    observation = observe_desktop_target(
-        app,
+    verification = verify_desktop_action(
+        action=intent,
+        app=app,
         process_name=params.get("_process_name"),
         window_keywords=params.get("_keywords"),
     )
-    return make_desktop_execution_evidence(
-        action=intent,
+    if verification.verification_state != "failed":
+        verification = DesktopVerificationResult(
+            action=verification.action,
+            method=verification.method,
+            observation=verification.observation,
+            verification_state="failed",
+            reason=output_text,
+            checks=verification.checks,
+        )
+    evidence_updates = _close_evidence_updates(close_attempts) if intent == "close_app" else _focus_evidence_updates(focus_attempts) if intent == "focus_app" else {}
+    extra_checks = list(evidence_updates.pop("verification_checks", []))
+    verification = DesktopVerificationResult(
+        action=verification.action,
+        method=verification.method,
+        observation=verification.observation,
+        verification_state=verification.verification_state,
+        reason=verification.reason,
+        checks=[*verification.checks, *extra_checks],
+    )
+    return verification_to_execution_evidence(
+        verification=verification,
         app=app,
-        method="tool_failure",
         started_at_ms=started_at_ms,
-        observation=observation,
-        verification_state="failed",
+        attempts=evidence_updates.get("attempts"),
+        fallback_chain=evidence_updates.get("fallback_chain"),
+        recovery_triggered=bool(evidence_updates.get("recovery_triggered", False)),
         warnings=[output_text],
     )
 
@@ -391,6 +511,7 @@ class VerificationEvidence:
     expected: Dict[str, Any]
     actual: Dict[str, Any]
     details: str
+    execution_evidence: ExecutionEvidence | None = None
 
 class Verifier:
     """
@@ -402,62 +523,44 @@ class Verifier:
     async def verify(intent: str, params: Dict[str, Any], ctx: ExecutionContext) -> VerificationEvidence:
         expected = {"intent": intent, "process_name": params.get("_process_name")}
         actual = {"pid": None, "hwnd": None, "is_responsive": False}
-        
-        if intent == "open_app":
-            process_name = params.get("_process_name")
-            keywords = params.get("_keywords", [])
-            
-            # Poll for stabilization
-            for attempt in range(50):
+
+        if intent in DESKTOP_EVIDENCE_TOOLS:
+            app = str(params.get("app") or "")
+            # Give newly launched windows a short stabilization window, but keep the
+            # process/window verifier as the single source of the desktop verdict.
+            max_attempts = 50 if intent == "open_app" else 1
+            last_result = None
+            for _ in range(max_attempts):
+                result = verify_desktop_action(
+                    action=intent,
+                    app=app,
+                    process_name=params.get("_process_name"),
+                    window_keywords=params.get("_keywords"),
+                )
+                last_result = result
+                if result.verification_state in {"verified", "failed"}:
+                    break
+                if intent != "open_app":
+                    break
                 await asyncio.sleep(0.1)
-                pids = get_running_pids(process_name)
-                if not pids: continue
-                
-                # STRICT MATCHING: Find all candidates belonging to our PIDs
-                candidates = []
-                for w in gw.getAllWindows():
-                    hwnd = w._hWnd
-                    if get_window_pid(hwnd) in pids:
-                        title = (w.title or "").lower()
-                        if any(k.lower() in title for k in keywords) and w.visible:
-                            is_hung = ctypes.windll.user32.IsHungAppWindow(hwnd)
-                            candidates.append({"hwnd": hwnd, "is_responsive": not is_hung})
-                
-                if not candidates: continue
-                
-                # DETERMINISM CHECK: Exactly one candidate must exist
-                if len(candidates) > 1:
-                    return VerificationEvidence(False, "AMBIGUOUS", expected, actual, f"Ambiguity Error: {len(candidates)} matching windows found for {process_name}")
-                
-                best = candidates[0]
-                if best["is_responsive"]:
-                    actual.update({"pid": get_window_pid(best["hwnd"]), "hwnd": best["hwnd"], "is_responsive": True})
-                    return VerificationEvidence(True, "SUCCESS", expected, actual, f"Formally verified window {best['hwnd']}")
 
-            return VerificationEvidence(False, "FAILED", expected, actual, f"Timeout: No window manifested for {process_name}")
-
-        if intent == "focus_app":
-            app = str(params.get("app") or "")
-            observation = observe_desktop_target(app)
-            window = observation.primary_window or {}
+            assert last_result is not None
+            evidence = verification_to_execution_evidence(
+                verification=last_result,
+                app=app,
+                started_at_ms=now_ms(),
+            )
+            observed = evidence.observed
             actual.update({
-                "pid": window.get("pid"),
-                "hwnd": window.get("hwnd"),
-                "is_responsive": bool(window),
+                "pid": observed.get("primary_pid") or observed.get("active_pid") or (evidence.pids[0] if evidence.pids else None),
+                "hwnd": observed.get("primary_hwnd") or observed.get("active_hwnd"),
+                "is_responsive": bool(evidence.window) or intent == "close_app" and evidence.process_alive is False,
             })
-            if observation.focus_verified:
-                return VerificationEvidence(True, "SUCCESS", expected, actual, f"Focused window {window.get('hwnd')}")
-            if len(observation.matching_windows) > 1:
-                return VerificationEvidence(False, "AMBIGUOUS", expected, actual, f"Ambiguous focus target: {len(observation.matching_windows)} matching windows")
-            return VerificationEvidence(False, "FAILED", expected, actual, f"No focused window verified for {app}")
-
-        if intent == "close_app":
-            app = str(params.get("app") or "")
-            observation = observe_desktop_target(app)
-            if observation.process_alive is False:
-                return VerificationEvidence(True, "SUCCESS", expected, actual, f"No live process remains for {observation.target.process_name}")
-            actual.update({"pid": observation.pids[0] if observation.pids else None})
-            return VerificationEvidence(False, "FAILED", expected, actual, f"Process still alive for {observation.target.process_name}")
+            if last_result.verification_state == "verified":
+                return VerificationEvidence(True, "SUCCESS", expected, actual, last_result.reason, evidence)
+            if last_result.ambiguous:
+                return VerificationEvidence(False, "AMBIGUOUS", expected, actual, last_result.reason, evidence)
+            return VerificationEvidence(False, "FAILED", expected, actual, last_result.reason, evidence)
 
         return VerificationEvidence(True, "SUCCESS", expected, actual, "Generic success.")
 
@@ -580,6 +683,12 @@ class DeterministicExecutor:
                 if intent in ["open_url", "search_web", "click", "scroll", "read_page"]:
                     page = await self._get_page()
                     call_params["page"] = page
+                close_attempts: list[dict[str, Any]] = []
+                if intent == "close_app":
+                    call_params["_close_evidence"] = close_attempts
+                focus_attempts: list[dict[str, Any]] = []
+                if intent == "focus_app":
+                    call_params["_focus_evidence"] = focus_attempts
 
                 write_before = _capture_write_before(intent, params)
                 click_before = await _capture_click_context(intent, params, page)
@@ -609,7 +718,14 @@ class DeterministicExecutor:
                 output_text = str(output)
                 click_after = await _capture_click_context(intent, params, page)
                 if output_text.lower().startswith(("error", "failed", "read error", "write error")):
-                    failure_evidence = _desktop_failure_evidence(intent, params, desktop_started_at_ms, output_text)
+                    failure_evidence = _desktop_failure_evidence(
+                        intent,
+                        params,
+                        desktop_started_at_ms,
+                        output_text,
+                        close_attempts=close_attempts,
+                        focus_attempts=focus_attempts,
+                    )
                     failure_proof = {"execution_evidence": failure_evidence.model_dump()} if failure_evidence else {}
                     return ActionResult(
                         action=intent,
@@ -634,6 +750,8 @@ class DeterministicExecutor:
                     params,
                     desktop_started_at_ms,
                     evidence,
+                    close_attempts=close_attempts,
+                    focus_attempts=focus_attempts,
                 )
                 
                 state_manager.update(

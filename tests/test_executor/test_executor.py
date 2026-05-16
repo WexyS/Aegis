@@ -418,6 +418,18 @@ class TestDeterministicExecutorContracts:
         class FakeFocusTool:
             async def run(self, app: str, **kwargs) -> str:
                 assert app == "notepad"
+                kwargs["_focus_evidence"].append({
+                    "action": "focus_app",
+                    "app": app,
+                    "keywords": ["notepad"],
+                    "candidate_count": 1,
+                    "candidates": [{"title": "Untitled - Notepad", "hwnd": 101, "pid": 4242}],
+                    "selected_window": {"title": "Untitled - Notepad", "hwnd": 101, "pid": 4242},
+                    "restored": False,
+                    "activate_called": True,
+                    "foreground_after": {"title": "Untitled - Notepad", "hwnd": 101, "pid": 4242},
+                    "outcome": "focused",
+                })
                 return "Focused 'notepad' (HWND: 101)."
 
         class FakeWindow:
@@ -457,6 +469,10 @@ class TestDeterministicExecutorContracts:
         assert result.execution_evidence.action == "focus_app"
         assert result.execution_evidence.method == "focus_window"
         assert result.execution_evidence.verification_state == "verified"
+        assert result.execution_evidence.attempts[0]["selected_window"]["hwnd"] == 101
+        checks = {check["check_name"]: check for check in result.execution_evidence.verification_checks}
+        assert checks["focus_attempt_recorded"]["passed"] is True
+        assert checks["focus_selected_hwnd_matches_foreground"]["passed"] is True
         assert result.proof["execution_evidence"]["window"]["hwnd"] == 101
 
     @pytest.mark.asyncio
@@ -486,6 +502,18 @@ class TestDeterministicExecutorContracts:
         class FakeCloseTool:
             async def run(self, app: str, **kwargs) -> str:
                 assert app == "notepad"
+                kwargs["_close_evidence"].append({
+                    "action": "close_app",
+                    "process_name": "notepad.exe",
+                    "initial_pids": [4242],
+                    "terminate_sent_pids": [4242],
+                    "graceful_timeout_seconds": 0.01,
+                    "graceful_terminated_pids": [],
+                    "kill_sent_pids": [4242],
+                    "killed_pids": [4242],
+                    "remaining_pids": [],
+                    "outcome": "killed",
+                })
                 return "Closed 1 instance(s) of notepad."
 
         executor = DeterministicExecutor()
@@ -518,3 +546,9 @@ class TestDeterministicExecutorContracts:
         assert result.execution_evidence.verification_state == "verified"
         assert result.execution_evidence.pids == []
         assert result.execution_evidence.process_alive is False
+        assert result.execution_evidence.recovery_triggered is True
+        assert result.execution_evidence.attempts[0]["kill_sent_pids"] == [4242]
+        assert result.execution_evidence.fallback_chain[0]["method"] == "kill_after_graceful_timeout"
+        checks = {check["check_name"]: check for check in result.execution_evidence.verification_checks}
+        assert checks["close_initial_pids_accounted_for"]["passed"] is True
+        assert checks["close_no_remaining_after_fallback"]["passed"] is True

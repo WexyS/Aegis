@@ -5,12 +5,26 @@ import { Ban, Check, ShieldAlert, Square, Wrench } from 'lucide-react';
 
 import { approveCommand, cancelCommand, rejectCommand, runMaintenanceScan } from '@/lib/socket';
 import { useRuntimeStore } from '@/store/useRuntimeStore';
-import { CommandRecord, EnvironmentDiagnostics, EvidenceAudit } from '@/types/runtime';
+import {
+  ActionTimelineDiagnostics,
+  CommandLifecycleDiagnostics,
+  CommandRecord,
+  EnvironmentDiagnostics,
+  EvidenceAudit,
+  RuntimeHealth,
+  RuntimeSnapshotDiagnostics,
+  WebSocketDiagnostics,
+} from '@/types/runtime';
 
 export const PendingApprovalPanel = () => {
   const pendingApprovals = useRuntimeStore((state) => state.pendingApprovals);
   const activeCommand = useRuntimeStore((state) => state.activeCommand);
   const lastMaintenanceScan = useRuntimeStore((state) => state.lastMaintenanceScan);
+  const runtimeHealth = getRuntimeHealth(lastMaintenanceScan);
+  const commandLifecycle = getCommandLifecycle(lastMaintenanceScan);
+  const runtimeSnapshot = getRuntimeSnapshot(lastMaintenanceScan);
+  const websocket = getWebSocketDiagnostics(lastMaintenanceScan);
+  const actionTimeline = getActionTimelineDiagnostics(lastMaintenanceScan);
   const environment = getEnvironmentDiagnostics(lastMaintenanceScan);
   const evidenceAudit = getEvidenceAudit(lastMaintenanceScan);
 
@@ -66,6 +80,15 @@ export const PendingApprovalPanel = () => {
             <span>{String(lastMaintenanceScan.scan_version ?? 'maintenance-scan/1')}</span>
             <span>{lastMaintenanceScan.read_only === true ? 'READ ONLY' : 'UNKNOWN'}</span>
           </div>
+          {runtimeHealth && <RuntimeHealthSummary health={runtimeHealth} />}
+          {(commandLifecycle || runtimeSnapshot || websocket || actionTimeline) && (
+            <RuntimeTruthSummary
+              commandLifecycle={commandLifecycle}
+              runtimeSnapshot={runtimeSnapshot}
+              websocket={websocket}
+              actionTimeline={actionTimeline}
+            />
+          )}
           {environment && <EnvironmentSummary diagnostics={environment} />}
           {evidenceAudit && <EvidenceAuditSummary audit={evidenceAudit} />}
         </div>
@@ -74,27 +97,101 @@ export const PendingApprovalPanel = () => {
   );
 };
 
+const RuntimeHealthSummary = ({ health }: { health: RuntimeHealth }) => {
+  const statusTone = health.status === 'ok' ? 'text-success' : health.status === 'fail' ? 'text-danger' : 'text-warning';
+  const attention = Array.isArray(health.attention) ? health.attention : [];
+  return (
+    <div className="mt-3 border-t border-white/10 pt-3">
+      <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest">
+        <span className="text-foreground/40">Runtime Health</span>
+        <span className={statusTone}>{health.status}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        {Object.entries(health.component_statuses || {}).slice(0, 8).map(([name, status]) => (
+          <StatusMetric key={name} label={name} status={String(status)} />
+        ))}
+      </div>
+      {attention.length > 0 && (
+        <p className="mt-2 truncate text-[9px] font-mono text-warning/85">{attention.join(', ')}</p>
+      )}
+    </div>
+  );
+};
+
+const RuntimeTruthSummary = ({
+  commandLifecycle,
+  runtimeSnapshot,
+  websocket,
+  actionTimeline,
+}: {
+  commandLifecycle: CommandLifecycleDiagnostics | null;
+  runtimeSnapshot: RuntimeSnapshotDiagnostics | null;
+  websocket: WebSocketDiagnostics | null;
+  actionTimeline: ActionTimelineDiagnostics | null;
+}) => (
+  <div className="mt-3 border-t border-white/10 pt-3">
+    <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest">
+      <span className="text-foreground/40">Runtime Truth</span>
+      <span className={runtimeSnapshot?.sequence_aligned === false ? 'text-warning' : 'text-success'}>
+        {runtimeSnapshot?.sequence_aligned === false ? 'drift' : 'synced'}
+      </span>
+    </div>
+    <div className="mt-2 grid grid-cols-2 gap-1.5">
+      <AuditMetric label="pending" value={commandLifecycle?.pending_count ?? 0} tone={(commandLifecycle?.pending_count ?? 0) > 0 ? 'warning' : 'success'} />
+      <AuditMetric label="active" value={commandLifecycle?.active_count ?? 0} tone={(commandLifecycle?.active_count ?? 0) > 0 ? 'warning' : 'success'} />
+      <AuditMetric label="clients" value={websocket?.connected_clients ?? 0} />
+      <AuditMetric label="queue" value={websocket?.queue_depth ?? runtimeSnapshot?.queue_depth ?? 0} />
+      <AuditMetric label="actions" value={actionTimeline?.action_count ?? 0} />
+      <AuditMetric label="errors" value={actionTimeline?.error_count ?? 0} tone={(actionTimeline?.error_count ?? 0) > 0 ? 'warning' : 'success'} />
+    </div>
+  </div>
+);
+
 const EvidenceAuditSummary = ({ audit }: { audit: EvidenceAudit }) => {
+  const statusTone = audit.status === 'ok' ? 'text-success' : audit.status === 'fail' ? 'text-danger' : 'text-warning';
+  const verifiedActionCount = audit.verified_action_count ?? 0;
+  const checkFailCount = audit.check_fail_count ?? 0;
+  const criticalFailureCount = audit.critical_failure_count ?? 0;
+  const criticalFailures = Array.isArray(audit.critical_failures) ? audit.critical_failures : [];
   return (
     <div className="mt-3 border-t border-white/10 pt-3">
       <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest">
         <span className="text-foreground/40">Evidence</span>
-        <span className={audit.status === 'ok' ? 'text-success' : 'text-warning'}>
-          {audit.status}
-        </span>
+        <span className={statusTone}>{audit.status}</span>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-1.5">
         <AuditMetric label="actions" value={audit.action_count} />
         <AuditMetric label="backed" value={audit.evidence_backed_count} />
         <AuditMetric label="missing" value={audit.missing_evidence_count} tone={audit.missing_evidence_count > 0 ? 'warning' : 'success'} />
-        <AuditMetric label="seq" value={audit.latest_sequence_num} />
+        <AuditMetric label="verified" value={verifiedActionCount} tone={verifiedActionCount > 0 ? 'success' : 'default'} />
+        <AuditMetric label="check fail" value={checkFailCount} tone={checkFailCount > 0 ? 'danger' : 'success'} />
+        <AuditMetric label="critical" value={criticalFailureCount} tone={criticalFailureCount > 0 ? 'danger' : 'success'} />
       </div>
+      {criticalFailures.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {criticalFailures.slice(0, 2).map((failure, index) => (
+            <p key={`${String(failure.action_id ?? index)}-${String(failure.check_name ?? index)}`} className="truncate text-[9px] font-mono text-danger/85">
+              {String(failure.action ?? 'action')}:{String(failure.check_name ?? 'check')}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
 
-const AuditMetric = ({ label, value, tone = 'default' }: { label: string; value: number; tone?: 'default' | 'success' | 'warning' }) => {
-  const valueColor = tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-warning' : 'text-foreground/70';
+const StatusMetric = ({ label, status }: { label: string; status: string }) => {
+  const valueColor = status === 'ok' ? 'text-success' : status === 'fail' ? 'text-danger' : status === 'unknown' ? 'text-foreground/45' : 'text-warning';
+  return (
+    <div className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.02] px-2 py-1 text-[9px] font-mono">
+      <span className="max-w-[88px] truncate text-foreground/45">{label}</span>
+      <span className={valueColor}>{status}</span>
+    </div>
+  );
+};
+
+const AuditMetric = ({ label, value, tone = 'default' }: { label: string; value: number; tone?: 'default' | 'success' | 'warning' | 'danger' }) => {
+  const valueColor = tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-warning' : tone === 'danger' ? 'text-danger' : 'text-foreground/70';
   return (
     <div className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.02] px-2 py-1 text-[9px] font-mono">
       <span className="text-foreground/45">{label}</span>
@@ -134,6 +231,45 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => (
 
 ApprovalItem.displayName = 'ApprovalItem';
 
+function getCheck(report: Record<string, unknown> | null, name: string): Record<string, unknown> | null {
+  const checks = report?.checks;
+  if (!checks || typeof checks !== 'object') return null;
+  const check = (checks as Record<string, unknown>)[name];
+  if (!check || typeof check !== 'object') return null;
+  return check as Record<string, unknown>;
+}
+
+function getRuntimeHealth(report: Record<string, unknown> | null): RuntimeHealth | null {
+  const summary = report?.summary;
+  const health = (summary && typeof summary === 'object' ? summary : getCheck(report, 'runtime_health')) as Partial<RuntimeHealth> | null;
+  if (!health || health.scan_version !== 'runtime-health/1') return null;
+  return health as RuntimeHealth;
+}
+
+function getCommandLifecycle(report: Record<string, unknown> | null): CommandLifecycleDiagnostics | null {
+  const lifecycle = getCheck(report, 'command_lifecycle') as Partial<CommandLifecycleDiagnostics> | null;
+  if (!lifecycle || lifecycle.scan_version !== 'command-lifecycle/1') return null;
+  return lifecycle as CommandLifecycleDiagnostics;
+}
+
+function getRuntimeSnapshot(report: Record<string, unknown> | null): RuntimeSnapshotDiagnostics | null {
+  const snapshot = getCheck(report, 'runtime_snapshot') as Partial<RuntimeSnapshotDiagnostics> | null;
+  if (!snapshot || snapshot.scan_version !== 'runtime-snapshot/1') return null;
+  return snapshot as RuntimeSnapshotDiagnostics;
+}
+
+function getWebSocketDiagnostics(report: Record<string, unknown> | null): WebSocketDiagnostics | null {
+  const websocket = getCheck(report, 'websocket') as Partial<WebSocketDiagnostics> | null;
+  if (!websocket || websocket.scan_version !== 'websocket-runtime/1') return null;
+  return websocket as WebSocketDiagnostics;
+}
+
+function getActionTimelineDiagnostics(report: Record<string, unknown> | null): ActionTimelineDiagnostics | null {
+  const timeline = getCheck(report, 'action_timeline') as Partial<ActionTimelineDiagnostics> | null;
+  if (!timeline || timeline.scan_version !== 'action-timeline-health/1') return null;
+  return timeline as ActionTimelineDiagnostics;
+}
+
 const EnvironmentSummary = ({ diagnostics }: { diagnostics: EnvironmentDiagnostics }) => {
   const checks = ['python', 'git', 'node', 'npm', 'playwright']
     .map((name) => ({ name, status: String(diagnostics.checks?.[name]?.status ?? 'unknown') }));
@@ -167,21 +303,17 @@ const EnvironmentSummary = ({ diagnostics }: { diagnostics: EnvironmentDiagnosti
 };
 
 function getEnvironmentDiagnostics(report: Record<string, unknown> | null): EnvironmentDiagnostics | null {
-  const checks = report?.checks;
-  if (!checks || typeof checks !== 'object') return null;
-  const environment = (checks as Record<string, unknown>).environment;
-  if (!environment || typeof environment !== 'object') return null;
+  const environment = getCheck(report, 'environment');
+  if (!environment) return null;
   const diagnostic = environment as Partial<EnvironmentDiagnostics>;
   if (diagnostic.scan_version !== 'environment-diagnostics/1') return null;
   return diagnostic as EnvironmentDiagnostics;
 }
 
 function getEvidenceAudit(report: Record<string, unknown> | null): EvidenceAudit | null {
-  const checks = report?.checks;
-  if (!checks || typeof checks !== 'object') return null;
-  const evidence = (checks as Record<string, unknown>).evidence_audit;
-  if (!evidence || typeof evidence !== 'object') return null;
+  const evidence = getCheck(report, 'evidence_audit');
+  if (!evidence) return null;
   const audit = evidence as Partial<EvidenceAudit>;
-  if (audit.scan_version !== 'evidence-audit/1') return null;
+  if (audit.scan_version !== 'evidence-audit/1' && audit.scan_version !== 'evidence-audit/2') return null;
   return audit as EvidenceAudit;
 }

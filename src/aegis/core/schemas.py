@@ -75,7 +75,9 @@ class ExecutionEvidence(BaseModel):
     target: str | None = None
     target_type: str = "unknown"
     method: str = "unknown"
+    verifier: str | None = None
     verification_state: str = "unverified"
+    verification_reason: str | None = None
     started_at_ms: int = 0
     completed_at_ms: int = 0
     launch_target: str | None = None
@@ -84,6 +86,10 @@ class ExecutionEvidence(BaseModel):
     pids: list[int] = Field(default_factory=list)
     process_alive: bool | None = None
     window: dict[str, Any] | None = None
+    expected: dict[str, Any] = Field(default_factory=dict)
+    observed: dict[str, Any] = Field(default_factory=dict)
+    verification_checks: list[dict[str, Any]] = Field(default_factory=list)
+    matching_windows: list[dict[str, Any]] = Field(default_factory=list)
     retry_count: int = 0
     recovery_triggered: bool = False
     attempts: list[dict[str, Any]] = Field(default_factory=list)

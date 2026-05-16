@@ -6,6 +6,7 @@ import os
 import pygetwindow as gw
 from aegis.core.app_map import get_app_config, resolve_app_name
 from aegis.executor.utils import get_running_pids
+from aegis.executor.utils import get_window_pid
 from aegis.tools.base import BaseTool
 
 
@@ -26,6 +27,51 @@ def _process_name(app: str) -> str:
     if config and config.get("process_name"):
         return str(config["process_name"])
     return app_id if app_id.lower().endswith(".exe") else f"{app_id}.exe"
+
+
+def _process_pid(proc) -> int | None:
+    pid = getattr(proc, "pid", None)
+    if pid is None and hasattr(proc, "info"):
+        pid = proc.info.get("pid")
+    try:
+        return int(pid) if pid is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _expected_pid_set(raw) -> set[int]:
+    if not raw:
+        return set()
+    pids = raw if isinstance(raw, (list, tuple, set)) else [raw]
+    result = set()
+    for pid in pids:
+        try:
+            result.add(int(pid))
+        except (TypeError, ValueError):
+            continue
+    return result
+
+
+def _window_snapshot(window) -> dict:
+    hwnd = getattr(window, "_hWnd", None)
+    pid = None
+    if hwnd is not None:
+        try:
+            pid = get_window_pid(hwnd)
+        except Exception:
+            pid = None
+    return {
+        "title": getattr(window, "title", "") or "",
+        "hwnd": hwnd,
+        "pid": pid,
+        "visible": bool(getattr(window, "visible", True)),
+        "is_minimized": bool(getattr(window, "isMinimized", False)),
+    }
+
+
+def _record_evidence(sink, entry: dict) -> None:
+    if isinstance(sink, list):
+        sink.append(entry)
 
 class OpenAppTool(BaseTool):
     name = "open_app"
@@ -148,19 +194,69 @@ class CloseAppTool(BaseTool):
     async def run(self, app: str, **kwargs) -> str:
         import psutil
         target_process = _process_name(app).lower()
+        timeout = float(kwargs.get("timeout", 3.0))
+        evidence_sink = kwargs.get("_close_evidence")
+        expected_pids = _expected_pid_set(kwargs.get("_expected_pids"))
         matched = []
-        for proc in psutil.process_iter(["name"]):
-            proc_name = str(proc.info.get("name") or "").lower()
-            if proc_name == target_process:
-                proc.terminate()
-                matched.append(proc)
+        if expected_pids:
+            for pid in sorted(expected_pids):
+                try:
+                    proc = psutil.Process(pid)
+                    if str(proc.name() or "").lower() == target_process:
+                        matched.append(proc)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+        else:
+            for proc in psutil.process_iter(["name"]):
+                proc_name = str(proc.info.get("name") or "").lower()
+                if proc_name == target_process:
+                    matched.append(proc)
+
+        close_attempt = {
+            "action": "close_app",
+            "process_name": target_process,
+            "initial_pids": [pid for proc in matched if (pid := _process_pid(proc)) is not None],
+            "terminate_sent_pids": [],
+            "graceful_timeout_seconds": timeout,
+            "graceful_terminated_pids": [],
+            "kill_sent_pids": [],
+            "killed_pids": [],
+            "remaining_pids": [],
+            "outcome": "not_found",
+        }
 
         if not matched:
+            _record_evidence(evidence_sink, close_attempt)
             return f"No running process found for {app}."
 
-        gone, alive = psutil.wait_procs(matched, timeout=float(kwargs.get("timeout", 3.0)))
+        for proc in matched:
+            proc.terminate()
+            if (pid := _process_pid(proc)) is not None:
+                close_attempt["terminate_sent_pids"].append(pid)
+
+        gone, alive = psutil.wait_procs(matched, timeout=timeout)
+        close_attempt["graceful_terminated_pids"] = [
+            pid for proc in gone if (pid := _process_pid(proc)) is not None
+        ]
         for proc in alive:
+            if (pid := _process_pid(proc)) is not None:
+                close_attempt["kill_sent_pids"].append(pid)
             proc.kill()
+        if alive:
+            killed, remaining = psutil.wait_procs(alive, timeout=1.0)
+            close_attempt["killed_pids"] = [
+                pid for proc in killed if (pid := _process_pid(proc)) is not None
+            ]
+            close_attempt["remaining_pids"] = [
+                pid for proc in remaining if (pid := _process_pid(proc)) is not None
+            ]
+        else:
+            remaining = []
+
+        close_attempt["outcome"] = "killed" if close_attempt["kill_sent_pids"] else "graceful_terminated"
+        if close_attempt["remaining_pids"]:
+            close_attempt["outcome"] = "remaining_after_kill"
+        _record_evidence(evidence_sink, close_attempt)
         closed = len(gone) + len(alive)
         return f"Closed {closed} instance(s) of {app}."
 
@@ -169,25 +265,57 @@ class FocusTool(BaseTool):
     description = "Focus an existing application window."
 
     async def run(self, app: str, **kwargs) -> str:
-        keywords = [k.lower() for k in _window_keywords(app)]
+        keywords = [str(k).lower() for k in (kwargs.get("_keywords") or _window_keywords(app))]
+        expected_pids = _expected_pid_set(kwargs.get("_expected_pids"))
+        evidence_sink = kwargs.get("_focus_evidence")
+        focus_attempt = {
+            "action": "focus_app",
+            "app": app,
+            "keywords": list(keywords),
+            "candidate_count": 0,
+            "candidates": [],
+            "selected_window": None,
+            "restored": False,
+            "activate_called": False,
+            "foreground_after": None,
+            "outcome": "not_found",
+        }
         candidates = []
         for window in gw.getAllWindows():
             if not getattr(window, "visible", False):
                 continue
             title = (getattr(window, "title", "") or "").lower()
             if any(keyword in title for keyword in keywords):
+                snapshot = _window_snapshot(window)
+                if expected_pids and snapshot.get("pid") not in expected_pids:
+                    continue
                 candidates.append(window)
+                focus_attempt["candidates"].append(snapshot)
+
+        focus_attempt["candidate_count"] = len(candidates)
 
         if not candidates:
+            _record_evidence(evidence_sink, focus_attempt)
             return f"Error: No visible window found for '{app}'."
         if len(candidates) > 1:
             titles = [getattr(w, "title", "") for w in candidates[:3]]
+            focus_attempt["outcome"] = "ambiguous"
+            _record_evidence(evidence_sink, focus_attempt)
             return f"Error: Ambiguous focus target for '{app}' ({len(candidates)} windows: {titles})."
 
         window = candidates[0]
+        focus_attempt["selected_window"] = _window_snapshot(window)
         if getattr(window, "isMinimized", False):
             window.restore()
+            focus_attempt["restored"] = True
             await asyncio.sleep(0.1)
         window.activate()
+        focus_attempt["activate_called"] = True
         await asyncio.sleep(0.1)
+        try:
+            focus_attempt["foreground_after"] = _window_snapshot(gw.getActiveWindow())
+        except Exception as exc:
+            focus_attempt["foreground_after"] = {"error": str(exc)}
+        focus_attempt["outcome"] = "focused"
+        _record_evidence(evidence_sink, focus_attempt)
         return f"Focused '{app}' (HWND: {getattr(window, '_hWnd', 'unknown')})."

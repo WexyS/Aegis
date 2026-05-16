@@ -88,6 +88,7 @@ function dispatch(event: RuntimeEvent) {
 
 type AcceptRuntimeEventOptions = {
   allowHistoricalDispatch?: boolean;
+  ingestOnly?: boolean;
   suppressGapLog?: boolean;
 };
 
@@ -166,7 +167,60 @@ async function acceptRuntimeEvent(event: RuntimeEvent, options: AcceptRuntimeEve
   });
 
   await eventSourcing.ingestBackendEvent(event);
-  dispatch(event);
+  if (!options.ingestOnly) {
+    dispatch(event);
+  }
+}
+
+function applyRuntimeSnapshotPayload(payload: any, reason: string) {
+  const runtimeStore = useRuntimeStore.getState();
+  const snapshotState = payload.runtime?.fsm_state || payload.current_state;
+  if (snapshotState) {
+    runtimeStore.syncBackendSnapshot(snapshotState as RuntimeState, { reason });
+  }
+  runtimeStore.syncCommandSnapshot(payload.runtime?.commands);
+  runtimeStore.syncActionTimelineSnapshot(payload.runtime?.action_timeline);
+  if (payload.runtime?.app_registry) {
+    runtimeStore.setAppRegistry(payload.runtime.app_registry as AppRegistrySnapshot);
+  }
+  if (payload.runtime?.tool_registry) {
+    runtimeStore.setToolRegistry(payload.runtime.tool_registry as ToolRegistrySnapshot);
+  }
+  if (payload.runtime?.maintenance_scan) {
+    runtimeStore.setMaintenanceScan(payload.runtime.maintenance_scan as Record<string, unknown>);
+  }
+}
+
+function applySnapshotTruthTelemetry(event: RuntimeEvent, payload: any) {
+  const journal = payload.journal || {};
+  const truthSync = payload.truth_sync || {};
+  const snapshotSequence = Number(
+    truthSync.snapshot_sequence_num ??
+    event.sequence_num ??
+    journal.last_sequence_num ??
+    lastSequenceNum
+  );
+  if (Number.isFinite(snapshotSequence) && snapshotSequence > lastSequenceNum) {
+    lastSequenceNum = snapshotSequence;
+  }
+  useRuntimeStore.getState().setTelemetry({
+    lastSequenceNum: lastSequenceNum,
+    runtimeIntegrity: (journal.integrity_status as string | undefined) || (journal.last_event_hash ? 'hash-chain' : 'unverified'),
+  });
+}
+
+async function ingestSnapshotMissedEvents(payload: any) {
+  const missed = Array.isArray(payload.missed_events) ? payload.missed_events : [];
+  for (const raw of missed.sort((a: any, b: any) => (a.sequence_num ?? 0) - (b.sequence_num ?? 0))) {
+    const missedEvent = validateEvent(raw);
+    if (!missedEvent) continue;
+    await acceptRuntimeEvent(missedEvent, {
+      allowHistoricalDispatch: true,
+      ingestOnly: true,
+      suppressGapLog: true,
+    });
+  }
+  return missed.length;
 }
 
 // ─── RECONNECTION LOGIC ───────────────────────────────────────────
@@ -241,59 +295,23 @@ function registerEventHandlers() {
       getRuntimeStore().addLog({ level: 'ERR', message: `Protocol mismatch! Server: ${payload.protocol_version}, Client: ${PROTOCOL_VERSION}`, color: 'text-danger' });
     }
     if (payload.session_id) resetBridgeProjectionForSession(payload.session_id);
-    const onlineState = payload.runtime?.fsm_state || payload.current_state;
-    if (onlineState) {
-      getRuntimeStore().syncBackendSnapshot(onlineState as RuntimeState, { reason: 'system online' });
-    }
-    getRuntimeStore().syncCommandSnapshot(payload.runtime?.commands);
-    getRuntimeStore().syncActionTimelineSnapshot(payload.runtime?.action_timeline);
-    if (payload.runtime?.app_registry) {
-      getRuntimeStore().setAppRegistry(payload.runtime.app_registry as AppRegistrySnapshot);
-    }
-    if (payload.runtime?.tool_registry) {
-      getRuntimeStore().setToolRegistry(payload.runtime.tool_registry as ToolRegistrySnapshot);
-    }
-    if (payload.runtime?.maintenance_scan) {
-      getRuntimeStore().setMaintenanceScan(payload.runtime.maintenance_scan as Record<string, unknown>);
-    }
+    applyRuntimeSnapshotPayload(payload, 'system online');
     getRuntimeStore().addLog({ level: 'SYS', message: `Aegis Runtime Protocol v${PROTOCOL_VERSION} Online. Session: ${payload.session_id || 'unknown'}`, color: 'text-accent' });
   });
 
   on('SNAPSHOT_CREATED', (event) => {
+    void (async () => {
     const payload = event.payload as any;
     const journal = payload.journal || {};
     if (payload.session_id) resetBridgeProjectionForSession(payload.session_id);
-    getRuntimeStore().setTelemetry({
-      lastSequenceNum: journal.last_sequence_num ?? lastSequenceNum,
-      runtimeIntegrity: (journal.integrity_status as string | undefined) || (journal.last_event_hash ? 'hash-chain' : 'unverified'),
+    const missedCount = await ingestSnapshotMissedEvents(payload);
+    applyRuntimeSnapshotPayload(payload, 'snapshot sync');
+    applySnapshotTruthTelemetry(event, payload);
+    getRuntimeStore().addLog({
+      level: 'SYS',
+      message: `Runtime snapshot synced (${journal.event_count ?? 0} events, ${payload.missed_event_count ?? missedCount} replayed).`,
+      color: 'text-accent',
     });
-    const snapshotState = payload.runtime?.fsm_state || payload.current_state;
-    if (snapshotState) {
-      getRuntimeStore().syncBackendSnapshot(snapshotState as RuntimeState, { reason: 'snapshot sync' });
-    }
-    getRuntimeStore().syncCommandSnapshot(payload.runtime?.commands);
-    getRuntimeStore().syncActionTimelineSnapshot(payload.runtime?.action_timeline);
-    if (payload.runtime?.app_registry) {
-      getRuntimeStore().setAppRegistry(payload.runtime.app_registry as AppRegistrySnapshot);
-    }
-    if (payload.runtime?.tool_registry) {
-      getRuntimeStore().setToolRegistry(payload.runtime.tool_registry as ToolRegistrySnapshot);
-    }
-    if (payload.runtime?.maintenance_scan) {
-      getRuntimeStore().setMaintenanceScan(payload.runtime.maintenance_scan as Record<string, unknown>);
-    }
-    getRuntimeStore().addLog({ level: 'SYS', message: `Runtime snapshot synced (${journal.event_count ?? 0} events).`, color: 'text-accent' });
-
-    const missed = Array.isArray(payload.missed_events) ? payload.missed_events : [];
-    void (async () => {
-      for (const raw of missed.sort((a: any, b: any) => (a.sequence_num ?? 0) - (b.sequence_num ?? 0))) {
-        const missedEvent = validateEvent(raw);
-        if (!missedEvent) continue;
-        await acceptRuntimeEvent(missedEvent, {
-          allowHistoricalDispatch: true,
-          suppressGapLog: true,
-        });
-      }
     })();
   });
 
@@ -429,6 +447,27 @@ function registerEventHandlers() {
       executionEvidence: payload.execution_evidence as ExecutionEvidence | undefined,
     });
     getRuntimeStore().addLog({ level: 'ERR', message: `Action Failed: ${payload.error}`, color: 'text-danger' });
+  });
+
+  on('VERIFICATION_PASSED', (event) => {
+    const payload = event.payload as any;
+    if (payload.action_id && payload.execution_evidence) {
+      getRuntimeStore().updateStep(payload.action_id, {
+        executionEvidence: payload.execution_evidence as ExecutionEvidence,
+      });
+    }
+    getRuntimeStore().addLog({ level: 'OK', message: `Verification passed: ${payload.verifier || payload.method || 'evidence'}`, color: 'text-success' });
+  });
+
+  on('VERIFICATION_FAILED', (event) => {
+    const payload = event.payload as any;
+    if (payload.action_id && payload.execution_evidence) {
+      getRuntimeStore().updateStep(payload.action_id, {
+        status: RuntimeStatus.ERROR,
+        executionEvidence: payload.execution_evidence as ExecutionEvidence,
+      });
+    }
+    getRuntimeStore().addLog({ level: 'WARN', message: `Verification failed: ${payload.details || payload.verification_state || 'unverified'}`, color: 'text-warning' });
   });
 
   // ── RECOVERY ─────────────────────────────────────────────────────

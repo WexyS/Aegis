@@ -172,7 +172,9 @@ export const ExecutionEvidencePayload = z.object({
   target: z.string().nullable().optional(),
   target_type: z.string().default('unknown'),
   method: z.string().default('unknown'),
+  verifier: z.string().nullable().optional(),
   verification_state: z.string().default('unverified'),
+  verification_reason: z.string().nullable().optional(),
   started_at_ms: z.number().optional(),
   completed_at_ms: z.number().optional(),
   launch_target: z.string().nullable().optional(),
@@ -181,6 +183,10 @@ export const ExecutionEvidencePayload = z.object({
   pids: z.array(z.number()).default([]),
   process_alive: z.boolean().nullable().optional(),
   window: z.record(z.string(), z.unknown()).nullable().optional(),
+  expected: z.record(z.string(), z.unknown()).default({}),
+  observed: z.record(z.string(), z.unknown()).default({}),
+  verification_checks: z.array(z.record(z.string(), z.unknown())).default([]),
+  matching_windows: z.array(z.record(z.string(), z.unknown())).default([]),
   retry_count: z.number().int().nonnegative().default(0),
   recovery_triggered: z.boolean().default(false),
   attempts: z.array(z.record(z.string(), z.unknown())).default([]),
@@ -304,7 +310,16 @@ export const SnapshotPayload = z.object({
   runtime: RuntimeSnapshotPayload.optional(),
   current_state: RuntimeStateEnum.optional(),
   snapshot_since_sequence: z.number().int().nonnegative().optional(),
+  missed_event_count: z.number().int().nonnegative().optional(),
   missed_events: z.array(z.unknown()).default([]),
+  truth_sync: z.object({
+    source_of_truth: z.literal('backend_snapshot_protocol_event_journal'),
+    snapshot_sequence_num: z.number().int().nonnegative(),
+    journal_tail_sequence_num: z.number().int().nonnegative(),
+    client_last_sequence_num: z.number().int().nonnegative(),
+    missed_event_count: z.number().int().nonnegative(),
+    replay_required: z.boolean(),
+  }).optional(),
 });
 
 // ─── STATE CHANGE ──────────────────────────────────────────────────
@@ -375,9 +390,14 @@ export const IntentParsedPayload = z.object({
 });
 
 export const VerificationPayload = z.object({
+  action_id: z.string().optional(),
   passed: z.boolean().optional(),
   method: z.string().optional(),
   details: z.string().optional(),
+  verification_state: z.string().optional(),
+  verifier: z.string().nullable().optional(),
+  error: z.string().optional(),
+  execution_evidence: ExecutionEvidencePayload.optional(),
 });
 
 export const TaskFinishedPayload = z.object({

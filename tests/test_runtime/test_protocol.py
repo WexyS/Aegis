@@ -111,6 +111,8 @@ def test_frontend_payload_registry_covers_authoritative_runtime_events() -> None
         "ACTION_STARTED",
         "ACTION_COMPLETED",
         "ACTION_FAILED",
+        "VERIFICATION_PASSED",
+        "VERIFICATION_FAILED",
         "STATE_CHANGE",
         "TELEMETRY_UPDATE",
         "TASK_FINISHED",
@@ -141,6 +143,10 @@ def test_frontend_action_completed_payload_carries_execution_evidence_to_timelin
     assert "step.executionEvidence" in timeline_source
     assert "Retries" in timeline_source
     assert "Fallback" in timeline_source
+    assert "verification_checks: z.array(z.record(z.string(), z.unknown())).default([])" in protocol_source
+    assert "verification_reason?: string | null" in runtime_types_source
+    assert "checkLabel(check)" in timeline_source
+    assert "formatObserved(check.observed)" in timeline_source
 
 
 def test_frontend_action_failed_payload_carries_execution_evidence_to_timeline() -> None:
@@ -151,3 +157,34 @@ def test_frontend_action_failed_payload_carries_execution_evidence_to_timeline()
     assert action_failed_match, "ActionFailedPayload not found"
     assert "execution_evidence: ExecutionEvidencePayload.optional()" in action_failed_match.group(1)
     assert "executionEvidence: payload.execution_evidence" in socket_source
+
+
+def test_frontend_verification_events_are_evidence_backed() -> None:
+    protocol_source = FRONTEND_PROTOCOL.read_text(encoding="utf-8")
+    socket_source = FRONTEND_SOCKET.read_text(encoding="utf-8")
+
+    verification_match = re.search(r"VerificationPayload\s*=\s*z\.object\(\{(.*?)\n\}\);", protocol_source, re.DOTALL)
+    assert verification_match, "VerificationPayload not found"
+    assert "action_id: z.string().optional()" in verification_match.group(1)
+    assert "execution_evidence: ExecutionEvidencePayload.optional()" in verification_match.group(1)
+    assert "on('VERIFICATION_PASSED'" in socket_source
+    assert "on('VERIFICATION_FAILED'" in socket_source
+    assert "executionEvidence: payload.execution_evidence" in socket_source
+
+
+def test_frontend_snapshot_truth_sync_uses_backend_snapshot_as_authority() -> None:
+    protocol_source = FRONTEND_PROTOCOL.read_text(encoding="utf-8")
+    socket_source = FRONTEND_SOCKET.read_text(encoding="utf-8")
+
+    assert "source_of_truth: z.literal('backend_snapshot_protocol_event_journal')" in protocol_source
+    assert "snapshot_sequence_num: z.number().int().nonnegative()" in protocol_source
+    assert "journal_tail_sequence_num: z.number().int().nonnegative()" in protocol_source
+    assert "missed_event_count: z.number().int().nonnegative().optional()" in protocol_source
+    assert "applyRuntimeSnapshotPayload(payload, 'system online')" in socket_source
+    assert "applyRuntimeSnapshotPayload(payload, 'snapshot sync')" in socket_source
+    assert "applySnapshotTruthTelemetry(event, payload)" in socket_source
+    assert "truthSync.snapshot_sequence_num" in socket_source
+    assert "ingestOnly?: boolean" in socket_source
+    assert "ingestOnly: true" in socket_source
+    assert "if (!options.ingestOnly)" in socket_source
+    assert "syncActionTimelineSnapshot(payload.runtime?.action_timeline)" in socket_source

@@ -109,6 +109,149 @@ class UnverifiedEvidenceExecutor:
         )
 
 
+def passed_check(name: str) -> dict:
+    return {
+        "check_name": name,
+        "expected": "present and passed",
+        "observed": "ok",
+        "passed": True,
+        "reason": "ok",
+    }
+
+
+def verified_desktop_checks(action: str) -> list[dict]:
+    if action == "open_app":
+        return [
+            passed_check("process_name_known"),
+            passed_check("single_matching_window"),
+            passed_check("process_alive"),
+            passed_check("window_manifested"),
+            passed_check("window_pid_matches_target_process"),
+        ]
+    if action == "focus_app":
+        return [
+            passed_check("process_name_known"),
+            passed_check("single_matching_window"),
+            passed_check("foreground_hwnd_present"),
+            passed_check("foreground_title_matches_target"),
+            passed_check("foreground_pid_matches_target_process"),
+            passed_check("foreground_window_matches_target"),
+        ]
+    if action == "close_app":
+        return [
+            passed_check("process_name_known"),
+            passed_check("process_not_alive"),
+        ]
+    return []
+
+
+class VerifiedDesktopExecutor:
+    async def execute(
+        self,
+        intent_result: IntentResult,
+        ctx: ExecutionContext,
+        cancellation_token=None,
+    ) -> ActionResult:
+        evidence = ExecutionEvidence(
+            action=intent_result.intent,
+            target=str(intent_result.params.get("app") or intent_result.intent),
+            target_type="application",
+            method="process_window_verifier",
+            verifier="process-window-verifier/2",
+            verification_state="verified",
+            started_at_ms=1,
+            completed_at_ms=2,
+            process_name="notepad.exe",
+            pids=[] if intent_result.intent == "close_app" else [4242],
+            process_alive=False if intent_result.intent == "close_app" else True,
+            verification_checks=verified_desktop_checks(intent_result.intent),
+        )
+        return ActionResult(
+            action=intent_result.intent,
+            params=intent_result.params,
+            status=ActionStatus.EXECUTED,
+            success=True,
+            output="verified",
+            metrics=ReliabilityMetrics(determinism_score=1.0),
+            proof={"execution_evidence": evidence.model_dump()},
+            execution_evidence=evidence,
+        )
+
+
+class CriticalCheckFailureExecutor:
+    async def execute(
+        self,
+        intent_result: IntentResult,
+        ctx: ExecutionContext,
+        cancellation_token=None,
+    ) -> ActionResult:
+        evidence = ExecutionEvidence(
+            action=intent_result.intent,
+            target=str(intent_result.params.get("app") or intent_result.intent),
+            target_type="application",
+            method="focus_window",
+            verification_state="verified",
+            started_at_ms=1,
+            completed_at_ms=2,
+            process_name="portal.exe",
+            pids=[4242],
+            verification_checks=[
+                {
+                    "check_name": "process_name_known",
+                    "expected": "configured process name",
+                    "observed": "portal.exe",
+                    "passed": True,
+                    "reason": "ok",
+                },
+                {
+                    "check_name": "single_matching_window",
+                    "expected": "one matching target window",
+                    "observed": 1,
+                    "passed": True,
+                    "reason": "ok",
+                },
+                {
+                    "check_name": "foreground_hwnd_present",
+                    "expected": "foreground HWND",
+                    "observed": 1001,
+                    "passed": True,
+                    "reason": "ok",
+                },
+                {
+                    "check_name": "foreground_title_matches_target",
+                    "expected": "target title",
+                    "observed": "Portal",
+                    "passed": True,
+                    "reason": "ok",
+                },
+                {
+                    "check_name": "foreground_pid_matches_target_process",
+                    "expected": {"pid": 4242},
+                    "observed": {"pid": 5151},
+                    "passed": False,
+                    "reason": "foreground PID does not match target process",
+                },
+                {
+                    "check_name": "foreground_window_matches_target",
+                    "expected": "target foreground window",
+                    "observed": "Portal",
+                    "passed": True,
+                    "reason": "ok",
+                },
+            ],
+        )
+        return ActionResult(
+            action=intent_result.intent,
+            params=intent_result.params,
+            status=ActionStatus.EXECUTED,
+            success=True,
+            output="focused but critical check failed",
+            metrics=ReliabilityMetrics(determinism_score=1.0),
+            proof={"execution_evidence": evidence.model_dump()},
+            execution_evidence=evidence,
+        )
+
+
 class FailedEvidenceExecutor:
     async def execute(
         self,
@@ -321,7 +464,10 @@ async def test_medium_risk_command_requests_approval_before_execution() -> None:
 
 @pytest.mark.asyncio
 async def test_approved_verified_medium_risk_command_resumes_and_executes() -> None:
-    orchestrator = build_orchestrator(intent_result("open_app", RiskLevel.MEDIUM, {"app": "notepad"}))
+    orchestrator = build_orchestrator(
+        intent_result("open_app", RiskLevel.MEDIUM, {"app": "notepad"}),
+        executor=VerifiedDesktopExecutor(),
+    )
     manager = get_approval_manager()
 
     pending = await orchestrator.process(CommandRequest(text="open notepad"))
@@ -350,7 +496,7 @@ async def test_approved_verified_medium_risk_command_resumes_and_executes() -> N
 
 
 @pytest.mark.asyncio
-async def test_unverified_execution_evidence_keeps_completed_command_unverified() -> None:
+async def test_unverified_execution_evidence_fails_process_window_action() -> None:
     orchestrator = build_orchestrator(
         intent_result("open_app", RiskLevel.MEDIUM, {"app": "portal"}),
         executor=UnverifiedEvidenceExecutor(),
@@ -371,9 +517,55 @@ async def test_unverified_execution_evidence_keeps_completed_command_unverified(
     ))
 
     snapshot = manager.snapshot()
-    assert response.status == CommandStatus.EXECUTED
+    assert response.status == CommandStatus.FAILED
     assert response.actions[0].execution_evidence is not None
-    assert snapshot["records"][-1]["status"] == CommandStatus.EXECUTED.value
+    assert response.actions[0].status == ActionStatus.FAILED
+    assert response.actions[0].execution_evidence.verification_state == "failed"
+    assert snapshot["records"][-1]["status"] == CommandStatus.FAILED.value
+    assert snapshot["records"][-1]["verification_state"] == "unverified"
+
+
+@pytest.mark.asyncio
+async def test_critical_check_failure_fails_before_action_completed(monkeypatch) -> None:
+    orchestrator = build_orchestrator(
+        intent_result("focus_app", RiskLevel.MEDIUM, {"app": "portal"}),
+        executor=CriticalCheckFailureExecutor(),
+    )
+    manager = get_approval_manager()
+    completed_payloads: list[dict] = []
+    failed_payloads: list[dict] = []
+
+    async def fake_emit_action_completed(**kwargs):
+        completed_payloads.append(kwargs)
+
+    async def fake_emit_action_failed(**kwargs):
+        failed_payloads.append(kwargs)
+
+    monkeypatch.setattr(orchestrator_module.ws_bridge, "emit_action_completed", fake_emit_action_completed)
+    monkeypatch.setattr(orchestrator_module.ws_bridge, "emit_action_failed", fake_emit_action_failed)
+
+    await orchestrator.process(CommandRequest(text="focus portal"))
+    command_id = manager.snapshot()["pending_approvals"][0]["command_id"]
+    approved = manager.approve(command_id)
+
+    response = await orchestrator.process(CommandRequest(
+        text=approved.text,
+        context={
+            "command_id": command_id,
+            "approval_granted": True,
+            "cancellation_token": manager.token_for(command_id),
+        },
+    ))
+
+    snapshot = manager.snapshot()
+    assert response.status == CommandStatus.FAILED
+    assert response.actions[0].execution_evidence is not None
+    assert response.actions[0].status == ActionStatus.FAILED
+    assert response.actions[0].execution_evidence.verification_state == "failed"
+    assert completed_payloads == []
+    assert failed_payloads
+    assert "Critical verifier check failed" in failed_payloads[0]["error"]
+    assert snapshot["records"][-1]["status"] == CommandStatus.FAILED.value
     assert snapshot["records"][-1]["verification_state"] == "unverified"
 
 
@@ -381,7 +573,7 @@ async def test_unverified_execution_evidence_keeps_completed_command_unverified(
 async def test_action_completed_protocol_event_receives_execution_evidence(monkeypatch) -> None:
     orchestrator = build_orchestrator(
         intent_result("open_app", RiskLevel.MEDIUM, {"app": "portal"}),
-        executor=UnverifiedEvidenceExecutor(),
+        executor=VerifiedDesktopExecutor(),
     )
     manager = get_approval_manager()
     completed_payloads: list[dict] = []
@@ -406,7 +598,7 @@ async def test_action_completed_protocol_event_receives_execution_evidence(monke
 
     assert response.status == CommandStatus.EXECUTED
     assert completed_payloads
-    assert completed_payloads[0]["execution_evidence"].verification_state == "unverified"
+    assert completed_payloads[0]["execution_evidence"].verification_state == "verified"
     assert completed_payloads[0]["execution_evidence"].target == "portal"
 
 
@@ -445,7 +637,10 @@ async def test_action_failed_protocol_event_receives_execution_evidence(monkeypa
 
 @pytest.mark.asyncio
 async def test_approved_focus_app_command_resumes_and_executes() -> None:
-    orchestrator = build_orchestrator(intent_result("focus_app", RiskLevel.MEDIUM, {"app": "notepad"}))
+    orchestrator = build_orchestrator(
+        intent_result("focus_app", RiskLevel.MEDIUM, {"app": "notepad"}),
+        executor=VerifiedDesktopExecutor(),
+    )
     manager = get_approval_manager()
 
     pending = await orchestrator.process(CommandRequest(text="focus notepad"))
@@ -464,7 +659,7 @@ async def test_approved_focus_app_command_resumes_and_executes() -> None:
     assert pending.status == CommandStatus.PENDING_APPROVAL
     assert response.status == CommandStatus.EXECUTED
     assert response.actions[0].action == "focus_app"
-    assert manager.snapshot()["records"][-1]["verification_state"] == "unverified"
+    assert manager.snapshot()["records"][-1]["verification_state"] == "verified"
 
 
 @pytest.mark.asyncio
@@ -522,7 +717,10 @@ async def test_missing_side_effect_proof_keeps_completed_command_unverified() ->
 
 @pytest.mark.asyncio
 async def test_approved_close_app_command_resumes_and_executes() -> None:
-    orchestrator = build_orchestrator(intent_result("close_app", RiskLevel.MEDIUM, {"app": "notepad"}))
+    orchestrator = build_orchestrator(
+        intent_result("close_app", RiskLevel.MEDIUM, {"app": "notepad"}),
+        executor=VerifiedDesktopExecutor(),
+    )
     manager = get_approval_manager()
 
     pending = await orchestrator.process(CommandRequest(text="close notepad"))

@@ -140,12 +140,23 @@ class TestMaintenanceEndpoint:
             data = r.json()
             assert data["read_only"] is True
             assert data["scan_version"] == "maintenance-scan/1"
+            assert data["summary"]["scan_version"] == "runtime-health/1"
+            assert data["summary"]["read_only"] is True
+            assert data["summary"]["source_of_truth"] == "backend_snapshot_protocol_event_journal"
             assert "event_journal" in data["checks"]
             assert "integrity_status" in data["checks"]["event_journal"]
             assert "historical_integrity_status" in data["checks"]["event_journal"]
-            assert data["checks"]["evidence_audit"]["scan_version"] == "evidence-audit/1"
+            assert data["checks"]["runtime_health"]["scan_version"] == "runtime-health/1"
+            assert data["checks"]["runtime_snapshot"]["scan_version"] == "runtime-snapshot/1"
+            assert data["checks"]["command_lifecycle"]["scan_version"] == "command-lifecycle/1"
+            assert data["checks"]["websocket"]["scan_version"] == "websocket-runtime/1"
+            assert data["checks"]["action_timeline"]["scan_version"] == "action-timeline-health/1"
+            assert data["checks"]["runtime_snapshot"]["sequence_aligned"] is True
+            assert data["checks"]["evidence_audit"]["scan_version"] == "evidence-audit/2"
             assert data["checks"]["evidence_audit"]["read_only"] is True
             assert "missing_evidence_count" in data["checks"]["evidence_audit"]
+            assert "critical_failure_count" in data["checks"]["evidence_audit"]
+            assert "check_fail_count" in data["checks"]["evidence_audit"]
             assert "app_registry" in data["checks"]
             assert data["checks"]["app_registry"]["scan_version"] == "app-registry/1"
             assert data["checks"]["app_registry"]["read_only"] is True

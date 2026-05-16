@@ -9,6 +9,7 @@ from datetime import datetime
 
 from aegis.core.commands import CancellationToken, get_approval_manager
 from aegis.core.constants import ActionStatus, CommandStatus, EventType, ExecutionMode, RiskLevel
+from aegis.core.evidence_audit import audit_action_evidence
 from aegis.core.schemas import (
     ActionResult,
     CommandRequest,
@@ -56,6 +57,7 @@ VERIFIED_TOOLS = {
     "general_chat",
 }
 SIDE_EFFECTING_TOOLS = {"click", "type", "write_file", "create_file", "edit_file", "git_action", "open_url", "open_app", "close_app", "focus_app"}
+PROCESS_WINDOW_EVIDENCE_TOOLS = {"open_app", "close_app", "focus_app"}
 SIDE_EFFECT_PROOF_KEYS = {
     "browser_evidence",
     "execution_evidence",
@@ -91,7 +93,85 @@ def _unverified_side_effects(plan: list[IntentResult]) -> list[str]:
     return unverified
 
 
+def _action_audit_event(action: ActionResult, action_id: str) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "action_id": action_id,
+        "success": action.success,
+        "latency_ms": action.metrics.execution_time_ms,
+    }
+    if action.success:
+        event_type = ws_bridge.ProtocolEventType.ACTION_COMPLETED.value
+    else:
+        event_type = ws_bridge.ProtocolEventType.ACTION_FAILED.value
+        payload["error"] = action.output
+    if action.execution_evidence is not None:
+        payload["execution_evidence"] = action.execution_evidence.model_dump(mode="json")
+    return {
+        "type": event_type,
+        "payload": payload,
+        "timestamp": 0,
+        "sequence_num": 0,
+        "trace_id": "",
+        "session_id": "",
+    }
+
+
+def _audit_process_window_actions(actions: list[ActionResult]) -> dict[str, Any] | None:
+    events = [
+        _action_audit_event(action, f"completion-{index}")
+        for index, action in enumerate(actions)
+        if action.action in PROCESS_WINDOW_EVIDENCE_TOOLS
+    ]
+    if not events:
+        return None
+    return audit_action_evidence(events, limit=len(events))
+
+
+def _audit_process_window_action(action: ActionResult, action_id: str) -> dict[str, Any] | None:
+    if action.action not in PROCESS_WINDOW_EVIDENCE_TOOLS:
+        return None
+    return audit_action_evidence([_action_audit_event(action, action_id)], limit=1)
+
+
+def _evidence_gate_reason(report: dict[str, Any]) -> str:
+    critical_failures = report.get("critical_failures")
+    if isinstance(critical_failures, list) and critical_failures:
+        first = critical_failures[0]
+        if isinstance(first, dict):
+            return f"Critical verifier check failed: {first.get('check_name') or 'unknown'}"
+    if int(report.get("missing_evidence_count") or 0) > 0:
+        return "Missing required process/window execution evidence"
+    if int(report.get("failed_evidence_count") or 0) > 0:
+        return "Process/window verifier reported failed evidence"
+    if int(report.get("unverified_evidence_count") or 0) > 0:
+        return "Process/window verifier evidence is unverified"
+    if int(report.get("check_unknown_count") or 0) > 0:
+        return "Process/window verifier has unknown check results"
+    return "Process/window evidence audit did not pass"
+
+
+def _apply_process_window_evidence_gate(action: ActionResult, action_id: str) -> dict[str, Any] | None:
+    report = _audit_process_window_action(action, action_id)
+    if not report or report.get("status") == "ok":
+        return report
+
+    reason = _evidence_gate_reason(report)
+    action.success = False
+    action.status = ActionStatus.FAILED
+    action.output = reason
+    action.recovery_hint = reason
+    if action.execution_evidence is not None:
+        action.execution_evidence.verification_state = "failed" if report.get("status") == "fail" else "unverified"
+        action.execution_evidence.verification_reason = reason
+        if reason not in action.execution_evidence.warnings:
+            action.execution_evidence.warnings.append(reason)
+    return report
+
+
 def _has_side_effect_proof(action: ActionResult) -> bool:
+    if action.action in PROCESS_WINDOW_EVIDENCE_TOOLS:
+        report = _audit_process_window_action(action, action.action)
+        return bool(report and report.get("status") == "ok")
     if action.execution_evidence:
         return action.execution_evidence.verification_state == "verified"
     return any(key in action.proof for key in SIDE_EFFECT_PROOF_KEYS)
@@ -104,8 +184,13 @@ def _completion_verification_state(
 ) -> str:
     if final_status != CommandStatus.EXECUTED:
         return "unverified"
+    audit_report = _audit_process_window_actions(actions)
+    if audit_report and audit_report.get("status") != "ok":
+        return "unverified"
     for action in actions:
         evidence = action.execution_evidence
+        if action.action in PROCESS_WINDOW_EVIDENCE_TOOLS:
+            continue
         if evidence and evidence.verification_state != "verified":
             return "unverified"
         if action.action in SIDE_EFFECTING_TOOLS and not _has_side_effect_proof(action):
@@ -479,6 +564,7 @@ class Orchestrator:
                 if action_result.semantic_score < 0.5:
                     action_result.success = False
                     action_result.recovery_hint = "Semantic validation failed (e.g., wrong window title or content)."
+                _apply_process_window_evidence_gate(action_result, action_id)
                 
                 all_actions.append(action_result)
 

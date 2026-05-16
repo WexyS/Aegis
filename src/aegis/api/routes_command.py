@@ -194,7 +194,9 @@ async def cancel_command(command_id: str, body: dict[str, Any] | None = Body(def
 
 @router.get("/maintenance/scan")
 async def maintenance_scan() -> dict[str, Any]:
-    return run_read_only_maintenance_scan()
+    from aegis.api import ws_bridge
+
+    return run_read_only_maintenance_scan(**ws_bridge.maintenance_scan_context())
 
 
 @router.get("/environment/diagnostics")

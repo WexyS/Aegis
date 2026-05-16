@@ -175,3 +175,9 @@ def get_runtime_authority(session_id: str = "session-uninitialized", queue_capac
                 current = _instance.snapshot()
                 _instance.set_queue(depth=current.get("queue_depth", 0), capacity=queue_capacity)
         return _instance
+
+
+def peek_runtime_authority() -> RuntimeAuthority | None:
+    """Return the current runtime authority without creating or reconfiguring it."""
+    with _lock:
+        return _instance

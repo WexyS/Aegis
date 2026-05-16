@@ -75,6 +75,18 @@ class QueuedCommand:
     command_id: str | None = None
     approval_granted: bool = False
 
+
+def maintenance_scan_context() -> dict[str, Any]:
+    journal = get_runtime_journal()
+    _, runtime_snapshot = _build_runtime_snapshot(journal)
+    return {
+        "runtime_snapshot": runtime_snapshot,
+        "session_id": _session_id,
+        "websocket_clients": len(_connected_clients),
+        "queue_depth": _command_queue.qsize(),
+        "queue_capacity": _command_queue_capacity,
+    }
+
 # ─── LIFECYCLE ──────────────────────────────────────────────────────
 
 @sio.event
@@ -233,7 +245,7 @@ async def maintenance_scan(sid: str, data: dict | None = None):
         source=Component.SYSTEM,
         runtime_phase=get_runtime_authority(_session_id).current_state(),
     )
-    report = await asyncio.to_thread(run_read_only_maintenance_scan)
+    report = await asyncio.to_thread(run_read_only_maintenance_scan, **maintenance_scan_context())
     await emit_event(
         ProtocolEventType.MAINTENANCE_SCAN_COMPLETED,
         {"report": report},
@@ -470,6 +482,7 @@ async def emit_approval_required(command: dict[str, Any], *, trace_id: str | Non
 async def _emit_snapshot(to: str, last_sequence_num: int = 0):
     journal = get_runtime_journal()
     journal_snapshot, runtime_snapshot = _build_runtime_snapshot(journal)
+    missed_events = journal.events_after(last_sequence_num) if last_sequence_num > 0 else []
     snapshot = create_event(
         ProtocolEventType.SNAPSHOT_CREATED,
         payload={
@@ -478,12 +491,21 @@ async def _emit_snapshot(to: str, last_sequence_num: int = 0):
             "runtime": runtime_snapshot,
             "current_state": runtime_snapshot["fsm_state"],
             "snapshot_since_sequence": last_sequence_num,
-            "missed_events": journal.events_after(last_sequence_num) if last_sequence_num > 0 else [],
+            "missed_events": missed_events,
+            "missed_event_count": len(missed_events),
         },
         session_id=_session_id,
         runtime_phase=runtime_snapshot["fsm_state"],
         source=Component.SYSTEM,
     )
+    snapshot.payload["truth_sync"] = {
+        "source_of_truth": "backend_snapshot_protocol_event_journal",
+        "snapshot_sequence_num": snapshot.sequence_num,
+        "journal_tail_sequence_num": int(journal_snapshot.get("last_sequence_num", 0) or 0),
+        "client_last_sequence_num": int(last_sequence_num or 0),
+        "missed_event_count": len(missed_events),
+        "replay_required": bool(missed_events),
+    }
     await asyncio.to_thread(journal.append, snapshot)
     await sio.emit(ProtocolEventType.SNAPSHOT_CREATED.value, snapshot.to_dict(), to=to)
 
@@ -565,6 +587,14 @@ async def emit_action_completed(
         runtime_phase=RuntimeState.VERIFYING,
         source=Component.EXECUTOR,
     )
+    if evidence_payload is not None:
+        await emit_verification_result(
+            action_id=action_id,
+            trace_id=trace_id,
+            passed=verification_passed,
+            execution_evidence=evidence_payload,
+            details=verification["details"],
+        )
 
 
 async def emit_action_failed(
@@ -604,6 +634,48 @@ async def emit_action_failed(
         runtime_phase=RuntimeState.RECOVERING if is_recoverable else RuntimeState.FAILED,
         source=Component.EXECUTOR,
         severity=Severity.ERROR,
+    )
+    if evidence_payload is not None:
+        await emit_verification_result(
+            action_id=action_id,
+            trace_id=trace_id,
+            passed=False,
+            execution_evidence=evidence_payload,
+            details=verification["details"],
+            error=error,
+        )
+
+
+async def emit_verification_result(
+    *,
+    action_id: str,
+    trace_id: str,
+    passed: bool,
+    execution_evidence: dict[str, Any],
+    details: str | None = None,
+    error: str | None = None,
+):
+    """Emit a journal-backed verification event derived from real execution evidence."""
+    event_type = ProtocolEventType.VERIFICATION_PASSED if passed else ProtocolEventType.VERIFICATION_FAILED
+    payload: Dict[str, Any] = {
+        "action_id": action_id,
+        "passed": passed,
+        "method": execution_evidence.get("method"),
+        "details": details or execution_evidence.get("verification_reason") or execution_evidence.get("verification_state"),
+        "verification_state": execution_evidence.get("verification_state", "unverified"),
+        "verifier": execution_evidence.get("verifier"),
+        "execution_evidence": execution_evidence,
+    }
+    if error:
+        payload["error"] = error
+
+    await emit_event(
+        event_type,
+        payload,
+        trace_id=trace_id,
+        runtime_phase=RuntimeState.VERIFYING if passed else RuntimeState.RECOVERING,
+        source=Component.VALIDATOR,
+        severity=Severity.INFO if passed else Severity.WARNING,
     )
 
 
