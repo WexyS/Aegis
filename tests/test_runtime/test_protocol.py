@@ -188,3 +188,13 @@ def test_frontend_snapshot_truth_sync_uses_backend_snapshot_as_authority() -> No
     assert "ingestOnly: true" in socket_source
     assert "if (!options.ingestOnly)" in socket_source
     assert "syncActionTimelineSnapshot(payload.runtime?.action_timeline)" in socket_source
+
+
+def test_frontend_rejects_non_protocol_events_without_runtime_projection() -> None:
+    socket_source = FRONTEND_SOCKET.read_text(encoding="utf-8")
+
+    assert "quarantineProtocolViolation(eventName, data)" in socket_source
+    assert "Dropped non-protocol socket event" in socket_source
+    assert "function handleLegacyEvent" not in socket_source
+    assert "runtimeStore.transitionTo" not in socket_source
+    assert "runtimeStore.addStep({" not in socket_source

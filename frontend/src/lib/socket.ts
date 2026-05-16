@@ -627,9 +627,7 @@ export async function connectRuntime() {
       lastServerTime = event.timestamp;
       await acceptRuntimeEvent(event);
     } else {
-      // Fallback: try to handle raw events from legacy backend
-      // This enables gradual migration
-      handleLegacyEvent(eventName, data);
+      quarantineProtocolViolation(eventName, data);
     }
   });
 
@@ -691,51 +689,14 @@ export function runMaintenanceScan() {
   }
 }
 
-// ─── LEGACY COMPATIBILITY ──────────────────────────────────────────
-// Handles raw events from the existing backend that don't yet
-// conform to the formal protocol envelope.
-function handleLegacyEvent(eventName: string, data: any) {
-  const runtimeStore = useRuntimeStore.getState();
-  const chatStore = useChatStore.getState();
-
-  switch (eventName) {
-    case 'TOKEN_START':
-      chatStore.addMessage({ id: data.messageId, role: 'assistant', isComplete: false });
-      runtimeStore.transitionTo(RuntimeState.THINKING);
-      break;
-    case 'TOKEN_CHUNK':
-      if (data.messageId && data.sequenceId !== undefined) {
-        chatStore.handleStreamChunk(data);
-      }
-      break;
-    case 'TOKEN_END':
-      if (data.messageId) {
-        chatStore.finalizeMessage(data.messageId);
-        runtimeStore.transitionTo(RuntimeState.EXECUTING);
-      }
-      break;
-    case 'ACTION_STARTED':
-      runtimeStore.addStep({
-        ...data,
-        status: RuntimeStatus.ACTIVE,
-        timestamp: new Date().toLocaleTimeString(),
-      });
-      runtimeStore.transitionTo(RuntimeState.EXECUTING);
-      break;
-    case 'ACTION_COMPLETED':
-      runtimeStore.updateStep(data.id || data.action_id, {
-        status: RuntimeStatus.SUCCESS,
-      });
-      runtimeStore.transitionTo(RuntimeState.VERIFYING);
-      break;
-    case 'RECOVERY_TRIGGERED':
-      runtimeStore.transitionTo(RuntimeState.RECOVERING, { reason: data.reason });
-      break;
-    case 'TASK_FINISHED':
-      runtimeStore.transitionTo(RuntimeState.COMPLETED);
-      setTimeout(() => runtimeStore.transitionTo(RuntimeState.IDLE), 5000);
-      break;
-    default:
-      console.debug(`[BRIDGE/LEGACY] Unhandled: ${eventName}`, data);
-  }
+// ─── PROTOCOL QUARANTINE ──────────────────────────────────────────
+// Non-protocol socket payloads are quarantined. The UI must not infer runtime
+// state from legacy/raw events.
+function quarantineProtocolViolation(eventName: string, data: unknown) {
+  console.warn(`[BRIDGE/PROTOCOL] Dropped non-protocol event: ${eventName}`, data);
+  useRuntimeStore.getState().addLog({
+    level: 'WARN',
+    message: `Dropped non-protocol socket event: ${eventName}`,
+    color: 'text-warning',
+  });
 }
