@@ -122,6 +122,11 @@ The current maintenance path is read-only. It reports runtime health from backen
 - app registry health
 - tool registry health
 - environment checks
+- documentation checks
+
+Maintenance scan recommendations are productized as structured backend findings.
+Every finding carries a category, severity, source, reason, and concrete evidence.
+The UI only renders these backend findings; it does not infer maintenance status or create optimistic recommendations.
 
 Future maintenance actions should remain approval-gated and evidence-backed.
 

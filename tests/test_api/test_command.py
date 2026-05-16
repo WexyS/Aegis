@@ -140,12 +140,20 @@ class TestMaintenanceEndpoint:
             data = r.json()
             assert data["read_only"] is True
             assert data["scan_version"] == "maintenance-scan/1"
+            assert data["finding_version"] == "maintenance-finding/1"
             assert data["summary"]["scan_version"] == "runtime-health/1"
             assert data["summary"]["read_only"] is True
             assert data["summary"]["source_of_truth"] == "backend_snapshot_protocol_event_journal"
+            assert isinstance(data["findings"], list)
+            assert data["recommendations"] == data["findings"]
+            assert "categories" in data
             assert "event_journal" in data["checks"]
             assert "integrity_status" in data["checks"]["event_journal"]
             assert "historical_integrity_status" in data["checks"]["event_journal"]
+            assert data["checks"]["finding_summary"]["scan_version"] == "maintenance-finding-summary/1"
+            assert data["checks"]["read_only_contract"]["scan_version"] == "maintenance-read-only-contract/1"
+            assert data["checks"]["read_only_contract"]["observed_mutations"] == []
+            assert data["checks"]["documentation"]["scan_version"] == "documentation-check/1"
             assert data["checks"]["runtime_health"]["scan_version"] == "runtime-health/1"
             assert data["checks"]["runtime_snapshot"]["scan_version"] == "runtime-snapshot/1"
             assert data["checks"]["command_lifecycle"]["scan_version"] == "command-lifecycle/1"

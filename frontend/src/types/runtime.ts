@@ -217,6 +217,17 @@ export interface EnvironmentDiagnostics {
   recommendations: string[];
 }
 
+export interface MaintenanceFinding {
+  finding_id: string;
+  category: 'telemetry' | 'runtime' | 'config' | 'dependency' | 'security' | 'test' | 'documentation' | string;
+  severity: 'info' | 'warning' | 'fail' | string;
+  source: string;
+  reason: string;
+  evidence: Record<string, unknown>;
+  recommendation: string;
+  read_only: boolean;
+}
+
 export interface EvidenceAudit {
   scan_version: string;
   read_only: boolean;
@@ -250,6 +261,8 @@ export interface RuntimeHealth {
   source_of_truth: string;
   component_statuses: Record<string, string>;
   attention: string[];
+  finding_count?: number;
+  finding_severity_counts?: Record<string, number>;
 }
 
 export interface CommandLifecycleDiagnostics {

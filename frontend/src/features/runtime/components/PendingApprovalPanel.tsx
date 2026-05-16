@@ -11,6 +11,7 @@ import {
   CommandRecord,
   EnvironmentDiagnostics,
   EvidenceAudit,
+  MaintenanceFinding,
   RuntimeHealth,
   RuntimeSnapshotDiagnostics,
   WebSocketDiagnostics,
@@ -27,6 +28,7 @@ export const PendingApprovalPanel = () => {
   const actionTimeline = getActionTimelineDiagnostics(lastMaintenanceScan);
   const environment = getEnvironmentDiagnostics(lastMaintenanceScan);
   const evidenceAudit = getEvidenceAudit(lastMaintenanceScan);
+  const findings = getMaintenanceFindings(lastMaintenanceScan);
 
   return (
     <section className="space-y-4">
@@ -81,6 +83,7 @@ export const PendingApprovalPanel = () => {
             <span>{lastMaintenanceScan.read_only === true ? 'READ ONLY' : 'UNKNOWN'}</span>
           </div>
           {runtimeHealth && <RuntimeHealthSummary health={runtimeHealth} />}
+          {findings.length > 0 && <MaintenanceFindings findings={findings} />}
           {(commandLifecycle || runtimeSnapshot || websocket || actionTimeline) && (
             <RuntimeTruthSummary
               commandLifecycle={commandLifecycle}
@@ -100,6 +103,7 @@ export const PendingApprovalPanel = () => {
 const RuntimeHealthSummary = ({ health }: { health: RuntimeHealth }) => {
   const statusTone = health.status === 'ok' ? 'text-success' : health.status === 'fail' ? 'text-danger' : 'text-warning';
   const attention = Array.isArray(health.attention) ? health.attention : [];
+  const findingCount = Number(health.finding_count ?? 0);
   return (
     <div className="mt-3 border-t border-white/10 pt-3">
       <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest">
@@ -114,9 +118,39 @@ const RuntimeHealthSummary = ({ health }: { health: RuntimeHealth }) => {
       {attention.length > 0 && (
         <p className="mt-2 truncate text-[9px] font-mono text-warning/85">{attention.join(', ')}</p>
       )}
+      {findingCount > 0 && (
+        <p className="mt-2 text-[9px] font-mono text-foreground/45">{findingCount} backend findings</p>
+      )}
     </div>
   );
 };
+
+const MaintenanceFindings = ({ findings }: { findings: MaintenanceFinding[] }) => (
+  <div className="mt-3 border-t border-white/10 pt-3">
+    <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest">
+      <span className="text-foreground/40">Findings</span>
+      <span className="text-foreground/45">{findings.length}</span>
+    </div>
+    <div className="mt-2 space-y-1.5">
+      {findings.slice(0, 3).map((finding) => (
+        <div key={finding.finding_id} className="rounded-md border border-white/10 bg-white/[0.02] px-2 py-1.5">
+          <div className="flex items-center justify-between gap-2 text-[9px] font-mono">
+            <span className="truncate text-foreground/45">{finding.category}</span>
+            <span className={findingSeverityTone(finding.severity)}>{finding.severity}</span>
+          </div>
+          <p className="mt-1 line-clamp-2 text-[9px] font-mono leading-relaxed text-foreground/65">{finding.reason}</p>
+          <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">{finding.source}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+function findingSeverityTone(severity: string): string {
+  if (severity === 'fail') return 'text-danger';
+  if (severity === 'warning') return 'text-warning';
+  return 'text-foreground/45';
+}
 
 const RuntimeTruthSummary = ({
   commandLifecycle,
@@ -316,4 +350,20 @@ function getEvidenceAudit(report: Record<string, unknown> | null): EvidenceAudit
   const audit = evidence as Partial<EvidenceAudit>;
   if (audit.scan_version !== 'evidence-audit/1' && audit.scan_version !== 'evidence-audit/2') return null;
   return audit as EvidenceAudit;
+}
+
+function getMaintenanceFindings(report: Record<string, unknown> | null): MaintenanceFinding[] {
+  const findings = report?.findings;
+  if (!Array.isArray(findings)) return [];
+  return findings.filter((finding): finding is MaintenanceFinding => (
+    Boolean(finding)
+    && typeof finding === 'object'
+    && typeof (finding as Partial<MaintenanceFinding>).finding_id === 'string'
+    && typeof (finding as Partial<MaintenanceFinding>).category === 'string'
+    && typeof (finding as Partial<MaintenanceFinding>).severity === 'string'
+    && typeof (finding as Partial<MaintenanceFinding>).source === 'string'
+    && typeof (finding as Partial<MaintenanceFinding>).reason === 'string'
+    && typeof (finding as Partial<MaintenanceFinding>).recommendation === 'string'
+    && (finding as Partial<MaintenanceFinding>).read_only === true
+  ));
 }
