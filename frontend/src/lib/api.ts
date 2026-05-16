@@ -1,6 +1,10 @@
 import { AppRegistrySnapshot, ToolRegistrySnapshot } from '@/types/runtime';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:8400';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:8400';
+
+export function getVisionStreamUrl(): string {
+  return new URL('/vision/stream', API_URL).toString();
+}
 
 export async function fetchAppRegistry(refresh = false): Promise<AppRegistrySnapshot> {
   const url = new URL('/apps/registry', API_URL);

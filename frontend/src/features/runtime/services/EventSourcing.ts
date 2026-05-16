@@ -71,9 +71,8 @@ class EventSourcingService {
       lastActive: Date.now(),
       fsmState: RuntimeState.IDLE,
       telemetry: {
-        determinismScore: 0.0,
         recoveryBudget: 1.0,
-        vramUsage: '0.0 GB',
+        vramUsage: 'Unavailable',
         activeApp: 'None',
         activeModel: 'Unavailable',
       },

@@ -9,10 +9,11 @@ export const Header = () => {
     activeModel,
     connectionState = 'disconnected',
     currentState,
-    lastSequenceNum = 0,
+    lastSequenceNum,
     runtimeIntegrity = 'unverified',
   } = useRuntimeStore();
   const isConnected = connectionState === 'connected';
+  const sequenceLabel = lastSequenceNum === undefined ? 'Unavailable' : lastSequenceNum;
 
   return (
     <header className="h-14 border-b border-white/10 flex items-center justify-between px-5 bg-background/85 backdrop-blur-md z-40">
@@ -24,7 +25,7 @@ export const Header = () => {
         <div className="hidden md:flex items-center gap-2 text-[10px] font-mono text-foreground/45">
           <span>FSM {currentState}</span>
           <span className="text-foreground/20">/</span>
-          <span>SEQ {lastSequenceNum}</span>
+          <span>SEQ {sequenceLabel}</span>
           <span className="text-foreground/20">/</span>
           <span>{runtimeIntegrity}</span>
         </div>

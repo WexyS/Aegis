@@ -18,6 +18,7 @@ import { AppRegistryPanel } from '@/features/runtime/components/AppRegistryPanel
 import { ToolRegistryPanel } from '@/features/runtime/components/ToolRegistryPanel';
 
 import { connectRuntime, disconnectRuntime } from '@/lib/socket';
+import { getVisionStreamUrl } from '@/lib/api';
 
 export default function AegisDashboard() {
   const { activeTab } = useUIStore();
@@ -25,12 +26,18 @@ export default function AegisDashboard() {
     determinismScore,
     recoveryBudget,
     activeApp,
-    memoryPercent = 0,
-    wsRttMs = 0,
+    memoryPercent,
+    wsRttMs,
     runtimeIntegrity = 'unverified',
-    lastSequenceNum = 0,
+    lastSequenceNum,
     currentState,
   } = useRuntimeStore();
+  const memoryPressureLabel = memoryPercent === undefined ? 'Unavailable' : `${memoryPercent.toFixed(1)}%`;
+  const memoryPressureWidth = memoryPercent === undefined ? 0 : Math.min(memoryPercent, 100);
+  const sequenceLabel = lastSequenceNum === undefined ? 'Unavailable' : lastSequenceNum;
+  const rttLabel = wsRttMs === undefined ? 'Unavailable' : `${wsRttMs}ms`;
+  const determinismLabel = determinismScore === undefined ? 'Unavailable' : `${(determinismScore * 100).toFixed(1)}%`;
+  const visionStreamUrl = getVisionStreamUrl();
 
   React.useEffect(() => {
     connectRuntime();
@@ -66,7 +73,7 @@ export default function AegisDashboard() {
             <div className="grid grid-cols-2 gap-4">
               <MetricCard 
                 label="Determinism" 
-                value={`${(determinismScore * 100).toFixed(1)}%`} 
+                value={determinismLabel}
                 context={runtimeIntegrity}
                 icon={<Gauge size={14} className="text-accent" />}
               />
@@ -80,19 +87,19 @@ export default function AegisDashboard() {
             <div className="p-4 glass-card rounded-lg space-y-3 relative overflow-hidden group">
               <div className="flex justify-between items-center relative z-10">
                 <span className="text-[10px] font-bold text-foreground/50 uppercase tracking-widest">Memory Pressure</span>
-                <span className="text-[11px] font-mono font-bold text-accent">{memoryPercent.toFixed(1)}%</span>
+                <span className="text-[11px] font-mono font-bold text-accent">{memoryPressureLabel}</span>
               </div>
               <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden relative z-10">
                 <motion.div 
                   initial={{ width: 0 }}
-                  animate={{ width: `${Math.min(memoryPercent, 100)}%` }}
+                  animate={{ width: `${memoryPressureWidth}%` }}
                   transition={{ duration: 1, ease: "easeOut" }}
                   className="h-full bg-accent"
                 />
               </div>
               <div className="flex justify-between text-[9px] font-mono text-foreground/35 relative z-10">
-                <span>SEQ {lastSequenceNum}</span>
-                <span>{runtimeIntegrity.toUpperCase()} / RTT {wsRttMs}ms</span>
+                <span>SEQ {sequenceLabel}</span>
+                <span>{runtimeIntegrity.toUpperCase()} / RTT {rttLabel}</span>
               </div>
             </div>
           </section>
@@ -109,7 +116,7 @@ export default function AegisDashboard() {
             </h3>
             <div className="aspect-video rounded-lg bg-black/30 border border-white/10 flex flex-col items-center justify-center overflow-hidden relative group">
               <img 
-                src="http://127.0.0.1:8400/vision/stream" 
+                src={visionStreamUrl}
                 alt="Live Vision Feed" 
                 className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500 mix-blend-screen"
                 onError={(e) => {

@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { Eye, Focus, ScanLine, Maximize, Play, Square } from 'lucide-react';
 import { useRuntimeStore } from '@/store/useRuntimeStore';
+import { getVisionStreamUrl } from '@/lib/api';
 
 export const VisionLabPanel = () => {
   const [isScanning, setIsScanning] = useState(true);
   const [feedFailed, setFeedFailed] = useState(false);
   const { activeApp } = useRuntimeStore();
+  const visionStreamUrl = getVisionStreamUrl();
 
   const toggleFeed = () => {
     setIsScanning((value) => {
@@ -54,7 +56,7 @@ export const VisionLabPanel = () => {
             {isScanning && !feedFailed ? (
               <>
                 <img 
-                  src="http://127.0.0.1:8400/vision/stream" 
+                  src={visionStreamUrl}
                   alt="Live Vision Feed" 
                   className="absolute inset-0 w-full h-full object-contain"
                   onError={() => setFeedFailed(true)}

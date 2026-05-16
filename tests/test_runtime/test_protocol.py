@@ -20,6 +20,11 @@ ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_PROTOCOL = ROOT / "frontend" / "src" / "contracts" / "protocol.ts"
 FRONTEND_RUNTIME_TYPES = ROOT / "frontend" / "src" / "types" / "runtime.ts"
 FRONTEND_SOCKET = ROOT / "frontend" / "src" / "lib" / "socket.ts"
+FRONTEND_RUNTIME_STORE = ROOT / "frontend" / "src" / "store" / "useRuntimeStore.ts"
+FRONTEND_DASHBOARD = ROOT / "frontend" / "src" / "app" / "page.tsx"
+FRONTEND_RUNTIME_STATS = ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "RuntimeStatsPanel.tsx"
+FRONTEND_API = ROOT / "frontend" / "src" / "lib" / "api.ts"
+FRONTEND_VISION = ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "VisionLabPanel.tsx"
 FRONTEND_TIMELINE = ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "ScientificTimeline.tsx"
 
 
@@ -198,3 +203,43 @@ def test_frontend_rejects_non_protocol_events_without_runtime_projection() -> No
     assert "function handleLegacyEvent" not in socket_source
     assert "runtimeStore.transitionTo" not in socket_source
     assert "runtimeStore.addStep({" not in socket_source
+
+
+def test_frontend_runtime_telemetry_is_unavailable_until_backend_data_arrives() -> None:
+    store_source = FRONTEND_RUNTIME_STORE.read_text(encoding="utf-8")
+    dashboard_source = FRONTEND_DASHBOARD.read_text(encoding="utf-8")
+    stats_source = FRONTEND_RUNTIME_STATS.read_text(encoding="utf-8")
+
+    assert "cpuPercent: undefined" in store_source
+    assert "determinismScore: undefined" in store_source
+    assert "memoryPercent: undefined" in store_source
+    assert "uptimeSeconds: undefined" in store_source
+    assert "ioThroughput: undefined" in store_source
+    assert "websocketClients: undefined" in store_source
+    assert "eventThroughput: undefined" in store_source
+    assert "wsRttMs: undefined" in store_source
+    assert "lastSequenceNum: undefined" in store_source
+    assert "memoryPercent = 0" not in dashboard_source
+    assert "determinismScore === undefined ? 'Unavailable'" in dashboard_source
+    assert "wsRttMs = 0" not in dashboard_source
+    assert "lastSequenceNum = 0" not in dashboard_source
+    assert "cpuPercent = 0" not in stats_source
+    assert "memoryPercent = 0" not in stats_source
+    assert "ioThroughput = '0 MB/s'" not in stats_source
+    assert "determinismScore === undefined ? undefined : determinismScore * 100" in stats_source
+    assert "determinismScore: 0.0" not in (ROOT / "frontend" / "src" / "features" / "runtime" / "services" / "EventSourcing.ts").read_text(encoding="utf-8")
+    assert "Unavailable" in stats_source
+
+
+def test_frontend_vision_stream_uses_configured_backend_url() -> None:
+    api_source = FRONTEND_API.read_text(encoding="utf-8")
+    dashboard_source = FRONTEND_DASHBOARD.read_text(encoding="utf-8")
+    vision_source = FRONTEND_VISION.read_text(encoding="utf-8")
+
+    assert "export const API_URL" in api_source
+    assert "getVisionStreamUrl" in api_source
+    assert "new URL('/vision/stream', API_URL)" in api_source
+    assert "http://127.0.0.1:8400/vision/stream" not in dashboard_source
+    assert "http://127.0.0.1:8400/vision/stream" not in vision_source
+    assert "src={visionStreamUrl}" in dashboard_source
+    assert "src={visionStreamUrl}" in vision_source

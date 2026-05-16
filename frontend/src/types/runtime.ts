@@ -81,7 +81,7 @@ export interface RuntimeStep {
 }
 
 export interface TelemetryData {
-  determinismScore: number;
+  determinismScore?: number;
   recoveryBudget: number;
   vramUsage: string;
   activeApp: string;
