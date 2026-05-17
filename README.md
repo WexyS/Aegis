@@ -157,7 +157,9 @@ Maintenance actions start as backend-owned action proposals before any mutation 
 - risk level and approval text
 - expected outcome and verification checks
 
-The currently supported maintenance actions are `create_logging_directory` and `create_scratch_directory`. Both create project-local directories only after user approval. Each action is constrained to the project root, emits `maintenance-action-verifier/1` execution evidence, and triggers a read-only maintenance rescan so snapshots and live socket state converge on the same backend truth.
+The currently supported maintenance actions are `create_logging_directory` and `create_scratch_directory`. Both create project-local directories only after user approval. Each action is constrained to the project root, passes `maintenance-mutation-safety-gate/1`, emits `maintenance-action-verifier/1` execution evidence, and triggers a read-only maintenance rescan so snapshots and live socket state converge on the same backend truth.
+
+The mutation safety gate runs before any approved mutation. It verifies the supported action, approval requirement, affected resource count, directory target, allowlisted operation, project-root containment, evidence/resource alignment, target precondition, and expected postcondition. If a critical preflight check fails, the action does not mutate the filesystem.
 
 Action proposals also carry backend-derived lifecycle state when a matching command record exists. Proposal status is derived from the command snapshot (`approval_requested`, `approved`, `executing`, `verified`, `completed_unverified`, `failed`, `blocked`, `cancelled`, or `rejected`), not from frontend inference.
 

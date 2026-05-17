@@ -299,6 +299,7 @@ export interface MaintenanceActionProposal {
   evidence_refs: string[];
   evidence: Record<string, unknown>;
   expected_outcome: Record<string, unknown>;
+  safety_gate?: Record<string, unknown>;
   verification_checks: Array<Record<string, unknown>>;
   read_only: boolean;
   status: string;

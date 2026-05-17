@@ -268,6 +268,7 @@ def test_frontend_maintenance_actions_are_backend_proposal_driven() -> None:
     assert "export interface MaintenanceActionProposal" in runtime_types
     assert "pending_action_proposal_count?: number" in runtime_types
     assert "lifecycle?: {" in runtime_types
+    assert "safety_gate?: Record<string, unknown>" in runtime_types
     assert "metadata?: Record<string, unknown>" in runtime_types
     assert "metadata: z.record(z.string(), z.unknown()).optional()" in protocol_source
     assert "function getMaintenanceActionProposals" in panel_source

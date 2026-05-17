@@ -69,6 +69,8 @@ def test_builds_approval_gated_logging_directory_proposal(monkeypatch, tmp_path)
         "findings.config.logging.directory_missing",
     ]
     assert proposal["affected_resources"][0]["path"] == str(tmp_path / "logs")
+    assert proposal["safety_gate"]["gate_version"] == "maintenance-mutation-safety-gate/1"
+    assert proposal["safety_gate"]["approved_operation"] == "mkdir"
 
 
 def test_builds_approval_gated_scratch_directory_proposal(monkeypatch, tmp_path) -> None:
@@ -85,6 +87,7 @@ def test_builds_approval_gated_scratch_directory_proposal(monkeypatch, tmp_path)
     assert proposal["read_only"] is True
     assert proposal["status"] == "proposed"
     assert proposal["affected_resources"][0]["path"] == str(tmp_path / "scratch")
+    assert proposal["safety_gate"]["gate_version"] == "maintenance-mutation-safety-gate/1"
 
 
 def test_request_maintenance_action_registers_pending_approval(monkeypatch, tmp_path) -> None:
@@ -174,10 +177,16 @@ def test_execute_logging_directory_action_produces_verified_evidence(monkeypatch
     assert result.execution_evidence is not None
     assert result.execution_evidence.verifier == "maintenance-action-verifier/1"
     assert result.execution_evidence.verification_state == "verified"
+    assert result.execution_evidence.expected["safety_gate_version"] == "maintenance-mutation-safety-gate/1"
+    assert result.execution_evidence.observed["preflight_passed"] is True
     checks_by_name = {
         check["check_name"]: check
         for check in result.execution_evidence.verification_checks
     }
+    assert checks_by_name["mutation_safety_gate"]["passed"] is True
+    assert checks_by_name["proposal_requires_approval"]["passed"] is True
+    assert checks_by_name["mutation_operation_allowlisted"]["passed"] is True
+    assert checks_by_name["precondition_target_absent_or_directory"]["passed"] is True
     assert checks_by_name["target_within_project_root"]["passed"] is True
     assert checks_by_name["directory_exists_after"]["passed"] is True
     assert checks_by_name["approved_mutation_scope"]["passed"] is True
@@ -197,6 +206,7 @@ def test_execute_scratch_directory_action_produces_verified_evidence(monkeypatch
     assert result.execution_evidence is not None
     assert result.execution_evidence.verification_state == "verified"
     assert result.execution_evidence.verification_reason == "scratch directory created"
+    assert result.execution_evidence.observed["safety_gate_version"] == "maintenance-mutation-safety-gate/1"
 
 
 def test_execute_logging_directory_blocks_out_of_scope_target(monkeypatch, tmp_path) -> None:
@@ -204,6 +214,7 @@ def test_execute_logging_directory_blocks_out_of_scope_target(monkeypatch, tmp_p
     proposal = {
         "proposal_id": "maintenance.create_logging_directory",
         "action": "create_logging_directory",
+        "requires_approval": True,
         "affected_resources": [{
             "type": "directory",
             "path": str(tmp_path / "outside"),
@@ -218,5 +229,98 @@ def test_execute_logging_directory_blocks_out_of_scope_target(monkeypatch, tmp_p
     assert not (tmp_path / "outside").exists()
     assert result.execution_evidence is not None
     assert result.execution_evidence.verification_state == "failed"
-    assert result.execution_evidence.verification_checks[0]["check_name"] == "target_within_project_root"
-    assert result.execution_evidence.verification_checks[0]["passed"] is False
+    checks_by_name = {
+        check["check_name"]: check
+        for check in result.execution_evidence.verification_checks
+    }
+    assert checks_by_name["target_within_project_root"]["passed"] is False
+    assert result.execution_evidence.observed["preflight_passed"] is False
+
+
+def test_mutation_safety_gate_blocks_unapproved_operation(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(maintenance_actions, "PROJECT_ROOT", tmp_path)
+    target = tmp_path / "logs"
+    proposal = {
+        "proposal_id": "maintenance.create_logging_directory",
+        "action": "create_logging_directory",
+        "requires_approval": True,
+        "affected_resources": [{
+            "type": "directory",
+            "path": str(target),
+            "operation": "delete",
+        }],
+        "evidence": {"directory": str(target)},
+        "expected_outcome": {"directory_exists": True},
+    }
+
+    result = maintenance_actions.execute_maintenance_action_proposal(proposal)
+
+    assert result.success is False
+    assert not target.exists()
+    assert result.execution_evidence is not None
+    checks_by_name = {
+        check["check_name"]: check
+        for check in result.execution_evidence.verification_checks
+    }
+    assert checks_by_name["mutation_operation_allowlisted"]["passed"] is False
+    assert result.execution_evidence.verification_reason == "mutation safety gate blocked: mutation_operation_allowlisted"
+
+
+def test_mutation_safety_gate_blocks_existing_file_target(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(maintenance_actions, "PROJECT_ROOT", tmp_path)
+    target = tmp_path / "logs"
+    target.write_text("not a directory", encoding="utf-8")
+    proposal = {
+        "proposal_id": "maintenance.create_logging_directory",
+        "action": "create_logging_directory",
+        "requires_approval": True,
+        "affected_resources": [{
+            "type": "directory",
+            "path": str(target),
+            "operation": "mkdir",
+        }],
+        "evidence": {"directory": str(target)},
+        "expected_outcome": {"directory_exists": True},
+    }
+
+    result = maintenance_actions.execute_maintenance_action_proposal(proposal)
+
+    assert result.success is False
+    assert target.is_file()
+    assert result.execution_evidence is not None
+    checks_by_name = {
+        check["check_name"]: check
+        for check in result.execution_evidence.verification_checks
+    }
+    assert checks_by_name["precondition_target_absent_or_directory"]["passed"] is False
+    assert result.execution_evidence.observed["pre_exists"] is True
+    assert result.execution_evidence.observed["pre_is_dir"] is False
+
+
+def test_mutation_safety_gate_blocks_evidence_resource_mismatch(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(maintenance_actions, "PROJECT_ROOT", tmp_path)
+    target = tmp_path / "logs"
+    proposal = {
+        "proposal_id": "maintenance.create_logging_directory",
+        "action": "create_logging_directory",
+        "requires_approval": True,
+        "affected_resources": [{
+            "type": "directory",
+            "path": str(target),
+            "operation": "mkdir",
+        }],
+        "evidence": {"directory": str(tmp_path / "other")},
+        "expected_outcome": {"directory_exists": True},
+    }
+
+    result = maintenance_actions.execute_maintenance_action_proposal(proposal)
+
+    assert result.success is False
+    assert not target.exists()
+    assert result.execution_evidence is not None
+    checks_by_name = {
+        check["check_name"]: check
+        for check in result.execution_evidence.verification_checks
+    }
+    assert checks_by_name["evidence_matches_approved_resource"]["passed"] is False
+    assert result.execution_evidence.verification_reason == "mutation safety gate blocked: evidence_matches_approved_resource"

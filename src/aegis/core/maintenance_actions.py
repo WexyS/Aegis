@@ -14,7 +14,13 @@ from aegis.core.schemas import ActionResult, CommandResponse, ExecutionEvidence,
 
 ACTION_PROPOSAL_VERSION = "maintenance-action-proposal/1"
 ACTION_EVIDENCE_VERIFIER = "maintenance-action-verifier/1"
+MUTATION_SAFETY_GATE_VERSION = "maintenance-mutation-safety-gate/1"
 SUPPORTED_ACTIONS = {"create_logging_directory", "create_scratch_directory"}
+MUTATION_OPERATION_ALLOWLIST = {"mkdir"}
+DIRECTORY_ACTION_OPERATIONS = {
+    "create_logging_directory": "mkdir",
+    "create_scratch_directory": "mkdir",
+}
 DIRECTORY_ACTION_REASONS = {
     "create_logging_directory": ("logging directory created", "logging directory already existed"),
     "create_scratch_directory": ("scratch directory created", "scratch directory already existed"),
@@ -175,10 +181,13 @@ def execute_maintenance_action_proposal(proposal: dict[str, Any]) -> ActionResul
     perf_started = time.perf_counter()
     action = str(proposal.get("action") or "")
     target_path = _proposal_target_path(proposal)
-    checks: list[dict[str, Any]] = []
     warnings: list[str] = []
+    gate = _run_mutation_safety_gate(proposal)
+    checks = gate["checks"]
+    resolved_path = gate["resolved_path"]
+    target_path = str(resolved_path) if resolved_path else target_path
 
-    if action not in SUPPORTED_ACTIONS:
+    if not gate["allowed"] or resolved_path is None:
         completed_at = int(time.time() * 1000)
         evidence = _evidence(
             action=action or "unknown",
@@ -187,44 +196,14 @@ def execute_maintenance_action_proposal(proposal: dict[str, Any]) -> ActionResul
             started_at=started_at,
             completed_at=completed_at,
             state="failed",
-            reason="unsupported maintenance action",
-            checks=[_check("supported_action", sorted(SUPPORTED_ACTIONS), action, False, "unsupported action")],
-            warnings=warnings,
-        )
-        return _result(proposal, evidence, False, "Unsupported maintenance action", perf_started)
-
-    allowed, resolved_path, allowed_reason = _resolve_safe_project_path(target_path)
-    checks.append(_check(
-        "target_within_project_root",
-        str(PROJECT_ROOT.resolve()),
-        str(resolved_path) if resolved_path else target_path,
-        allowed,
-        allowed_reason,
-    ))
-    checks.append(_check(
-        "approval_matches_action",
-        proposal.get("proposal_id"),
-        proposal.get("proposal_id"),
-        True,
-        "proposal id preserved from approval metadata",
-    ))
-
-    if not allowed or resolved_path is None:
-        completed_at = int(time.time() * 1000)
-        evidence = _evidence(
-            action=action,
-            proposal=proposal,
-            target_path=target_path,
-            started_at=started_at,
-            completed_at=completed_at,
-            state="failed",
-            reason=allowed_reason,
+            reason=str(gate["reason"]),
             checks=checks,
             warnings=warnings,
+            observed=gate["observed"],
         )
-        return _result(proposal, evidence, False, allowed_reason, perf_started)
+        return _result(proposal, evidence, False, str(gate["reason"]), perf_started)
 
-    pre_exists = resolved_path.exists()
+    pre_exists = bool(gate["observed"].get("pre_exists"))
     mutation_performed = False
     try:
         if not pre_exists:
@@ -258,6 +237,7 @@ def execute_maintenance_action_proposal(proposal: dict[str, Any]) -> ActionResul
             checks=checks,
             warnings=warnings,
             observed={
+                **gate["observed"],
                 "pre_exists": pre_exists,
                 "post_exists": post_exists,
                 "mutation_performed": mutation_performed,
@@ -277,6 +257,7 @@ def execute_maintenance_action_proposal(proposal: dict[str, Any]) -> ActionResul
             reason=str(exc),
             checks=checks,
             warnings=warnings,
+            observed=gate["observed"],
         )
         return _result(proposal, evidence, False, str(exc), perf_started)
 
@@ -395,7 +376,21 @@ def _directory_proposal(
         "expected_outcome": {
             "directory_exists": True,
         },
+        "safety_gate": {
+            "gate_version": MUTATION_SAFETY_GATE_VERSION,
+            "operation_allowlist": sorted(MUTATION_OPERATION_ALLOWLIST),
+            "approved_operation": "mkdir",
+            "approved_target": str(resolved_path),
+        },
         "verification_checks": [
+            {
+                "check_name": "mutation_safety_gate",
+                "expected": MUTATION_SAFETY_GATE_VERSION,
+            },
+            {
+                "check_name": "mutation_operation_allowlisted",
+                "expected": sorted(MUTATION_OPERATION_ALLOWLIST),
+            },
             {
                 "check_name": "target_within_project_root",
                 "expected": str(PROJECT_ROOT.resolve()),
@@ -445,6 +440,144 @@ def _proposal_target_path(proposal: dict[str, Any]) -> str:
     if isinstance(evidence, dict):
         return str(evidence.get("directory") or "")
     return ""
+
+
+def _run_mutation_safety_gate(proposal: dict[str, Any]) -> dict[str, Any]:
+    action = str(proposal.get("action") or "")
+    operation = DIRECTORY_ACTION_OPERATIONS.get(action)
+    resources = _directory_resources(proposal)
+    resource = resources[0] if resources else {}
+    resource_path = str(resource.get("path") or "")
+    evidence = proposal.get("evidence")
+    evidence_path = str(evidence.get("directory") or "") if isinstance(evidence, dict) else ""
+    target_path = _proposal_target_path(proposal)
+    supported = action in SUPPORTED_ACTIONS
+    approval_required = proposal.get("requires_approval") is True
+    resource_count_ok = len(resources) == 1
+    resource_type_ok = resource.get("type") == "directory" if resource else False
+    resource_operation = str(resource.get("operation") or "")
+    operation_ok = bool(operation and resource_operation == operation and operation in MUTATION_OPERATION_ALLOWLIST)
+    path_alignment_ok = bool(target_path and resource_path and target_path == resource_path)
+    evidence_alignment_ok = bool(evidence_path and evidence_path == resource_path)
+    allowed_path, resolved_path, allowed_reason = _resolve_safe_project_path(target_path)
+    pre_exists = resolved_path.exists() if resolved_path else False
+    pre_is_dir = resolved_path.is_dir() if resolved_path and pre_exists else False
+    target_shape_ok = bool(resolved_path and (not pre_exists or pre_is_dir))
+    expected_outcome = proposal.get("expected_outcome")
+    expected_directory = (
+        isinstance(expected_outcome, dict)
+        and expected_outcome.get("directory_exists") is True
+    )
+
+    checks = [
+        _check(
+            "mutation_safety_gate",
+            MUTATION_SAFETY_GATE_VERSION,
+            MUTATION_SAFETY_GATE_VERSION,
+            True,
+            "safety gate executed before mutation",
+        ),
+        _check(
+            "supported_action",
+            sorted(SUPPORTED_ACTIONS),
+            action,
+            supported,
+            "action is supported" if supported else "unsupported action",
+        ),
+        _check("proposal_requires_approval", True, approval_required, approval_required, "proposal requires user approval"),
+        _check("approved_resource_count", 1, len(resources), resource_count_ok, "exactly one approved resource is present"),
+        _check(
+            "approved_resource_type",
+            "directory",
+            resource.get("type") if resource else None,
+            resource_type_ok,
+            "approved resource is a directory",
+        ),
+        _check(
+            "mutation_operation_allowlisted",
+            sorted(MUTATION_OPERATION_ALLOWLIST),
+            resource_operation or operation,
+            operation_ok,
+            "approved mutation operation is allowlisted",
+        ),
+        _check(
+            "approved_resource_matches_target",
+            resource_path,
+            target_path,
+            path_alignment_ok,
+            "target path comes from approved resource",
+        ),
+        _check(
+            "evidence_matches_approved_resource",
+            resource_path,
+            evidence_path,
+            evidence_alignment_ok,
+            "proposal evidence matches approved resource",
+        ),
+        _check(
+            "target_within_project_root",
+            str(PROJECT_ROOT.resolve()),
+            str(resolved_path) if resolved_path else target_path,
+            allowed_path,
+            allowed_reason,
+        ),
+        _check(
+            "precondition_target_absent_or_directory",
+            True,
+            target_shape_ok,
+            target_shape_ok,
+            "target is absent or already a directory",
+        ),
+        _check(
+            "expected_outcome_directory_exists",
+            True,
+            expected_directory,
+            expected_directory,
+            "proposal expects a directory to exist after mutation",
+        ),
+        _check(
+            "approval_matches_action",
+            proposal.get("proposal_id"),
+            proposal.get("proposal_id"),
+            True,
+            "proposal id preserved from approval metadata",
+        ),
+    ]
+    allowed = all(check["passed"] for check in checks)
+    failed = next((check for check in checks if not check["passed"]), None)
+    reason = (
+        "mutation safety gate passed"
+        if allowed
+        else f"mutation safety gate blocked: {failed['check_name'] if failed else 'unknown'}"
+    )
+    return {
+        "allowed": allowed,
+        "resolved_path": resolved_path,
+        "reason": reason,
+        "checks": checks,
+        "observed": {
+            "safety_gate_version": MUTATION_SAFETY_GATE_VERSION,
+            "action": action,
+            "operation": operation,
+            "resource_count": len(resources),
+            "resource_path": resource_path,
+            "target_path": target_path,
+            "resolved_path": str(resolved_path) if resolved_path else None,
+            "pre_exists": pre_exists,
+            "pre_is_dir": pre_is_dir,
+            "preflight_passed": allowed,
+        },
+    }
+
+
+def _directory_resources(proposal: dict[str, Any]) -> list[dict[str, Any]]:
+    resources = proposal.get("affected_resources")
+    if not isinstance(resources, list):
+        return []
+    return [
+        resource for resource in resources
+        if isinstance(resource, dict) and resource.get("type") == "directory"
+    ]
 
 
 def _resolve_safe_project_path(raw_path: str) -> tuple[bool, Path | None, str]:
@@ -499,6 +632,8 @@ def _evidence(
         expected={
             "proposal_id": proposal.get("proposal_id"),
             "expected_outcome": proposal.get("expected_outcome"),
+            "safety_gate_version": MUTATION_SAFETY_GATE_VERSION,
+            "approved_resources": proposal.get("affected_resources", []),
         },
         observed=observed or {},
         verification_checks=checks,
