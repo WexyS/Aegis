@@ -127,6 +127,8 @@ The current maintenance path is read-only. It reports runtime health from backen
 Maintenance scan recommendations are productized as structured backend findings.
 Every finding carries a category, severity, source, reason, and concrete evidence.
 The UI only renders these backend findings; it does not infer maintenance status or create optimistic recommendations.
+The scan does not refresh app discovery or mutate files, config, database, Git, or runtime FSM state.
+It may update the ephemeral last-scan cache used by backend snapshots.
 
 Future maintenance actions should remain approval-gated and evidence-backed.
 

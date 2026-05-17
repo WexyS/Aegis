@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-
+from aegis.core import app_map
 from aegis.core import maintenance
 
 
@@ -60,10 +59,32 @@ def test_maintenance_scan_read_only_contract_has_no_observed_mutations() -> None
     assert "files" in contract["prohibited_mutations"]
     assert "git" in contract["prohibited_mutations"]
     assert "app_registry_refresh" in contract["prohibited_mutations"]
+    assert contract["allowed_ephemeral_state"] == ["last_maintenance_scan_cache"]
 
 
-def test_maintenance_scan_does_not_refresh_app_registry_source_contract() -> None:
-    source = Path(maintenance.__file__).read_text(encoding="utf-8")
+def test_maintenance_scan_does_not_mutate_discovered_app_registry() -> None:
+    before = dict(app_map._discovered_registry)
 
-    assert "refresh_installed_app_registry" not in source
-    assert "get_app_registry_snapshot" in source
+    try:
+        app_map._discovered_registry = {
+            "sentinel_app": {
+                "path": "sentinel.exe",
+                "process_name": "sentinel.exe",
+                "aliases": ["sentinel"],
+                "source": "test",
+            },
+        }
+
+        report = maintenance.run_read_only_maintenance_scan()
+
+        assert report["checks"]["app_registry"]["discovered_count"] == 1
+        assert app_map._discovered_registry == {
+            "sentinel_app": {
+                "path": "sentinel.exe",
+                "process_name": "sentinel.exe",
+                "aliases": ["sentinel"],
+                "source": "test",
+            },
+        }
+    finally:
+        app_map._discovered_registry = before

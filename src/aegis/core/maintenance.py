@@ -188,6 +188,9 @@ def _read_only_contract() -> dict[str, Any]:
             "app_registry_snapshot",
             "environment_version_checks",
         ],
+        "allowed_ephemeral_state": [
+            "last_maintenance_scan_cache",
+        ],
     }
 
 

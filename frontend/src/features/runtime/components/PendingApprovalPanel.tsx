@@ -307,7 +307,6 @@ function getActionTimelineDiagnostics(report: Record<string, unknown> | null): A
 const EnvironmentSummary = ({ diagnostics }: { diagnostics: EnvironmentDiagnostics }) => {
   const checks = ['python', 'git', 'node', 'npm', 'playwright']
     .map((name) => ({ name, status: String(diagnostics.checks?.[name]?.status ?? 'unknown') }));
-  const recommendations = Array.isArray(diagnostics.recommendations) ? diagnostics.recommendations.slice(0, 2) : [];
 
   return (
     <div className="mt-3 border-t border-white/10 pt-3">
@@ -325,13 +324,6 @@ const EnvironmentSummary = ({ diagnostics }: { diagnostics: EnvironmentDiagnosti
           </div>
         ))}
       </div>
-      {recommendations.length > 0 && (
-        <div className="mt-2 space-y-1">
-          {recommendations.map((item) => (
-            <p key={item} className="text-[9px] font-mono leading-relaxed text-warning/85">{item}</p>
-          ))}
-        </div>
-      )}
     </div>
   );
 };
