@@ -71,6 +71,14 @@ def test_builds_approval_gated_logging_directory_proposal(monkeypatch, tmp_path)
     assert proposal["affected_resources"][0]["path"] == str(tmp_path / "logs")
     assert proposal["safety_gate"]["gate_version"] == "maintenance-mutation-safety-gate/1"
     assert proposal["safety_gate"]["approved_operation"] == "mkdir"
+    preview = proposal["dry_run_preview"]
+    assert preview["preview_version"] == "maintenance-action-dry-run-preview/1"
+    assert preview["read_only"] is True
+    assert preview["preview_only"] is True
+    assert preview["would_mutate"] is False
+    assert preview["mutation_if_approved"]["operation"] == "mkdir"
+    assert preview["mutation_if_approved"]["path"] == str(tmp_path / "logs")
+    assert preview["safety_gate"]["gate_version"] == "maintenance-mutation-safety-gate/1"
 
 
 def test_builds_approval_gated_scratch_directory_proposal(monkeypatch, tmp_path) -> None:
@@ -88,6 +96,8 @@ def test_builds_approval_gated_scratch_directory_proposal(monkeypatch, tmp_path)
     assert proposal["status"] == "proposed"
     assert proposal["affected_resources"][0]["path"] == str(tmp_path / "scratch")
     assert proposal["safety_gate"]["gate_version"] == "maintenance-mutation-safety-gate/1"
+    assert proposal["dry_run_preview"]["target"] == str(tmp_path / "scratch")
+    assert proposal["dry_run_preview"]["would_mutate"] is False
 
 
 def test_request_maintenance_action_registers_pending_approval(monkeypatch, tmp_path) -> None:
@@ -178,6 +188,7 @@ def test_execute_logging_directory_action_produces_verified_evidence(monkeypatch
     assert result.execution_evidence.verifier == "maintenance-action-verifier/1"
     assert result.execution_evidence.verification_state == "verified"
     assert result.execution_evidence.expected["safety_gate_version"] == "maintenance-mutation-safety-gate/1"
+    assert result.execution_evidence.expected["dry_run_preview_version"] == "maintenance-action-dry-run-preview/1"
     assert result.execution_evidence.observed["preflight_passed"] is True
     checks_by_name = {
         check["check_name"]: check

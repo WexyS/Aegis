@@ -183,6 +183,7 @@ const MaintenanceActionProposals = ({ proposals }: { proposals: MaintenanceActio
           </div>
           <p className="mt-1 line-clamp-2 text-[9px] font-mono leading-relaxed text-foreground/55">{proposal.reason}</p>
           <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">{proposal.source}</p>
+          <ProposalPreviewDetails proposal={proposal} />
           {proposal.lifecycle?.command_id && (
             <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">
               {proposal.lifecycle.command_status} / {proposal.lifecycle.verification_state} / {proposal.lifecycle.command_id}
@@ -378,6 +379,7 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
             {evidenceRefs.length > 0 && (
               <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">{evidenceRefs.join(', ')}</p>
             )}
+            <ProposalPreviewDetails proposal={proposal} compact />
           </div>
         )}
       </div>
@@ -402,6 +404,59 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
 });
 
 ApprovalItem.displayName = 'ApprovalItem';
+
+const ProposalPreviewDetails = ({ proposal, compact = false }: { proposal: MaintenanceActionProposal; compact?: boolean }) => {
+  const preview = getRecord(proposal.dry_run_preview);
+  const resources = Array.isArray(proposal.affected_resources) ? proposal.affected_resources : [];
+  const evidenceRefs = Array.isArray(proposal.evidence_refs) ? proposal.evidence_refs : [];
+  const safetyGate = getRecord(proposal.safety_gate);
+  const mutationIfApproved = getRecord(preview?.mutation_if_approved);
+  const expectedOutcome = getRecord(proposal.expected_outcome);
+  const preconditions = Array.isArray(preview?.preconditions) ? preview.preconditions : [];
+  const target = String(preview?.target ?? mutationIfApproved?.path ?? resources[0]?.path ?? '');
+  const operation = String(preview?.operation ?? mutationIfApproved?.operation ?? resources[0]?.operation ?? '');
+  const previewVersion = typeof preview?.preview_version === 'string' ? preview.preview_version : null;
+  const gateVersion = typeof safetyGate?.gate_version === 'string' ? safetyGate.gate_version : null;
+
+  if (!preview && !resources.length && !safetyGate) return null;
+
+  return (
+    <div className={compact ? 'mt-2 space-y-1' : 'mt-2 rounded-md border border-white/10 bg-black/15 px-2 py-1.5 space-y-1'}>
+      {previewVersion && (
+        <div className="flex items-center justify-between gap-2 text-[8px] font-mono">
+          <span className="text-foreground/35">dry-run preview</span>
+          <span className="text-foreground/45">{previewVersion}</span>
+        </div>
+      )}
+      {(operation || target) && (
+        <p className="truncate text-[8px] font-mono text-foreground/45">
+          {operation}{operation && target ? ' ' : ''}{target}
+        </p>
+      )}
+      {resources.length > 0 && !compact && (
+        <p className="truncate text-[8px] font-mono text-foreground/35">
+          resources: {resources.map((resource) => formatResource(resource)).join(', ')}
+        </p>
+      )}
+      {gateVersion && (
+        <p className="truncate text-[8px] font-mono text-success/70">gate: {gateVersion}</p>
+      )}
+      {preconditions.length > 0 && !compact && (
+        <p className="truncate text-[8px] font-mono text-foreground/35">
+          preflight: {preconditions.map((check) => String(getRecord(check)?.check_name ?? 'check')).join(', ')}
+        </p>
+      )}
+      {Object.keys(expectedOutcome || {}).length > 0 && !compact && (
+        <p className="truncate text-[8px] font-mono text-foreground/35">
+          expected: {Object.entries(expectedOutcome || {}).map(([key, value]) => `${key}=${String(value)}`).join(', ')}
+        </p>
+      )}
+      {evidenceRefs.length > 0 && !compact && (
+        <p className="truncate text-[8px] font-mono text-foreground/35">evidence: {evidenceRefs.join(', ')}</p>
+      )}
+    </div>
+  );
+};
 
 function getCheck(report: Record<string, unknown> | null, name: string): Record<string, unknown> | null {
   const checks = report?.checks;
@@ -552,6 +607,18 @@ function getMaintenanceProposalFromCommand(command: CommandRecord): MaintenanceA
     return null;
   }
   return candidate as MaintenanceActionProposal;
+}
+
+function getRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function formatResource(resource: Record<string, unknown>): string {
+  const operation = typeof resource.operation === 'string' ? resource.operation : null;
+  const path = typeof resource.path === 'string' ? resource.path : null;
+  const type = typeof resource.type === 'string' ? resource.type : 'resource';
+  if (operation && path) return `${operation}:${path}`;
+  return path ?? type;
 }
 
 function numberish(value: unknown): number | null {

@@ -15,6 +15,7 @@ from aegis.core.schemas import ActionResult, CommandResponse, ExecutionEvidence,
 ACTION_PROPOSAL_VERSION = "maintenance-action-proposal/1"
 ACTION_EVIDENCE_VERIFIER = "maintenance-action-verifier/1"
 MUTATION_SAFETY_GATE_VERSION = "maintenance-mutation-safety-gate/1"
+DRY_RUN_PREVIEW_VERSION = "maintenance-action-dry-run-preview/1"
 SUPPORTED_ACTIONS = {"create_logging_directory", "create_scratch_directory"}
 MUTATION_OPERATION_ALLOWLIST = {"mkdir"}
 DIRECTORY_ACTION_OPERATIONS = {
@@ -382,6 +383,14 @@ def _directory_proposal(
             "approved_operation": "mkdir",
             "approved_target": str(resolved_path),
         },
+        "dry_run_preview": _directory_dry_run_preview(
+            proposal_id=proposal_id,
+            action=action,
+            source=source,
+            resolved_path=resolved_path,
+            evidence_refs=evidence_refs,
+            finding=finding,
+        ),
         "verification_checks": [
             {
                 "check_name": "mutation_safety_gate",
@@ -407,6 +416,73 @@ def _directory_proposal(
         "read_only": True,
         "status": "proposed",
         "safety_note": safety_reason,
+    }
+
+
+def _directory_dry_run_preview(
+    *,
+    proposal_id: str,
+    action: str,
+    source: str,
+    resolved_path: Path,
+    evidence_refs: list[str],
+    finding: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "preview_version": DRY_RUN_PREVIEW_VERSION,
+        "read_only": True,
+        "preview_only": True,
+        "would_mutate": False,
+        "proposal_id": proposal_id,
+        "action": action,
+        "operation": "mkdir",
+        "target_type": "directory",
+        "target": str(resolved_path),
+        "source": source,
+        "approval_required": True,
+        "risk_level": RiskLevel.MEDIUM.value,
+        "mutation_if_approved": {
+            "operation": "mkdir",
+            "path": str(resolved_path),
+            "scope": "project_root",
+            "state_change": "directory_created_if_absent",
+        },
+        "evidence_refs": evidence_refs,
+        "evidence": {
+            "finding_id": finding.get("finding_id"),
+            "finding_reason": finding.get("reason"),
+            "target_exists": False,
+        },
+        "preconditions": [
+            {
+                "check_name": "target_within_project_root",
+                "expected": str(PROJECT_ROOT.resolve()),
+                "observed": str(resolved_path),
+            },
+            {
+                "check_name": "mutation_operation_allowlisted",
+                "expected": sorted(MUTATION_OPERATION_ALLOWLIST),
+                "observed": "mkdir",
+            },
+            {
+                "check_name": "evidence_matches_approved_resource",
+                "expected": str(resolved_path),
+                "observed": str(resolved_path),
+            },
+            {
+                "check_name": "precondition_target_missing",
+                "expected": False,
+                "observed": False,
+            },
+        ],
+        "expected_outcome": {
+            "directory_exists": True,
+        },
+        "safety_gate": {
+            "gate_version": MUTATION_SAFETY_GATE_VERSION,
+            "approved_operation": "mkdir",
+            "approved_target": str(resolved_path),
+        },
     }
 
 
@@ -633,6 +709,7 @@ def _evidence(
             "proposal_id": proposal.get("proposal_id"),
             "expected_outcome": proposal.get("expected_outcome"),
             "safety_gate_version": MUTATION_SAFETY_GATE_VERSION,
+            "dry_run_preview_version": DRY_RUN_PREVIEW_VERSION,
             "approved_resources": proposal.get("affected_resources", []),
         },
         observed=observed or {},

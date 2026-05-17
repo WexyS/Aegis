@@ -269,10 +269,14 @@ def test_frontend_maintenance_actions_are_backend_proposal_driven() -> None:
     assert "pending_action_proposal_count?: number" in runtime_types
     assert "lifecycle?: {" in runtime_types
     assert "safety_gate?: Record<string, unknown>" in runtime_types
+    assert "dry_run_preview?: Record<string, unknown>" in runtime_types
     assert "metadata?: Record<string, unknown>" in runtime_types
     assert "metadata: z.record(z.string(), z.unknown()).optional()" in protocol_source
     assert "function getMaintenanceActionProposals" in panel_source
     assert "getMaintenanceProposalFromCommand(command)" in panel_source
+    assert "const ProposalPreviewDetails" in panel_source
+    assert "proposal.dry_run_preview" in panel_source
+    assert "dry-run preview" in panel_source
     assert "disabled={proposal.status !== 'proposed'}" in panel_source
     assert "requestMaintenanceAction(proposal.proposal_id)" in panel_source
     assert "socket.emit('request_maintenance_action', { proposal_id: proposalId })" in socket_source
