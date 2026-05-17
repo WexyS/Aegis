@@ -14,3 +14,14 @@ def test_readme_declares_reliability_and_simplicity_constraints() -> None:
     assert "Human Understandability Constraint" in readme
     assert "No fake systems" in readme
     assert "Reliable AI Computer Operator" in readme
+
+
+def test_readme_declares_contract_versioning_policy() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "Contract Versioning Policy" in readme
+    assert "They are not roadmap phase labels" in readme
+    assert "Additive fields can stay on the same contract version" in readme
+    assert "Breaking payload, verifier, or replay semantics require a new version" in readme
+    assert "Old journal events and snapshots must remain readable" in readme
+    assert "must not infer success or synthesize data when it sees an unknown version" in readme

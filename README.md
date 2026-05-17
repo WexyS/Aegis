@@ -64,6 +64,16 @@ The frontend should not invent runtime state. These backend surfaces are the sou
 - `frontend/src/lib/socket.ts`
 - `frontend/src/store/useRuntimeStore.ts`
 
+### Contract Versioning Policy
+
+Version suffixes such as `/1` and `/2` identify schema, verifier, and diagnostic contracts. They are not roadmap phase labels.
+
+- Additive fields can stay on the same contract version when old readers can ignore them safely.
+- Breaking payload, verifier, or replay semantics require a new version.
+- Old journal events and snapshots must remain readable by replay and UI projection code.
+- The frontend must not infer success or synthesize data when it sees an unknown version; it should render unavailable or unknown state from backend truth.
+- Do not keep parallel v1/v2 execution paths unless backward compatibility requires it and tests cover both paths.
+
 ## Implemented Runtime Capabilities
 
 ### Command Governance
