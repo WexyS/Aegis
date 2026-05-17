@@ -135,6 +135,7 @@ The current maintenance path is read-only. It reports runtime health from backen
 - system resource snapshot
 - process resource snapshot
 - development port listener snapshot
+- workspace directory snapshot
 - app registry health
 - tool registry health
 - environment checks
@@ -156,7 +157,9 @@ Maintenance actions start as backend-owned action proposals before any mutation 
 - risk level and approval text
 - expected outcome and verification checks
 
-The first supported maintenance action is `create_logging_directory`, which creates the configured project logging directory only after user approval. It is constrained to the project root and produces `maintenance-action-verifier/1` execution evidence before the command is marked executed.
+The currently supported maintenance actions are `create_logging_directory` and `create_scratch_directory`. Both create project-local directories only after user approval. Each action is constrained to the project root, emits `maintenance-action-verifier/1` execution evidence, and triggers a read-only maintenance rescan so snapshots and live socket state converge on the same backend truth.
+
+Action proposals also carry backend-derived lifecycle state when a matching command record exists. Proposal status is derived from the command snapshot (`approval_requested`, `approved`, `executing`, `verified`, `completed_unverified`, `failed`, `blocked`, `cancelled`, or `rejected`), not from frontend inference.
 
 Future maintenance actions should remain approval-gated, evidence-backed, and scoped by the same proposal contract.
 

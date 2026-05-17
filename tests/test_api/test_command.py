@@ -185,6 +185,9 @@ class TestMaintenanceEndpoint:
             assert data["checks"]["process_resources"]["read_only"] is True
             assert data["checks"]["network_ports"]["scan_version"] == "network-ports/1"
             assert data["checks"]["network_ports"]["read_only"] is True
+            assert data["checks"]["workspace_directories"]["scan_version"] == "workspace-directories/1"
+            assert data["checks"]["workspace_directories"]["read_only"] is True
+            assert "pending_action_proposal_count" in data["summary"]
 
     @pytest.mark.asyncio
     async def test_maintenance_action_proposal_requires_approval_and_executes_after_approval(self, monkeypatch, tmp_path) -> None:

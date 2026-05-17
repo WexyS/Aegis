@@ -24,6 +24,32 @@ def _missing_logging_report(tmp_path):
     return finding, checks
 
 
+def _missing_scratch_report(tmp_path):
+    finding = {
+        "finding_id": "config.workspace.scratch_missing",
+        "category": "config",
+        "severity": "info",
+        "source": "checks.workspace_directories.directories.scratch",
+        "reason": "Local scratch directory does not exist.",
+        "evidence": {"path": str(tmp_path / "scratch"), "exists": False, "is_dir": False},
+        "recommendation": "Create the scratch directory before writing local test or smoke artifacts.",
+        "read_only": True,
+    }
+    checks = {
+        "workspace_directories": {
+            "status": "warning",
+            "directories": {
+                "scratch": {
+                    "path": str(tmp_path / "scratch"),
+                    "exists": False,
+                    "is_dir": False,
+                },
+            },
+        },
+    }
+    return finding, checks
+
+
 def test_builds_approval_gated_logging_directory_proposal(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(maintenance_actions, "PROJECT_ROOT", tmp_path)
     finding, checks = _missing_logging_report(tmp_path)
@@ -43,6 +69,22 @@ def test_builds_approval_gated_logging_directory_proposal(monkeypatch, tmp_path)
         "findings.config.logging.directory_missing",
     ]
     assert proposal["affected_resources"][0]["path"] == str(tmp_path / "logs")
+
+
+def test_builds_approval_gated_scratch_directory_proposal(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(maintenance_actions, "PROJECT_ROOT", tmp_path)
+    finding, checks = _missing_scratch_report(tmp_path)
+
+    proposals = maintenance_actions.build_maintenance_action_proposals([finding], checks)
+
+    assert len(proposals) == 1
+    proposal = proposals[0]
+    assert proposal["proposal_id"] == "maintenance.create_scratch_directory"
+    assert proposal["action"] == "create_scratch_directory"
+    assert proposal["source"] == "checks.workspace_directories.directories.scratch.path"
+    assert proposal["read_only"] is True
+    assert proposal["status"] == "proposed"
+    assert proposal["affected_resources"][0]["path"] == str(tmp_path / "scratch")
 
 
 def test_request_maintenance_action_registers_pending_approval(monkeypatch, tmp_path) -> None:
@@ -68,6 +110,56 @@ def test_request_maintenance_action_registers_pending_approval(monkeypatch, tmp_
     assert manager.snapshot()["pending_approvals"][0]["command_id"] == "cmd-maintenance"
 
 
+def test_request_maintenance_action_reuses_active_proposal_command(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(maintenance_actions, "PROJECT_ROOT", tmp_path)
+    manager = ApprovalManager()
+    finding, checks = _missing_logging_report(tmp_path)
+    proposals = maintenance_actions.build_maintenance_action_proposals([finding], checks)
+    report = {"action_proposals": proposals}
+
+    first = maintenance_actions.request_maintenance_action_approval(
+        "maintenance.create_logging_directory",
+        report=report,
+        manager=manager,
+        command_id="cmd-maintenance",
+        trace_id="trace-maintenance",
+    )
+    second = maintenance_actions.request_maintenance_action_approval(
+        "maintenance.create_logging_directory",
+        report=report,
+        manager=manager,
+    )
+
+    assert second.command_id == first.command_id
+    assert len(manager.snapshot()["pending_approvals"]) == 1
+
+
+def test_proposal_lifecycle_is_derived_from_command_snapshot(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(maintenance_actions, "PROJECT_ROOT", tmp_path)
+    manager = ApprovalManager()
+    finding, checks = _missing_logging_report(tmp_path)
+    proposals = maintenance_actions.build_maintenance_action_proposals([finding], checks)
+    report = {"action_proposals": proposals}
+    record = maintenance_actions.request_maintenance_action_approval(
+        "maintenance.create_logging_directory",
+        report=report,
+        manager=manager,
+        command_id="cmd-maintenance",
+        trace_id="trace-maintenance",
+    )
+
+    annotated = maintenance_actions.build_maintenance_action_proposals(
+        [finding],
+        checks,
+        commands_snapshot=manager.snapshot(),
+    )
+
+    assert annotated[0]["status"] == "approval_requested"
+    assert annotated[0]["lifecycle"]["source"] == "commands_snapshot"
+    assert annotated[0]["lifecycle"]["command_id"] == record.command_id
+    assert annotated[0]["lifecycle"]["command_status"] == "pending_approval"
+
+
 def test_execute_logging_directory_action_produces_verified_evidence(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(maintenance_actions, "PROJECT_ROOT", tmp_path)
     finding, checks = _missing_logging_report(tmp_path)
@@ -89,6 +181,22 @@ def test_execute_logging_directory_action_produces_verified_evidence(monkeypatch
     assert checks_by_name["target_within_project_root"]["passed"] is True
     assert checks_by_name["directory_exists_after"]["passed"] is True
     assert checks_by_name["approved_mutation_scope"]["passed"] is True
+
+
+def test_execute_scratch_directory_action_produces_verified_evidence(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(maintenance_actions, "PROJECT_ROOT", tmp_path)
+    finding, checks = _missing_scratch_report(tmp_path)
+    proposal = maintenance_actions.build_maintenance_action_proposals([finding], checks)[0]
+    target = tmp_path / "scratch"
+
+    result = maintenance_actions.execute_maintenance_action_proposal(proposal)
+
+    assert target.is_dir()
+    assert result.success is True
+    assert result.action == "create_scratch_directory"
+    assert result.execution_evidence is not None
+    assert result.execution_evidence.verification_state == "verified"
+    assert result.execution_evidence.verification_reason == "scratch directory created"
 
 
 def test_execute_logging_directory_blocks_out_of_scope_target(monkeypatch, tmp_path) -> None:

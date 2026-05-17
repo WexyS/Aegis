@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from aegis.core import app_map
 from aegis.core import maintenance
+from aegis.core import maintenance_actions
 
 
 REQUIRED_FINDING_FIELDS = {
@@ -38,6 +39,7 @@ def test_maintenance_scan_findings_have_source_contract() -> None:
     assert sum(report["categories"].values()) == len(findings)
     assert report["checks"]["finding_summary"]["total"] == len(findings)
     assert report["summary"]["finding_count"] == len(findings)
+    assert "pending_action_proposal_count" in report["summary"]
 
     for finding in findings:
         assert REQUIRED_FINDING_FIELDS <= set(finding)
@@ -64,7 +66,40 @@ def test_maintenance_scan_read_only_contract_has_no_observed_mutations() -> None
     assert "system_resource_snapshot" in contract["allowed_observations"]
     assert "process_resource_snapshot" in contract["allowed_observations"]
     assert "network_port_snapshot" in contract["allowed_observations"]
+    assert "workspace_directory_snapshot" in contract["allowed_observations"]
     assert contract["allowed_ephemeral_state"] == ["last_maintenance_scan_cache"]
+
+
+def test_workspace_directory_report_is_read_only_and_evidence_backed(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(maintenance, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(maintenance_actions, "PROJECT_ROOT", tmp_path)
+
+    report = maintenance.run_read_only_maintenance_scan(
+        runtime_snapshot={
+            "session_id": "test-workspace-directories",
+            "last_event_sequence": 0,
+            "queue_depth": 0,
+            "queue_capacity": 1,
+            "recovery_depth": 0,
+        },
+        websocket_clients=None,
+    )
+
+    workspace = report["checks"]["workspace_directories"]
+    assert workspace["scan_version"] == "workspace-directories/1"
+    assert workspace["read_only"] is True
+    assert workspace["status"] == "warning"
+    assert workspace["directories"]["scratch"]["exists"] is False
+    assert not (tmp_path / "scratch").exists()
+    scratch_finding = next(
+        finding for finding in report["findings"]
+        if finding["finding_id"] == "config.workspace.scratch_missing"
+    )
+    assert scratch_finding["evidence"]["path"] == str(tmp_path / "scratch")
+    assert any(
+        proposal["proposal_id"] == "maintenance.create_scratch_directory"
+        for proposal in report["action_proposals"]
+    )
 
 
 def test_maintenance_scan_does_not_mutate_discovered_app_registry() -> None:

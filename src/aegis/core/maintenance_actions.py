@@ -14,12 +14,23 @@ from aegis.core.schemas import ActionResult, CommandResponse, ExecutionEvidence,
 
 ACTION_PROPOSAL_VERSION = "maintenance-action-proposal/1"
 ACTION_EVIDENCE_VERIFIER = "maintenance-action-verifier/1"
-SUPPORTED_ACTIONS = {"create_logging_directory"}
+SUPPORTED_ACTIONS = {"create_logging_directory", "create_scratch_directory"}
+DIRECTORY_ACTION_REASONS = {
+    "create_logging_directory": ("logging directory created", "logging directory already existed"),
+    "create_scratch_directory": ("scratch directory created", "scratch directory already existed"),
+}
+ACTIVE_PROPOSAL_STATUSES = {
+    CommandStatus.PENDING_APPROVAL.value,
+    CommandStatus.APPROVED.value,
+    CommandStatus.RUNNING.value,
+}
 
 
 def build_maintenance_action_proposals(
     findings: list[dict[str, Any]],
     checks: dict[str, Any],
+    *,
+    commands_snapshot: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Build read-only action proposals from evidence-backed maintenance findings."""
     findings_by_id = {
@@ -36,7 +47,71 @@ def build_maintenance_action_proposals(
         if proposal:
             proposals.append(proposal)
 
-    return proposals
+    scratch_finding = findings_by_id.get("config.workspace.scratch_missing")
+    workspace_check = checks.get("workspace_directories") if isinstance(checks, dict) else None
+    if scratch_finding and isinstance(workspace_check, dict):
+        proposal = _scratch_directory_proposal(scratch_finding, workspace_check)
+        if proposal:
+            proposals.append(proposal)
+
+    return annotate_action_proposals_with_lifecycle(proposals, commands_snapshot)
+
+
+def annotate_action_proposals_with_lifecycle(
+    proposals: list[dict[str, Any]],
+    commands_snapshot: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Overlay backend command lifecycle state onto read-only proposals."""
+    if not commands_snapshot:
+        return proposals
+    annotated: list[dict[str, Any]] = []
+    for proposal in proposals:
+        proposal_id = str(proposal.get("proposal_id") or "")
+        record = find_latest_maintenance_action_record(commands_snapshot, proposal_id)
+        if not record:
+            annotated.append(proposal)
+            continue
+        status = _proposal_status_from_command_record(record)
+        updated = dict(proposal)
+        updated["status"] = status
+        updated["lifecycle"] = {
+            "source": "commands_snapshot",
+            "command_id": record.get("command_id"),
+            "command_status": record.get("status"),
+            "verification_state": record.get("verification_state"),
+            "approval_required": record.get("approval_required"),
+            "approved": record.get("approved"),
+            "rejected": record.get("rejected"),
+            "created_at": record.get("created_at"),
+            "updated_at": record.get("updated_at"),
+            "approved_at": record.get("approved_at"),
+            "rejected_at": record.get("rejected_at"),
+            "cancelled_at": record.get("cancelled_at"),
+            "completed_at": record.get("completed_at"),
+        }
+        annotated.append(updated)
+    return annotated
+
+
+def find_latest_maintenance_action_record(
+    commands_snapshot: dict[str, Any] | None,
+    proposal_id: str,
+) -> dict[str, Any] | None:
+    if not proposal_id or not isinstance(commands_snapshot, dict):
+        return None
+    records = commands_snapshot.get("records")
+    candidates = records if isinstance(records, list) else []
+    matches: list[dict[str, Any]] = []
+    for record in candidates:
+        if not isinstance(record, dict):
+            continue
+        metadata = record.get("metadata")
+        proposal = metadata.get("proposal") if isinstance(metadata, dict) else None
+        if isinstance(proposal, dict) and proposal.get("proposal_id") == proposal_id:
+            matches.append(record)
+    if not matches:
+        return None
+    return max(matches, key=lambda record: int(record.get("updated_at") or record.get("created_at") or 0))
 
 
 def request_maintenance_action_approval(
@@ -54,6 +129,16 @@ def request_maintenance_action_approval(
         raise ValueError("Maintenance action proposal is not approval-gated")
 
     manager = manager or get_approval_manager()
+    existing = find_latest_maintenance_action_record(manager.snapshot(), proposal_id)
+    if existing:
+        status = str(existing.get("status") or "")
+        if status in ACTIVE_PROPOSAL_STATUSES:
+            existing_record = manager.get(str(existing.get("command_id") or ""))
+            if existing_record is not None:
+                return existing_record
+        if status == CommandStatus.EXECUTED.value and existing.get("verification_state") == "verified":
+            raise ValueError("Maintenance action proposal is already verified")
+
     trace_id = trace_id or str(uuid4())
     command_id = command_id or f"maintenance-{uuid4()}"
     return manager.register_pending(
@@ -156,7 +241,11 @@ def execute_maintenance_action_proposal(proposal: dict[str, Any]) -> ActionResul
         ))
         verified = all(check["passed"] for check in checks)
         state = "verified" if verified else "failed"
-        reason = "logging directory created" if mutation_performed else "logging directory already existed"
+        created_reason, existed_reason = DIRECTORY_ACTION_REASONS.get(
+            action,
+            ("directory created", "directory already existed"),
+        )
+        reason = created_reason if mutation_performed else existed_reason
         completed_at = int(time.time() * 1000)
         evidence = _evidence(
             action=action,
@@ -225,29 +314,79 @@ def _logging_directory_proposal(
     directory = str(logging_check.get("directory") or "")
     if not directory:
         return None
-    allowed, resolved_path, reason = _resolve_safe_project_path(directory)
+    return _directory_proposal(
+        proposal_id="maintenance.create_logging_directory",
+        finding=finding,
+        action="create_logging_directory",
+        title="Create configured logging directory",
+        reason="Configured logging directory is missing and runtime sessions need a durable log target.",
+        source="checks.logging.directory",
+        directory=directory,
+        evidence_refs=[
+            "checks.logging.directory",
+            "findings.config.logging.directory_missing",
+        ],
+        approval_prefix="Create logging directory at",
+    )
+
+
+def _scratch_directory_proposal(
+    finding: dict[str, Any],
+    workspace_check: dict[str, Any],
+) -> dict[str, Any] | None:
+    directories = workspace_check.get("directories")
+    scratch = directories.get("scratch") if isinstance(directories, dict) else None
+    directory = str((scratch or {}).get("path") or "")
+    if not directory:
+        return None
+    return _directory_proposal(
+        proposal_id="maintenance.create_scratch_directory",
+        finding=finding,
+        action="create_scratch_directory",
+        title="Create local scratch directory",
+        reason="Local scratch directory is missing and smoke/test artifacts need an ignored workspace target.",
+        source="checks.workspace_directories.directories.scratch.path",
+        directory=directory,
+        evidence_refs=[
+            "checks.workspace_directories.directories.scratch",
+            "findings.config.workspace.scratch_missing",
+        ],
+        approval_prefix="Create scratch directory at",
+    )
+
+
+def _directory_proposal(
+    *,
+    proposal_id: str,
+    finding: dict[str, Any],
+    action: str,
+    title: str,
+    reason: str,
+    source: str,
+    directory: str,
+    evidence_refs: list[str],
+    approval_prefix: str,
+) -> dict[str, Any] | None:
+    allowed, resolved_path, safety_reason = _resolve_safe_project_path(directory)
     if not allowed or resolved_path is None:
         return None
     return {
         "proposal_version": ACTION_PROPOSAL_VERSION,
-        "proposal_id": "maintenance.create_logging_directory",
+        "proposal_id": proposal_id,
         "finding_id": finding.get("finding_id"),
-        "action": "create_logging_directory",
-        "title": "Create configured logging directory",
-        "reason": "Configured logging directory is missing and runtime sessions need a durable log target.",
-        "source": "checks.logging.directory",
+        "action": action,
+        "title": title,
+        "reason": reason,
+        "source": source,
         "risk_level": RiskLevel.MEDIUM.value,
         "requires_approval": True,
-        "approval_text": f"Create logging directory at {resolved_path}",
+        "approval_text": f"{approval_prefix} {resolved_path}",
         "affected_resources": [{
             "type": "directory",
             "path": str(resolved_path),
             "operation": "mkdir",
         }],
-        "evidence_refs": [
-            "checks.logging.directory",
-            "findings.config.logging.directory_missing",
-        ],
+        "evidence_refs": evidence_refs,
         "evidence": {
             "directory": str(resolved_path),
             "exists": False,
@@ -272,8 +411,28 @@ def _logging_directory_proposal(
         ],
         "read_only": True,
         "status": "proposed",
-        "safety_note": reason,
+        "safety_note": safety_reason,
     }
+
+
+def _proposal_status_from_command_record(record: dict[str, Any]) -> str:
+    status = str(record.get("status") or "")
+    if status == CommandStatus.PENDING_APPROVAL.value:
+        return "approval_requested"
+    if status == CommandStatus.APPROVED.value:
+        return "approved"
+    if status == CommandStatus.RUNNING.value:
+        return "executing"
+    if status == CommandStatus.EXECUTED.value:
+        return "verified" if record.get("verification_state") == "verified" else "completed_unverified"
+    if status in {
+        CommandStatus.FAILED.value,
+        CommandStatus.BLOCKED.value,
+        CommandStatus.CANCELLED.value,
+        CommandStatus.REJECTED.value,
+    }:
+        return status
+    return "proposed"
 
 
 def _proposal_target_path(proposal: dict[str, Any]) -> str:

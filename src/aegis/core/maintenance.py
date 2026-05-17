@@ -149,6 +149,7 @@ def _runtime_health_summary(checks: dict[str, Any]) -> dict[str, Any]:
         "system_resources": checks["system_resources"]["status"],
         "process_resources": checks["process_resources"]["status"],
         "network_ports": checks["network_ports"]["status"],
+        "workspace_directories": checks["workspace_directories"]["status"],
     }
     reasons = [
         name for name, status in statuses.items()
@@ -172,6 +173,33 @@ def _documentation_report(project_root: Path) -> dict[str, Any]:
         "status": "ok" if readme.exists() else "warning",
         "readme_path": str(readme),
         "readme_present": readme.exists(),
+    }
+
+
+def _workspace_directories_report(project_root: Path) -> dict[str, Any]:
+    directories = {
+        "logs": project_root / "logs",
+        "scratch": project_root / "scratch",
+    }
+    directory_status = {
+        name: {
+            "path": str(path),
+            "exists": path.exists(),
+            "is_dir": path.is_dir() if path.exists() else False,
+        }
+        for name, path in directories.items()
+    }
+    missing = [
+        name
+        for name, status in directory_status.items()
+        if not status["exists"] or not status["is_dir"]
+    ]
+    return {
+        "scan_version": "workspace-directories/1",
+        "read_only": True,
+        "status": "ok" if not missing else "warning",
+        "directories": directory_status,
+        "missing": missing,
     }
 
 
@@ -199,6 +227,7 @@ def _read_only_contract() -> dict[str, Any]:
             "system_resource_snapshot",
             "process_resource_snapshot",
             "network_port_snapshot",
+            "workspace_directory_snapshot",
         ],
         "allowed_ephemeral_state": [
             "last_maintenance_scan_cache",
@@ -477,6 +506,20 @@ def _findings_from_checks(checks: dict[str, Any]) -> list[dict[str, Any]]:
             recommendation="Create the configured logging directory before long-running runtime sessions.",
         ))
 
+    workspace_directories = checks["workspace_directories"]
+    directories = workspace_directories.get("directories") if isinstance(workspace_directories, dict) else {}
+    scratch = directories.get("scratch") if isinstance(directories, dict) else None
+    if isinstance(scratch, dict) and (scratch.get("exists") is False or scratch.get("is_dir") is False):
+        findings.append(_finding(
+            "config.workspace.scratch_missing",
+            category="config",
+            severity="info",
+            source="checks.workspace_directories.directories.scratch",
+            reason="Local scratch directory does not exist.",
+            evidence=dict(scratch),
+            recommendation="Create the scratch directory before writing local test or smoke artifacts.",
+        ))
+
     safety = checks["safety"]
     if not safety.get("safe_mode") or not safety.get("dry_run_default"):
         findings.append(_finding(
@@ -582,6 +625,7 @@ def run_read_only_maintenance_scan(
         "dry_run_default": settings.safety.dry_run_default,
     }
     documentation = _documentation_report(PROJECT_ROOT)
+    workspace_directories = _workspace_directories_report(PROJECT_ROOT)
     read_only_contract = _read_only_contract()
     checks = {
         "tool_registry": tool_registry,
@@ -592,6 +636,7 @@ def run_read_only_maintenance_scan(
         "logging": logging_check,
         "safety": safety,
         "documentation": documentation,
+        "workspace_directories": workspace_directories,
         "read_only_contract": read_only_contract,
         "command_lifecycle": command_lifecycle,
         "runtime_snapshot": runtime_snapshot_check,
@@ -602,12 +647,16 @@ def run_read_only_maintenance_scan(
         "network_ports": network_ports,
     }
     findings = _findings_from_checks(checks)
-    action_proposals = build_maintenance_action_proposals(findings, checks)
+    action_proposals = build_maintenance_action_proposals(findings, checks, commands_snapshot=commands)
     finding_summary = _finding_summary(findings)
     runtime_health = _runtime_health_summary(checks)
     runtime_health["finding_count"] = finding_summary["total"]
     runtime_health["finding_severity_counts"] = finding_summary["by_severity"]
     runtime_health["action_proposal_count"] = len(action_proposals)
+    runtime_health["pending_action_proposal_count"] = sum(
+        1 for proposal in action_proposals
+        if proposal.get("status") in {"approval_requested", "approved", "executing"}
+    )
     checks["runtime_health"] = runtime_health
     checks["finding_summary"] = finding_summary
     report = {

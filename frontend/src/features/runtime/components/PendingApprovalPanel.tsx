@@ -140,6 +140,9 @@ const RuntimeHealthSummary = ({ health }: { health: RuntimeHealth }) => {
       {typeof health.action_proposal_count === 'number' && health.action_proposal_count > 0 && (
         <p className="mt-1 text-[9px] font-mono text-foreground/45">{health.action_proposal_count} approval-gated proposals</p>
       )}
+      {typeof health.pending_action_proposal_count === 'number' && health.pending_action_proposal_count > 0 && (
+        <p className="mt-1 text-[9px] font-mono text-warning/80">{health.pending_action_proposal_count} proposals in approval lifecycle</p>
+      )}
     </div>
   );
 };
@@ -176,16 +179,22 @@ const MaintenanceActionProposals = ({ proposals }: { proposals: MaintenanceActio
         <div key={proposal.proposal_id} className="rounded-md border border-warning/20 bg-warning/[0.03] px-2 py-1.5">
           <div className="flex items-center justify-between gap-2 text-[9px] font-mono">
             <span className="truncate text-foreground/70">{proposal.title}</span>
-            <span className="text-warning">{proposal.risk_level}</span>
+            <span className="text-warning">{proposal.status}</span>
           </div>
           <p className="mt-1 line-clamp-2 text-[9px] font-mono leading-relaxed text-foreground/55">{proposal.reason}</p>
           <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">{proposal.source}</p>
+          {proposal.lifecycle?.command_id && (
+            <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">
+              {proposal.lifecycle.command_status} / {proposal.lifecycle.verification_state} / {proposal.lifecycle.command_id}
+            </p>
+          )}
           <button
             type="button"
             onClick={() => requestMaintenanceAction(proposal.proposal_id)}
-            className="mt-2 w-full rounded-md border border-warning/30 bg-warning/10 px-2 py-1.5 text-[9px] font-bold uppercase tracking-widest text-warning hover:bg-warning/15 transition-colors"
+            disabled={proposal.status !== 'proposed'}
+            className="mt-2 w-full rounded-md border border-warning/30 bg-warning/10 px-2 py-1.5 text-[9px] font-bold uppercase tracking-widest text-warning hover:bg-warning/15 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.02] disabled:text-foreground/35 transition-colors"
           >
-            Request Approval
+            {proposal.status === 'proposed' ? 'Request Approval' : 'Lifecycle Active'}
           </button>
         </div>
       ))}
@@ -340,34 +349,57 @@ const ResourceMetric = ({ label, value, tone = 'default' }: { label: string; val
   );
 };
 
-const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => (
-  <div className="rounded-lg border border-warning/25 bg-warning/5 p-3 space-y-3">
-    <div className="space-y-1">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-[9px] font-bold uppercase tracking-widest text-warning">{command.risk_level} risk</span>
-        <span className="text-[9px] font-mono text-foreground/35">{command.verification_state}</span>
+const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
+  const proposal = getMaintenanceProposalFromCommand(command);
+  const resources = Array.isArray(proposal?.affected_resources) ? proposal.affected_resources : [];
+  const evidenceRefs = Array.isArray(proposal?.evidence_refs) ? proposal.evidence_refs : [];
+
+  return (
+    <div className="rounded-lg border border-warning/25 bg-warning/5 p-3 space-y-3">
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[9px] font-bold uppercase tracking-widest text-warning">{command.risk_level} risk</span>
+          <span className="text-[9px] font-mono text-foreground/35">{command.verification_state}</span>
+        </div>
+        <p className="text-[12px] font-medium leading-relaxed text-foreground/85">{command.text}</p>
+        {command.reason && <p className="text-[10px] font-mono text-foreground/45">{command.reason}</p>}
+        {proposal && (
+          <div className="rounded-md border border-white/10 bg-black/15 px-2 py-1.5">
+            <div className="flex items-center justify-between gap-2 text-[9px] font-mono">
+              <span className="truncate text-foreground/55">{proposal.action}</span>
+              <span className="text-warning">{proposal.status}</span>
+            </div>
+            <p className="mt-1 line-clamp-2 text-[9px] font-mono leading-relaxed text-foreground/60">{proposal.reason}</p>
+            {resources.length > 0 && (
+              <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">
+                {resources.map((resource) => String(resource.path ?? resource.type ?? 'resource')).join(', ')}
+              </p>
+            )}
+            {evidenceRefs.length > 0 && (
+              <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">{evidenceRefs.join(', ')}</p>
+            )}
+          </div>
+        )}
       </div>
-      <p className="text-[12px] font-medium leading-relaxed text-foreground/85">{command.text}</p>
-      {command.reason && <p className="text-[10px] font-mono text-foreground/45">{command.reason}</p>}
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => approveCommand(command.command_id)}
+          className="flex items-center justify-center gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-success hover:bg-success/15 transition-colors"
+        >
+          <Check size={12} /> Approve
+        </button>
+        <button
+          type="button"
+          onClick={() => rejectCommand(command.command_id)}
+          className="flex items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground/55 hover:text-danger hover:border-danger/30 transition-colors"
+        >
+          <Ban size={12} /> Reject
+        </button>
+      </div>
     </div>
-    <div className="grid grid-cols-2 gap-2">
-      <button
-        type="button"
-        onClick={() => approveCommand(command.command_id)}
-        className="flex items-center justify-center gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-success hover:bg-success/15 transition-colors"
-      >
-        <Check size={12} /> Approve
-      </button>
-      <button
-        type="button"
-        onClick={() => rejectCommand(command.command_id)}
-        className="flex items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground/55 hover:text-danger hover:border-danger/30 transition-colors"
-      >
-        <Ban size={12} /> Reject
-      </button>
-    </div>
-  </div>
-));
+  );
+});
 
 ApprovalItem.displayName = 'ApprovalItem';
 
@@ -500,7 +532,26 @@ function getMaintenanceActionProposals(report: Record<string, unknown> | null): 
     && (proposal as Partial<MaintenanceActionProposal>).requires_approval === true
     && typeof (proposal as Partial<MaintenanceActionProposal>).approval_text === 'string'
     && (proposal as Partial<MaintenanceActionProposal>).read_only === true
+    && typeof (proposal as Partial<MaintenanceActionProposal>).status === 'string'
   ));
+}
+
+function getMaintenanceProposalFromCommand(command: CommandRecord): MaintenanceActionProposal | null {
+  const metadata = command.metadata;
+  if (!metadata || metadata.kind !== 'maintenance_action') return null;
+  const proposal = metadata.proposal;
+  if (!proposal || typeof proposal !== 'object') return null;
+  const candidate = proposal as Partial<MaintenanceActionProposal>;
+  if (
+    typeof candidate.proposal_id !== 'string'
+    || typeof candidate.action !== 'string'
+    || typeof candidate.title !== 'string'
+    || typeof candidate.reason !== 'string'
+    || typeof candidate.status !== 'string'
+  ) {
+    return null;
+  }
+  return candidate as MaintenanceActionProposal;
 }
 
 function numberish(value: unknown): number | null {

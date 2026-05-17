@@ -266,9 +266,15 @@ def test_frontend_maintenance_actions_are_backend_proposal_driven() -> None:
     protocol_source = FRONTEND_PROTOCOL.read_text(encoding="utf-8")
 
     assert "export interface MaintenanceActionProposal" in runtime_types
+    assert "pending_action_proposal_count?: number" in runtime_types
+    assert "lifecycle?: {" in runtime_types
     assert "metadata?: Record<string, unknown>" in runtime_types
     assert "metadata: z.record(z.string(), z.unknown()).optional()" in protocol_source
     assert "function getMaintenanceActionProposals" in panel_source
+    assert "getMaintenanceProposalFromCommand(command)" in panel_source
+    assert "disabled={proposal.status !== 'proposed'}" in panel_source
     assert "requestMaintenanceAction(proposal.proposal_id)" in panel_source
     assert "socket.emit('request_maintenance_action', { proposal_id: proposalId })" in socket_source
     assert "action_proposals" in panel_source
+    assert "maintenance_action_rescan" in (ROOT / "src" / "aegis" / "api" / "ws_bridge.py").read_text(encoding="utf-8")
+    assert "maintenance_action_approval_requested" in (ROOT / "src" / "aegis" / "api" / "ws_bridge.py").read_text(encoding="utf-8")

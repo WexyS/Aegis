@@ -302,6 +302,21 @@ export interface MaintenanceActionProposal {
   verification_checks: Array<Record<string, unknown>>;
   read_only: boolean;
   status: string;
+  lifecycle?: {
+    source?: string;
+    command_id?: string | null;
+    command_status?: string | null;
+    verification_state?: string | null;
+    approval_required?: boolean | null;
+    approved?: boolean | null;
+    rejected?: boolean | null;
+    created_at?: number | null;
+    updated_at?: number | null;
+    approved_at?: number | null;
+    rejected_at?: number | null;
+    cancelled_at?: number | null;
+    completed_at?: number | null;
+  };
   safety_note?: string;
 }
 
@@ -341,6 +356,7 @@ export interface RuntimeHealth {
   finding_count?: number;
   finding_severity_counts?: Record<string, number>;
   action_proposal_count?: number;
+  pending_action_proposal_count?: number;
 }
 
 export interface CommandLifecycleDiagnostics {

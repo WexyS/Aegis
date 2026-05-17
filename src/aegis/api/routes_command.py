@@ -219,9 +219,17 @@ async def request_maintenance_action(proposal_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=409, detail=str(exc)) from None
 
     await ws_bridge.emit_approval_required(record.to_dict(), trace_id=record.trace_id)
+    refreshed_report = run_read_only_maintenance_scan(**ws_bridge.maintenance_scan_context())
+    await ws_bridge.emit_event(
+        ws_bridge.ProtocolEventType.MAINTENANCE_SCAN_COMPLETED,
+        {"report": refreshed_report, "reason": "maintenance_action_approval_requested"},
+        trace_id=record.trace_id,
+        source=ws_bridge.Component.SYSTEM,
+    )
     return {
         "command": record.to_dict(),
         "proposal": record.metadata.get("proposal"),
+        "report": refreshed_report,
     }
 
 

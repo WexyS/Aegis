@@ -210,6 +210,14 @@ async def request_maintenance_action(sid: str, data: dict):
         )
         record = request_maintenance_action_approval(str(proposal_id), report=report)
         await emit_approval_required(record.to_dict(), trace_id=record.trace_id)
+        refreshed_report = await asyncio.to_thread(run_read_only_maintenance_scan, **maintenance_scan_context())
+        await emit_event(
+            ProtocolEventType.MAINTENANCE_SCAN_COMPLETED,
+            {"report": refreshed_report, "reason": "maintenance_action_approval_requested"},
+            trace_id=record.trace_id,
+            source=Component.SYSTEM,
+            runtime_phase=get_runtime_authority(_session_id).current_state(),
+        )
         await _emit_snapshot(to=sid)
     except Exception as e:
         logger.error("[WS] Failed to request maintenance action approval: %s", e)
@@ -357,7 +365,14 @@ async def execute_maintenance_action_record(record, *, sid: str | None = None) -
     await emit_task_finished(trace_id=trace_id, final_state=final_state)
 
     try:
-        await asyncio.to_thread(run_read_only_maintenance_scan, **maintenance_scan_context())
+        report = await asyncio.to_thread(run_read_only_maintenance_scan, **maintenance_scan_context())
+        await emit_event(
+            ProtocolEventType.MAINTENANCE_SCAN_COMPLETED,
+            {"report": report, "reason": "maintenance_action_rescan"},
+            trace_id=trace_id,
+            source=Component.SYSTEM,
+            runtime_phase=get_runtime_authority(_session_id).current_state(),
+        )
     except Exception as exc:
         logger.warning("[WS] Maintenance rescan after action failed: %s", exc)
     if sid:
