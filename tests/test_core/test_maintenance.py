@@ -59,6 +59,9 @@ def test_maintenance_scan_read_only_contract_has_no_observed_mutations() -> None
     assert "files" in contract["prohibited_mutations"]
     assert "git" in contract["prohibited_mutations"]
     assert "app_registry_refresh" in contract["prohibited_mutations"]
+    assert "system_resource_snapshot" in contract["allowed_observations"]
+    assert "process_resource_snapshot" in contract["allowed_observations"]
+    assert "network_port_snapshot" in contract["allowed_observations"]
     assert contract["allowed_ephemeral_state"] == ["last_maintenance_scan_cache"]
 
 

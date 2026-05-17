@@ -174,6 +174,12 @@ class TestMaintenanceEndpoint:
             assert data["checks"]["tool_registry"]["registry"]["status"] == "ok"
             assert data["checks"]["environment"]["scan_version"] == "environment-diagnostics/1"
             assert data["checks"]["environment"]["read_only"] is True
+            assert data["checks"]["system_resources"]["scan_version"] == "system-resources/1"
+            assert data["checks"]["system_resources"]["read_only"] is True
+            assert data["checks"]["process_resources"]["scan_version"] == "process-resources/1"
+            assert data["checks"]["process_resources"]["read_only"] is True
+            assert data["checks"]["network_ports"]["scan_version"] == "network-ports/1"
+            assert data["checks"]["network_ports"]["read_only"] is True
 
     @pytest.mark.asyncio
     async def test_environment_diagnostics_endpoint_is_read_only_report(self) -> None:

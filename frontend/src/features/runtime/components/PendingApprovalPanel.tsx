@@ -12,8 +12,11 @@ import {
   EnvironmentDiagnostics,
   EvidenceAudit,
   MaintenanceFinding,
+  NetworkPortsDiagnostics,
+  ProcessResourcesDiagnostics,
   RuntimeHealth,
   RuntimeSnapshotDiagnostics,
+  SystemResourcesDiagnostics,
   WebSocketDiagnostics,
 } from '@/types/runtime';
 
@@ -26,6 +29,9 @@ export const PendingApprovalPanel = () => {
   const runtimeSnapshot = getRuntimeSnapshot(lastMaintenanceScan);
   const websocket = getWebSocketDiagnostics(lastMaintenanceScan);
   const actionTimeline = getActionTimelineDiagnostics(lastMaintenanceScan);
+  const systemResources = getSystemResources(lastMaintenanceScan);
+  const processResources = getProcessResources(lastMaintenanceScan);
+  const networkPorts = getNetworkPorts(lastMaintenanceScan);
   const environment = getEnvironmentDiagnostics(lastMaintenanceScan);
   const evidenceAudit = getEvidenceAudit(lastMaintenanceScan);
   const findings = getMaintenanceFindings(lastMaintenanceScan);
@@ -92,6 +98,13 @@ export const PendingApprovalPanel = () => {
               actionTimeline={actionTimeline}
             />
           )}
+          {(systemResources || processResources || networkPorts) && (
+            <ResourceDiagnosticsSummary
+              systemResources={systemResources}
+              processResources={processResources}
+              networkPorts={networkPorts}
+            />
+          )}
           {environment && <EnvironmentSummary diagnostics={environment} />}
           {evidenceAudit && <EvidenceAuditSummary audit={evidenceAudit} />}
         </div>
@@ -111,7 +124,7 @@ const RuntimeHealthSummary = ({ health }: { health: RuntimeHealth }) => {
         <span className={statusTone}>{health.status}</span>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-1.5">
-        {Object.entries(health.component_statuses || {}).slice(0, 8).map(([name, status]) => (
+        {Object.entries(health.component_statuses || {}).slice(0, 12).map(([name, status]) => (
           <StatusMetric key={name} label={name} status={String(status)} />
         ))}
       </div>
@@ -181,6 +194,55 @@ const RuntimeTruthSummary = ({
   </div>
 );
 
+const ResourceDiagnosticsSummary = ({
+  systemResources,
+  processResources,
+  networkPorts,
+}: {
+  systemResources: SystemResourcesDiagnostics | null;
+  processResources: ProcessResourcesDiagnostics | null;
+  networkPorts: NetworkPortsDiagnostics | null;
+}) => {
+  const cpuPercent = numberish(systemResources?.cpu_percent);
+  const memoryPercent = numberish(systemResources?.memory?.percent);
+  const diskPercent = numberish(systemResources?.disk?.percent);
+  const uptimeSeconds = numberish(systemResources?.uptime_seconds);
+  const processCount = numberish(processResources?.process_count);
+  const skippedCount = numberish(processResources?.skipped_count);
+  const ports = Array.isArray(networkPorts?.ports) ? networkPorts.ports : [];
+  const listeningPorts = ports.filter((port) => port.status === 'listening');
+  const topProcess = Array.isArray(processResources?.top_by_memory) ? processResources.top_by_memory[0] : undefined;
+  const status = worstDiagnosticStatus(systemResources?.status, processResources?.status, networkPorts?.status);
+
+  return (
+    <div className="mt-3 border-t border-white/10 pt-3">
+      <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest">
+        <span className="text-foreground/40">Resources</span>
+        <span className={statusTone(status)}>{status}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        {cpuPercent !== null && <ResourceMetric label="cpu" value={`${cpuPercent.toFixed(1)}%`} tone={cpuPercent >= 90 ? 'warning' : 'success'} />}
+        {memoryPercent !== null && <ResourceMetric label="memory" value={`${memoryPercent.toFixed(1)}%`} tone={memoryPercent >= 90 ? 'warning' : 'success'} />}
+        {diskPercent !== null && <ResourceMetric label="disk" value={`${diskPercent.toFixed(1)}%`} tone={diskPercent >= 90 ? 'warning' : 'success'} />}
+        {uptimeSeconds !== null && <ResourceMetric label="uptime" value={formatDuration(uptimeSeconds)} />}
+        {processCount !== null && <ResourceMetric label="processes" value={String(processCount)} />}
+        {skippedCount !== null && <ResourceMetric label="skipped" value={String(skippedCount)} tone={skippedCount > 0 ? 'warning' : 'success'} />}
+        {networkPorts && <ResourceMetric label="ports" value={`${listeningPorts.length}/${ports.length}`} tone={listeningPorts.length > 0 ? 'warning' : 'default'} />}
+      </div>
+      {topProcess && (
+        <p className="mt-2 truncate text-[9px] font-mono text-foreground/45">
+          top memory: {topProcess.name} / PID {topProcess.pid} / {formatBytes(topProcess.memory_rss_bytes)}
+        </p>
+      )}
+      {listeningPorts.length > 0 && (
+        <p className="mt-1 truncate text-[9px] font-mono text-foreground/45">
+          listening: {listeningPorts.map((port) => `${port.port}:${port.listeners[0]?.process_name ?? port.listeners[0]?.pid ?? 'unknown'}`).join(', ')}
+        </p>
+      )}
+    </div>
+  );
+};
+
 const EvidenceAuditSummary = ({ audit }: { audit: EvidenceAudit }) => {
   const statusTone = audit.status === 'ok' ? 'text-success' : audit.status === 'fail' ? 'text-danger' : 'text-warning';
   const verifiedActionCount = audit.verified_action_count ?? 0;
@@ -225,6 +287,16 @@ const StatusMetric = ({ label, status }: { label: string; status: string }) => {
 };
 
 const AuditMetric = ({ label, value, tone = 'default' }: { label: string; value: number; tone?: 'default' | 'success' | 'warning' | 'danger' }) => {
+  const valueColor = tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-warning' : tone === 'danger' ? 'text-danger' : 'text-foreground/70';
+  return (
+    <div className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.02] px-2 py-1 text-[9px] font-mono">
+      <span className="text-foreground/45">{label}</span>
+      <span className={valueColor}>{value}</span>
+    </div>
+  );
+};
+
+const ResourceMetric = ({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'success' | 'warning' | 'danger' }) => {
   const valueColor = tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-warning' : tone === 'danger' ? 'text-danger' : 'text-foreground/70';
   return (
     <div className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.02] px-2 py-1 text-[9px] font-mono">
@@ -304,6 +376,24 @@ function getActionTimelineDiagnostics(report: Record<string, unknown> | null): A
   return timeline as ActionTimelineDiagnostics;
 }
 
+function getSystemResources(report: Record<string, unknown> | null): SystemResourcesDiagnostics | null {
+  const resources = getCheck(report, 'system_resources') as Partial<SystemResourcesDiagnostics> | null;
+  if (!resources || resources.scan_version !== 'system-resources/1') return null;
+  return resources as SystemResourcesDiagnostics;
+}
+
+function getProcessResources(report: Record<string, unknown> | null): ProcessResourcesDiagnostics | null {
+  const resources = getCheck(report, 'process_resources') as Partial<ProcessResourcesDiagnostics> | null;
+  if (!resources || resources.scan_version !== 'process-resources/1') return null;
+  return resources as ProcessResourcesDiagnostics;
+}
+
+function getNetworkPorts(report: Record<string, unknown> | null): NetworkPortsDiagnostics | null {
+  const ports = getCheck(report, 'network_ports') as Partial<NetworkPortsDiagnostics> | null;
+  if (!ports || ports.scan_version !== 'network-ports/1') return null;
+  return ports as NetworkPortsDiagnostics;
+}
+
 const EnvironmentSummary = ({ diagnostics }: { diagnostics: EnvironmentDiagnostics }) => {
   const checks = ['python', 'git', 'node', 'npm', 'playwright']
     .map((name) => ({ name, status: String(diagnostics.checks?.[name]?.status ?? 'unknown') }));
@@ -358,4 +448,36 @@ function getMaintenanceFindings(report: Record<string, unknown> | null): Mainten
     && typeof (finding as Partial<MaintenanceFinding>).recommendation === 'string'
     && (finding as Partial<MaintenanceFinding>).read_only === true
   ));
+}
+
+function numberish(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function formatBytes(value: number): string {
+  if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(1)}GB`;
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)}MB`;
+  if (value >= 1024) return `${(value / 1024).toFixed(1)}KB`;
+  return `${value}B`;
+}
+
+function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  if (hours >= 24) return `${Math.floor(hours / 24)}d`;
+  if (hours > 0) return `${hours}h`;
+  return `${Math.floor(seconds / 60)}m`;
+}
+
+function worstDiagnosticStatus(...statuses: Array<string | null | undefined>): string {
+  const rank: Record<string, number> = { ok: 0, unknown: 1, warning: 2, fail: 3 };
+  return statuses
+    .filter((status): status is string => typeof status === 'string' && status.length > 0)
+    .sort((a, b) => (rank[b] ?? 1) - (rank[a] ?? 1))[0] ?? 'unknown';
+}
+
+function statusTone(status: string): string {
+  if (status === 'ok') return 'text-success';
+  if (status === 'fail') return 'text-danger';
+  if (status === 'warning') return 'text-warning';
+  return 'text-foreground/45';
 }

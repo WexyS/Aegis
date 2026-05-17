@@ -32,6 +32,9 @@ The long-term product direction is a trustworthy local assistant that can inspec
 - **Approval-aware execution**: low-risk actions may run automatically, medium-risk actions require approval, and critical actions are blocked.
 - **Replayable behavior**: journaled events can rebuild the action timeline and provide audit context.
 - **Bounded autonomy**: Aegis may assist, inspect, recommend, and execute approved actions, but it should not mutate the system or itself without governance.
+- **Reliability Budget**: new capabilities must improve or preserve determinism, replayability, evidence quality, approval safety, backend truth, and test confidence.
+- **Operational Simplicity Budget**: new capabilities should avoid unnecessary protocol fields, event types, FSM states, failure modes, recovery paths, or projection complexity.
+- **Human Understandability Constraint**: a single engineer should be able to mentally trace a feature's runtime flow, evidence path, and failure behavior in a short review.
 
 ## Architecture
 
@@ -119,6 +122,9 @@ The current maintenance path is read-only. It reports runtime health from backen
 - command lifecycle state
 - WebSocket runtime context
 - action timeline health
+- system resource snapshot
+- process resource snapshot
+- development port listener snapshot
 - app registry health
 - tool registry health
 - environment checks

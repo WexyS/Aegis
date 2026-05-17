@@ -217,6 +217,61 @@ export interface EnvironmentDiagnostics {
   recommendations: string[];
 }
 
+export interface SystemResourcesDiagnostics {
+  scan_version: string;
+  read_only: boolean;
+  status: string;
+  cpu_percent?: number;
+  memory?: {
+    total_bytes?: number;
+    available_bytes?: number;
+    used_bytes?: number;
+    percent?: number;
+  };
+  disk?: {
+    path?: string;
+    total_bytes?: number;
+    used_bytes?: number;
+    free_bytes?: number;
+    percent?: number;
+  };
+  uptime_seconds?: number;
+  error?: string;
+}
+
+export interface ProcessResourcesDiagnostics {
+  scan_version: string;
+  read_only: boolean;
+  status: string;
+  process_count: number;
+  top_by_memory: Array<{
+    pid: number;
+    name: string;
+    memory_rss_bytes: number;
+    cpu_percent: number;
+  }>;
+  skipped: Record<string, number>;
+  skipped_count: number;
+  error?: string;
+}
+
+export interface NetworkPortsDiagnostics {
+  scan_version: string;
+  read_only: boolean;
+  status: string;
+  ports: Array<{
+    port: number;
+    status: string;
+    listeners: Array<{
+      pid?: number | null;
+      process_name?: string | null;
+      address?: string | null;
+      status?: string | null;
+    }>;
+  }>;
+  error?: string;
+}
+
 export interface MaintenanceFinding {
   finding_id: string;
   category: 'telemetry' | 'runtime' | 'config' | 'dependency' | 'security' | 'test' | 'documentation' | string;

@@ -12,6 +12,11 @@ from aegis.core.environment import collect_environment_diagnostics
 from aegis.core.evidence_audit import audit_action_evidence
 from aegis.core.event_journal import get_runtime_journal
 from aegis.core.runtime_authority import peek_runtime_authority
+from aegis.core.system_diagnostics import (
+    collect_network_port_snapshot,
+    collect_process_resource_snapshot,
+    collect_system_resource_snapshot,
+)
 from aegis.tools.registry import get_tool_registry_snapshot, list_tools, validate_registry_drift
 
 
@@ -140,6 +145,9 @@ def _runtime_health_summary(checks: dict[str, Any]) -> dict[str, Any]:
         "runtime_snapshot": checks["runtime_snapshot"]["status"],
         "websocket": checks["websocket"]["status"],
         "action_timeline": checks["action_timeline"]["status"],
+        "system_resources": checks["system_resources"]["status"],
+        "process_resources": checks["process_resources"]["status"],
+        "network_ports": checks["network_ports"]["status"],
     }
     reasons = [
         name for name, status in statuses.items()
@@ -187,6 +195,9 @@ def _read_only_contract() -> dict[str, Any]:
             "tool_registry_snapshot",
             "app_registry_snapshot",
             "environment_version_checks",
+            "system_resource_snapshot",
+            "process_resource_snapshot",
+            "network_port_snapshot",
         ],
         "allowed_ephemeral_state": [
             "last_maintenance_scan_cache",
@@ -332,6 +343,84 @@ def _findings_from_checks(checks: dict[str, Any]) -> list[dict[str, Any]]:
             evidence={"connected_clients": websocket.get("connected_clients")},
             recommendation="Pass websocket runtime context when invoking scan from a live socket session.",
         ))
+
+    system_resources = checks["system_resources"]
+    if system_resources.get("status") == "unknown":
+        findings.append(_finding(
+            "telemetry.system_resources.unavailable",
+            category="telemetry",
+            severity="warning",
+            source="checks.system_resources.status",
+            reason="System resource snapshot could not be collected.",
+            evidence={"status": system_resources.get("status"), "error": system_resources.get("error")},
+            recommendation="Verify psutil can read local system resource counters before relying on telemetry.",
+        ))
+    elif system_resources.get("status") == "warning":
+        findings.append(_finding(
+            "telemetry.system_resources.pressure",
+            category="telemetry",
+            severity="warning",
+            source="checks.system_resources",
+            reason="System resource snapshot reported high CPU, memory, or disk pressure.",
+            evidence={
+                "cpu_percent": system_resources.get("cpu_percent"),
+                "memory": system_resources.get("memory"),
+                "disk": system_resources.get("disk"),
+            },
+            recommendation="Review resource pressure before starting long-running desktop automation.",
+        ))
+
+    process_resources = checks["process_resources"]
+    if process_resources.get("status") == "unknown":
+        findings.append(_finding(
+            "telemetry.process_resources.unavailable",
+            category="telemetry",
+            severity="warning",
+            source="checks.process_resources.status",
+            reason="Process resource snapshot could not be collected.",
+            evidence={"status": process_resources.get("status"), "error": process_resources.get("error")},
+            recommendation="Verify psutil can enumerate local processes before relying on process diagnostics.",
+        ))
+    elif int(process_resources.get("skipped_count") or 0) > 0:
+        findings.append(_finding(
+            "telemetry.process_resources.partial",
+            category="telemetry",
+            severity="info",
+            source="checks.process_resources.skipped_count",
+            reason="Process resource snapshot skipped at least one process due to access or lifecycle changes.",
+            evidence={
+                "skipped": process_resources.get("skipped"),
+                "skipped_count": process_resources.get("skipped_count"),
+            },
+            recommendation="Treat process resource rankings as partial when skipped process count is non-zero.",
+        ))
+
+    network_ports = checks["network_ports"]
+    if network_ports.get("status") == "unknown":
+        findings.append(_finding(
+            "telemetry.network_ports.unavailable",
+            category="telemetry",
+            severity="warning",
+            source="checks.network_ports.status",
+            reason="Development port listener snapshot could not be collected.",
+            evidence={"status": network_ports.get("status"), "error": network_ports.get("error")},
+            recommendation="Verify psutil can inspect local network connections before relying on port diagnostics.",
+        ))
+    else:
+        ports = network_ports.get("ports") if isinstance(network_ports.get("ports"), list) else []
+        for port in ports:
+            if not isinstance(port, dict) or port.get("status") != "listening":
+                continue
+            port_number = port.get("port")
+            findings.append(_finding(
+                f"telemetry.network_ports.{port_number}.listening",
+                category="telemetry",
+                severity="info",
+                source=f"checks.network_ports.ports.{port_number}",
+                reason=f"Development port {port_number} is currently listening.",
+                evidence=dict(port),
+                recommendation="Use listener PID and process evidence before assuming which service owns this port.",
+            ))
 
     action_timeline = checks["action_timeline"]
     if int(action_timeline.get("error_count") or 0) > 0:
@@ -479,6 +568,9 @@ def run_read_only_maintenance_scan(
         "journal_path": journal.get("journal_path"),
     }
     environment = collect_environment_diagnostics()
+    system_resources = collect_system_resource_snapshot()
+    process_resources = collect_process_resource_snapshot()
+    network_ports = collect_network_port_snapshot()
     logging_check = {
         "status": "ok" if log_dir.exists() else "warning",
         "directory": str(log_dir),
@@ -504,6 +596,9 @@ def run_read_only_maintenance_scan(
         "runtime_snapshot": runtime_snapshot_check,
         "websocket": websocket,
         "action_timeline": action_timeline,
+        "system_resources": system_resources,
+        "process_resources": process_resources,
+        "network_ports": network_ports,
     }
     findings = _findings_from_checks(checks)
     finding_summary = _finding_summary(findings)
