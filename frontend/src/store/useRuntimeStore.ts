@@ -25,6 +25,7 @@ export interface RuntimeStoreState extends TelemetryData {
   recoveryDepth: number;
   maxRecoveryDepth: number;
   addStep: (step: RuntimeStep) => void;
+  upsertStep: (step: RuntimeStep) => void;
   updateStep: (id: string, updates: Partial<RuntimeStep>) => void;
   addLog: (log: Omit<SystemLog, 'id' | 'timestamp'>) => void;
   setTelemetry: (data: Partial<TelemetryData>) => void;
@@ -125,6 +126,14 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
   },
 
   addStep: (step) => set((state) => ({ steps: [...state.steps, step] })),
+
+  upsertStep: (step) => set((state) => {
+    const existing = state.steps.find((item) => item.id === step.id);
+    if (!existing) return { steps: [...state.steps, step] };
+    return {
+      steps: state.steps.map((item) => item.id === step.id ? { ...item, ...step } : item),
+    };
+  }),
   
   updateStep: (id, updates) => set((state) => ({
     steps: state.steps.map(s => s.id === id ? { ...s, ...updates } : s)

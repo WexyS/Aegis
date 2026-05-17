@@ -193,6 +193,20 @@ def test_frontend_snapshot_truth_sync_uses_backend_snapshot_as_authority() -> No
     assert "ingestOnly: true" in socket_source
     assert "if (!options.ingestOnly)" in socket_source
     assert "syncActionTimelineSnapshot(payload.runtime?.action_timeline)" in socket_source
+    assert "Object.prototype.hasOwnProperty.call(runtime, 'maintenance_scan')" in socket_source
+    assert "runtimeStore.setMaintenanceScan(runtime.maintenance_scan" in socket_source
+
+
+def test_frontend_live_events_upsert_missing_timeline_steps_from_backend_payload() -> None:
+    socket_source = FRONTEND_SOCKET.read_text(encoding="utf-8")
+    store_source = FRONTEND_RUNTIME_STORE.read_text(encoding="utf-8")
+
+    assert "upsertStep: (step: RuntimeStep) => void" in store_source
+    assert "function upsertActionStepFromPayload" in socket_source
+    assert "upsertActionStepFromPayload(event, payload, payload.success ? RuntimeStatus.SUCCESS : RuntimeStatus.ERROR)" in socket_source
+    assert "upsertActionStepFromPayload(event, payload, RuntimeStatus.ERROR)" in socket_source
+    assert "evidence?.action || 'executor'" in socket_source
+    assert "evidence?.verification_state === 'verified'" in socket_source
 
 
 def test_frontend_rejects_non_protocol_events_without_runtime_projection() -> None:

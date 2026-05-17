@@ -174,20 +174,49 @@ async function acceptRuntimeEvent(event: RuntimeEvent, options: AcceptRuntimeEve
 
 function applyRuntimeSnapshotPayload(payload: any, reason: string) {
   const runtimeStore = useRuntimeStore.getState();
+  const runtime = payload.runtime;
   const snapshotState = payload.runtime?.fsm_state || payload.current_state;
   if (snapshotState) {
     runtimeStore.syncBackendSnapshot(snapshotState as RuntimeState, { reason });
   }
   runtimeStore.syncCommandSnapshot(payload.runtime?.commands);
   runtimeStore.syncActionTimelineSnapshot(payload.runtime?.action_timeline);
-  if (payload.runtime?.app_registry) {
-    runtimeStore.setAppRegistry(payload.runtime.app_registry as AppRegistrySnapshot);
+  if (runtime && Object.prototype.hasOwnProperty.call(runtime, 'app_registry')) {
+    runtimeStore.setAppRegistry(runtime.app_registry as AppRegistrySnapshot | null);
   }
-  if (payload.runtime?.tool_registry) {
-    runtimeStore.setToolRegistry(payload.runtime.tool_registry as ToolRegistrySnapshot);
+  if (runtime && Object.prototype.hasOwnProperty.call(runtime, 'tool_registry')) {
+    runtimeStore.setToolRegistry(runtime.tool_registry as ToolRegistrySnapshot | null);
   }
-  if (payload.runtime?.maintenance_scan) {
-    runtimeStore.setMaintenanceScan(payload.runtime.maintenance_scan as Record<string, unknown>);
+  if (runtime && Object.prototype.hasOwnProperty.call(runtime, 'maintenance_scan')) {
+    runtimeStore.setMaintenanceScan(runtime.maintenance_scan as Record<string, unknown> | null);
+  }
+}
+
+function actionStepFromPayload(event: RuntimeEvent, payload: any, status: RuntimeStatus): any | null {
+  if (!payload.action_id) return null;
+  const evidence = payload.execution_evidence as ExecutionEvidence | undefined;
+  const tool = payload.tool || evidence?.action || 'executor';
+  const target = payload.target || evidence?.target || payload.error || `Executing ${tool}`;
+  return {
+    id: payload.action_id,
+    component: tool,
+    status,
+    label: tool,
+    detail: target,
+    timestamp: new Date(event.timestamp).toLocaleTimeString(),
+    executionEvidence: evidence,
+    metrics: {
+      latency_ms: payload.latency_ms,
+      retries: payload.retries || evidence?.retry_count || 0,
+      determinism: evidence?.verification_state === 'verified' || payload.verification?.passed ? 1.0 : undefined,
+    },
+  };
+}
+
+function upsertActionStepFromPayload(event: RuntimeEvent, payload: any, status: RuntimeStatus) {
+  const step = actionStepFromPayload(event, payload, status);
+  if (step) {
+    useRuntimeStore.getState().upsertStep(step);
   }
 }
 
@@ -425,6 +454,7 @@ function registerEventHandlers() {
 
   on('ACTION_COMPLETED', (event) => {
     const payload = event.payload as any;
+    upsertActionStepFromPayload(event, payload, payload.success ? RuntimeStatus.SUCCESS : RuntimeStatus.ERROR);
     getRuntimeStore().updateStep(payload.action_id, {
       status: payload.success ? RuntimeStatus.SUCCESS : RuntimeStatus.ERROR,
       executionEvidence: payload.execution_evidence as ExecutionEvidence | undefined,
@@ -441,6 +471,7 @@ function registerEventHandlers() {
 
   on('ACTION_FAILED', (event) => {
     const payload = event.payload as any;
+    upsertActionStepFromPayload(event, payload, RuntimeStatus.ERROR);
     getRuntimeStore().updateStep(payload.action_id, {
       status: RuntimeStatus.ERROR,
       detail: payload.error,
@@ -452,6 +483,9 @@ function registerEventHandlers() {
   on('VERIFICATION_PASSED', (event) => {
     const payload = event.payload as any;
     if (payload.action_id && payload.execution_evidence) {
+      upsertActionStepFromPayload(event, payload, RuntimeStatus.SUCCESS);
+    }
+    if (payload.action_id && payload.execution_evidence) {
       getRuntimeStore().updateStep(payload.action_id, {
         executionEvidence: payload.execution_evidence as ExecutionEvidence,
       });
@@ -461,6 +495,9 @@ function registerEventHandlers() {
 
   on('VERIFICATION_FAILED', (event) => {
     const payload = event.payload as any;
+    if (payload.action_id && payload.execution_evidence) {
+      upsertActionStepFromPayload(event, payload, RuntimeStatus.ERROR);
+    }
     if (payload.action_id && payload.execution_evidence) {
       getRuntimeStore().updateStep(payload.action_id, {
         status: RuntimeStatus.ERROR,
