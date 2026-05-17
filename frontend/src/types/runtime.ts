@@ -115,6 +115,7 @@ export interface CommandRecord {
   warnings: string[];
   created_at?: number;
   updated_at?: number;
+  metadata?: Record<string, unknown>;
 }
 
 export interface AppRegistryEntry {
@@ -283,6 +284,27 @@ export interface MaintenanceFinding {
   read_only: boolean;
 }
 
+export interface MaintenanceActionProposal {
+  proposal_version: string;
+  proposal_id: string;
+  finding_id?: string | null;
+  action: string;
+  title: string;
+  reason: string;
+  source: string;
+  risk_level: RiskLevel;
+  requires_approval: boolean;
+  approval_text: string;
+  affected_resources: Array<Record<string, unknown>>;
+  evidence_refs: string[];
+  evidence: Record<string, unknown>;
+  expected_outcome: Record<string, unknown>;
+  verification_checks: Array<Record<string, unknown>>;
+  read_only: boolean;
+  status: string;
+  safety_note?: string;
+}
+
 export interface EvidenceAudit {
   scan_version: string;
   read_only: boolean;
@@ -318,6 +340,7 @@ export interface RuntimeHealth {
   attention: string[];
   finding_count?: number;
   finding_severity_counts?: Record<string, number>;
+  action_proposal_count?: number;
 }
 
 export interface CommandLifecycleDiagnostics {

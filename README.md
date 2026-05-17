@@ -146,7 +146,19 @@ The UI only renders these backend findings; it does not infer maintenance status
 The scan does not refresh app discovery or mutate files, config, database, Git, or runtime FSM state.
 It may update the ephemeral last-scan cache used by backend snapshots.
 
-Future maintenance actions should remain approval-gated and evidence-backed.
+### Action Proposals and Maintenance Actions
+
+Maintenance actions start as backend-owned action proposals before any mutation occurs. Each proposal includes:
+
+- reason and source finding
+- evidence references and observed evidence
+- affected resources
+- risk level and approval text
+- expected outcome and verification checks
+
+The first supported maintenance action is `create_logging_directory`, which creates the configured project logging directory only after user approval. It is constrained to the project root and produces `maintenance-action-verifier/1` execution evidence before the command is marked executed.
+
+Future maintenance actions should remain approval-gated, evidence-backed, and scoped by the same proposal contract.
 
 ## Technology Stack
 

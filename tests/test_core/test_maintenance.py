@@ -32,6 +32,8 @@ def test_maintenance_scan_findings_have_source_contract() -> None:
     assert findings
     assert report["finding_version"] == "maintenance-finding/1"
     assert report["recommendations"] == findings
+    assert isinstance(report["action_proposals"], list)
+    assert "action_proposal_count" in report["summary"]
     assert set(report["categories"]) == maintenance.FINDING_CATEGORIES
     assert sum(report["categories"].values()) == len(findings)
     assert report["checks"]["finding_summary"]["total"] == len(findings)

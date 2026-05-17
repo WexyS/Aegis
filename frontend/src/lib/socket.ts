@@ -726,6 +726,12 @@ export function runMaintenanceScan() {
   }
 }
 
+export function requestMaintenanceAction(proposalId: string) {
+  if (socket.connected) {
+    socket.emit('request_maintenance_action', { proposal_id: proposalId });
+  }
+}
+
 // ─── PROTOCOL QUARANTINE ──────────────────────────────────────────
 // Non-protocol socket payloads are quarantined. The UI must not infer runtime
 // state from legacy/raw events.

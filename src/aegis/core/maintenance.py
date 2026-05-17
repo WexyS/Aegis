@@ -11,6 +11,7 @@ from aegis.core.commands import get_approval_manager
 from aegis.core.environment import collect_environment_diagnostics
 from aegis.core.evidence_audit import audit_action_evidence
 from aegis.core.event_journal import get_runtime_journal
+from aegis.core.maintenance_actions import build_maintenance_action_proposals
 from aegis.core.runtime_authority import peek_runtime_authority
 from aegis.core.system_diagnostics import (
     collect_network_port_snapshot,
@@ -601,10 +602,12 @@ def run_read_only_maintenance_scan(
         "network_ports": network_ports,
     }
     findings = _findings_from_checks(checks)
+    action_proposals = build_maintenance_action_proposals(findings, checks)
     finding_summary = _finding_summary(findings)
     runtime_health = _runtime_health_summary(checks)
     runtime_health["finding_count"] = finding_summary["total"]
     runtime_health["finding_severity_counts"] = finding_summary["by_severity"]
+    runtime_health["action_proposal_count"] = len(action_proposals)
     checks["runtime_health"] = runtime_health
     checks["finding_summary"] = finding_summary
     report = {
@@ -615,6 +618,7 @@ def run_read_only_maintenance_scan(
         "summary": runtime_health,
         "findings": findings,
         "recommendations": findings,
+        "action_proposals": action_proposals,
         "categories": finding_summary["by_category"],
         "checks": checks,
     }

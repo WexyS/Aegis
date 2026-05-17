@@ -3,7 +3,7 @@
 import React from 'react';
 import { Ban, Check, ShieldAlert, Square, Wrench } from 'lucide-react';
 
-import { approveCommand, cancelCommand, rejectCommand, runMaintenanceScan } from '@/lib/socket';
+import { approveCommand, cancelCommand, rejectCommand, requestMaintenanceAction, runMaintenanceScan } from '@/lib/socket';
 import { useRuntimeStore } from '@/store/useRuntimeStore';
 import {
   ActionTimelineDiagnostics,
@@ -11,6 +11,7 @@ import {
   CommandRecord,
   EnvironmentDiagnostics,
   EvidenceAudit,
+  MaintenanceActionProposal,
   MaintenanceFinding,
   NetworkPortsDiagnostics,
   ProcessResourcesDiagnostics,
@@ -35,6 +36,7 @@ export const PendingApprovalPanel = () => {
   const environment = getEnvironmentDiagnostics(lastMaintenanceScan);
   const evidenceAudit = getEvidenceAudit(lastMaintenanceScan);
   const findings = getMaintenanceFindings(lastMaintenanceScan);
+  const actionProposals = getMaintenanceActionProposals(lastMaintenanceScan);
 
   return (
     <section className="space-y-4">
@@ -90,6 +92,7 @@ export const PendingApprovalPanel = () => {
           </div>
           {runtimeHealth && <RuntimeHealthSummary health={runtimeHealth} />}
           {findings.length > 0 && <MaintenanceFindings findings={findings} />}
+          {actionProposals.length > 0 && <MaintenanceActionProposals proposals={actionProposals} />}
           {(commandLifecycle || runtimeSnapshot || websocket || actionTimeline) && (
             <RuntimeTruthSummary
               commandLifecycle={commandLifecycle}
@@ -134,6 +137,9 @@ const RuntimeHealthSummary = ({ health }: { health: RuntimeHealth }) => {
       {findingCount > 0 && (
         <p className="mt-2 text-[9px] font-mono text-foreground/45">{findingCount} backend findings</p>
       )}
+      {typeof health.action_proposal_count === 'number' && health.action_proposal_count > 0 && (
+        <p className="mt-1 text-[9px] font-mono text-foreground/45">{health.action_proposal_count} approval-gated proposals</p>
+      )}
     </div>
   );
 };
@@ -153,6 +159,34 @@ const MaintenanceFindings = ({ findings }: { findings: MaintenanceFinding[] }) =
           </div>
           <p className="mt-1 line-clamp-2 text-[9px] font-mono leading-relaxed text-foreground/65">{finding.reason}</p>
           <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">{finding.source}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const MaintenanceActionProposals = ({ proposals }: { proposals: MaintenanceActionProposal[] }) => (
+  <div className="mt-3 border-t border-white/10 pt-3">
+    <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest">
+      <span className="text-foreground/40">Action Proposals</span>
+      <span className="text-warning">{proposals.length}</span>
+    </div>
+    <div className="mt-2 space-y-1.5">
+      {proposals.slice(0, 3).map((proposal) => (
+        <div key={proposal.proposal_id} className="rounded-md border border-warning/20 bg-warning/[0.03] px-2 py-1.5">
+          <div className="flex items-center justify-between gap-2 text-[9px] font-mono">
+            <span className="truncate text-foreground/70">{proposal.title}</span>
+            <span className="text-warning">{proposal.risk_level}</span>
+          </div>
+          <p className="mt-1 line-clamp-2 text-[9px] font-mono leading-relaxed text-foreground/55">{proposal.reason}</p>
+          <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">{proposal.source}</p>
+          <button
+            type="button"
+            onClick={() => requestMaintenanceAction(proposal.proposal_id)}
+            className="mt-2 w-full rounded-md border border-warning/30 bg-warning/10 px-2 py-1.5 text-[9px] font-bold uppercase tracking-widest text-warning hover:bg-warning/15 transition-colors"
+          >
+            Request Approval
+          </button>
         </div>
       ))}
     </div>
@@ -447,6 +481,25 @@ function getMaintenanceFindings(report: Record<string, unknown> | null): Mainten
     && typeof (finding as Partial<MaintenanceFinding>).reason === 'string'
     && typeof (finding as Partial<MaintenanceFinding>).recommendation === 'string'
     && (finding as Partial<MaintenanceFinding>).read_only === true
+  ));
+}
+
+function getMaintenanceActionProposals(report: Record<string, unknown> | null): MaintenanceActionProposal[] {
+  const proposals = report?.action_proposals;
+  if (!Array.isArray(proposals)) return [];
+  return proposals.filter((proposal): proposal is MaintenanceActionProposal => (
+    Boolean(proposal)
+    && typeof proposal === 'object'
+    && typeof (proposal as Partial<MaintenanceActionProposal>).proposal_version === 'string'
+    && typeof (proposal as Partial<MaintenanceActionProposal>).proposal_id === 'string'
+    && typeof (proposal as Partial<MaintenanceActionProposal>).action === 'string'
+    && typeof (proposal as Partial<MaintenanceActionProposal>).title === 'string'
+    && typeof (proposal as Partial<MaintenanceActionProposal>).reason === 'string'
+    && typeof (proposal as Partial<MaintenanceActionProposal>).source === 'string'
+    && typeof (proposal as Partial<MaintenanceActionProposal>).risk_level === 'string'
+    && (proposal as Partial<MaintenanceActionProposal>).requires_approval === true
+    && typeof (proposal as Partial<MaintenanceActionProposal>).approval_text === 'string'
+    && (proposal as Partial<MaintenanceActionProposal>).read_only === true
   ));
 }
 

@@ -365,6 +365,7 @@ export const CommandRecordPayload = z.object({
   warnings: z.array(z.string()).default([]),
   created_at: z.number().optional(),
   updated_at: z.number().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const CommandStatusPayload = z.object({

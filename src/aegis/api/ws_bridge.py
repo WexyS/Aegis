@@ -43,8 +43,15 @@ from aegis.core.app_map import get_app_registry_snapshot
 from aegis.tools.registry import get_tool_registry_snapshot
 from aegis.core.event_journal import get_runtime_journal
 from aegis.core.maintenance import get_last_maintenance_scan, run_read_only_maintenance_scan
+from aegis.core.maintenance_actions import (
+    execute_maintenance_action_proposal,
+    is_maintenance_action_record,
+    request_maintenance_action_approval,
+    response_from_maintenance_action,
+)
 from aegis.core.runtime_authority import get_runtime_authority
 from aegis.core.constants import CommandStatus, RiskLevel
+from aegis.core.schemas import CommandResponse
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +177,9 @@ async def approve_command(sid: str, data: dict):
             source=Component.GUARD,
             runtime_phase=get_runtime_authority(_session_id).current_state(),
         )
+        if is_maintenance_action_record(record):
+            await execute_maintenance_action_record(record, sid=sid)
+            return
         command = QueuedCommand(
             sid=sid,
             text=record.text,
@@ -185,6 +195,24 @@ async def approve_command(sid: str, data: dict):
         )
     except Exception as e:
         logger.error("[WS] Failed to approve command: %s", e)
+
+
+@sio.event
+async def request_maintenance_action(sid: str, data: dict):
+    payload = data.get("payload", data)
+    proposal_id = payload.get("proposal_id")
+    if not proposal_id:
+        return
+    try:
+        report = get_last_maintenance_scan() or await asyncio.to_thread(
+            run_read_only_maintenance_scan,
+            **maintenance_scan_context(),
+        )
+        record = request_maintenance_action_approval(str(proposal_id), report=report)
+        await emit_approval_required(record.to_dict(), trace_id=record.trace_id)
+        await _emit_snapshot(to=sid)
+    except Exception as e:
+        logger.error("[WS] Failed to request maintenance action approval: %s", e)
 
 
 @sio.event
@@ -253,6 +281,94 @@ async def maintenance_scan(sid: str, data: dict | None = None):
         runtime_phase=get_runtime_authority(_session_id).current_state(),
     )
     await _emit_snapshot(to=sid)
+
+
+async def execute_maintenance_action_record(record, *, sid: str | None = None) -> CommandResponse:
+    """Execute an approved maintenance action through existing journal/UI truth surfaces."""
+    trace_id = record.trace_id or str(uuid4())
+    started = time.perf_counter()
+    manager = get_approval_manager()
+    proposal = dict(record.metadata.get("proposal") or {})
+    action_id = str(uuid4())
+    action_name = str(proposal.get("action") or "maintenance_action")
+
+    running = manager.mark_running(
+        record.command_id,
+        trace_id=trace_id,
+        risk_level=RiskLevel.MEDIUM,
+        verification_state="unverified",
+    )
+    await emit_command_status(
+        command_id=record.command_id,
+        status=CommandStatus.RUNNING,
+        trace_id=trace_id,
+        risk_level=running.risk_level,
+        reason=running.reason,
+        verification_state=running.verification_state,
+    )
+    await emit_action_started(
+        action_id=action_id,
+        tool=action_name,
+        trace_id=trace_id,
+        target=str(proposal.get("approval_text") or proposal.get("title") or action_name),
+    )
+
+    action_result = await asyncio.to_thread(execute_maintenance_action_proposal, proposal)
+    verification_state = (
+        action_result.execution_evidence.verification_state
+        if action_result.execution_evidence
+        else "unverified"
+    )
+    if action_result.success:
+        await emit_action_completed(
+            action_id=action_id,
+            success=True,
+            latency_ms=action_result.metrics.execution_time_ms,
+            trace_id=trace_id,
+            execution_evidence=action_result.execution_evidence,
+        )
+        final_status = CommandStatus.EXECUTED
+        final_state = RuntimeState.COMPLETED.value
+    else:
+        await emit_action_failed(
+            action_id=action_id,
+            error=action_result.output,
+            trace_id=trace_id,
+            is_recoverable=False,
+            execution_evidence=action_result.execution_evidence,
+        )
+        final_status = CommandStatus.FAILED
+        final_state = RuntimeState.FAILED.value
+
+    completed = manager.complete(
+        record.command_id,
+        final_status,
+        reason=action_result.output,
+        verification_state=verification_state,
+    )
+    await emit_command_status(
+        command_id=record.command_id,
+        status=final_status,
+        trace_id=trace_id,
+        risk_level=completed.risk_level,
+        reason=completed.reason,
+        verification_state=completed.verification_state,
+    )
+    await emit_task_finished(trace_id=trace_id, final_state=final_state)
+
+    try:
+        await asyncio.to_thread(run_read_only_maintenance_scan, **maintenance_scan_context())
+    except Exception as exc:
+        logger.warning("[WS] Maintenance rescan after action failed: %s", exc)
+    if sid:
+        await _emit_snapshot(to=sid)
+
+    return response_from_maintenance_action(
+        record=completed,
+        action_result=action_result,
+        trace_id=trace_id,
+        duration_ms=(time.perf_counter() - started) * 1000,
+    )
 
 
 async def _process_command(sid: str, data: dict):

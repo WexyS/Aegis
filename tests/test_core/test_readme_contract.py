@@ -25,3 +25,14 @@ def test_readme_declares_contract_versioning_policy() -> None:
     assert "Breaking payload, verifier, or replay semantics require a new version" in readme
     assert "Old journal events and snapshots must remain readable" in readme
     assert "must not infer success or synthesize data when it sees an unknown version" in readme
+
+
+def test_readme_declares_action_proposal_contract() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "Action Proposals and Maintenance Actions" in readme
+    assert "backend-owned action proposals" in readme
+    assert "affected resources" in readme
+    assert "approval text" in readme
+    assert "create_logging_directory" in readme
+    assert "maintenance-action-verifier/1" in readme

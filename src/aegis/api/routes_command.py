@@ -14,7 +14,11 @@ from aegis.core.app_map import get_app_registry_snapshot, refresh_installed_app_
 from aegis.core.commands import get_approval_manager
 from aegis.core.constants import CommandStatus, ExecutionMode
 from aegis.core.environment import collect_environment_diagnostics
-from aegis.core.maintenance import run_read_only_maintenance_scan
+from aegis.core.maintenance import get_last_maintenance_scan, run_read_only_maintenance_scan
+from aegis.core.maintenance_actions import (
+    is_maintenance_action_record,
+    request_maintenance_action_approval,
+)
 from aegis.orchestrator.orchestrator import get_orchestrator
 from aegis.tools.registry import get_tool_registry_snapshot
 
@@ -142,6 +146,9 @@ async def approve_command(command_id: str) -> CommandResponse:
         source=ws_bridge.Component.GUARD,
     )
 
+    if is_maintenance_action_record(record):
+        return await ws_bridge.execute_maintenance_action_record(record)
+
     token = manager.token_for(command_id)
     request = CommandRequest(
         text=record.text,
@@ -197,6 +204,25 @@ async def maintenance_scan() -> dict[str, Any]:
     from aegis.api import ws_bridge
 
     return run_read_only_maintenance_scan(**ws_bridge.maintenance_scan_context())
+
+
+@router.post("/maintenance/action-proposals/{proposal_id}/request")
+async def request_maintenance_action(proposal_id: str) -> dict[str, Any]:
+    from aegis.api import ws_bridge
+
+    report = get_last_maintenance_scan() or run_read_only_maintenance_scan(**ws_bridge.maintenance_scan_context())
+    try:
+        record = request_maintenance_action_approval(proposal_id, report=report)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown maintenance action proposal") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+    await ws_bridge.emit_approval_required(record.to_dict(), trace_id=record.trace_id)
+    return {
+        "command": record.to_dict(),
+        "proposal": record.metadata.get("proposal"),
+    }
 
 
 @router.get("/environment/diagnostics")

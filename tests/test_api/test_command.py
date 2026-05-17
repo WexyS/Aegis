@@ -7,6 +7,9 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from aegis.api import routes_command
+from aegis.core import maintenance_actions
+from aegis.core.commands import get_approval_manager
 from aegis.main import app
 from aegis.api.routes_command import clean_text
 
@@ -146,6 +149,8 @@ class TestMaintenanceEndpoint:
             assert data["summary"]["source_of_truth"] == "backend_snapshot_protocol_event_journal"
             assert isinstance(data["findings"], list)
             assert data["recommendations"] == data["findings"]
+            assert isinstance(data["action_proposals"], list)
+            assert "action_proposal_count" in data["summary"]
             assert "categories" in data
             assert "event_journal" in data["checks"]
             assert "integrity_status" in data["checks"]["event_journal"]
@@ -180,6 +185,55 @@ class TestMaintenanceEndpoint:
             assert data["checks"]["process_resources"]["read_only"] is True
             assert data["checks"]["network_ports"]["scan_version"] == "network-ports/1"
             assert data["checks"]["network_ports"]["read_only"] is True
+
+    @pytest.mark.asyncio
+    async def test_maintenance_action_proposal_requires_approval_and_executes_after_approval(self, monkeypatch, tmp_path) -> None:
+        manager = get_approval_manager()
+        manager.reset_for_tests()
+        monkeypatch.setattr(maintenance_actions, "PROJECT_ROOT", tmp_path)
+        finding = {
+            "finding_id": "config.logging.directory_missing",
+            "category": "config",
+            "severity": "warning",
+            "source": "checks.logging.directory",
+            "reason": "Configured logging directory does not exist.",
+            "evidence": {"directory": str(tmp_path / "logs")},
+            "recommendation": "Create the configured logging directory before long-running runtime sessions.",
+            "read_only": True,
+        }
+        checks = {
+            "logging": {
+                "status": "warning",
+                "directory": str(tmp_path / "logs"),
+            },
+        }
+        report = {
+            "scan_version": "maintenance-scan/1",
+            "read_only": True,
+            "action_proposals": maintenance_actions.build_maintenance_action_proposals([finding], checks),
+        }
+        monkeypatch.setattr(routes_command, "get_last_maintenance_scan", lambda: report)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            request = await client.post("/maintenance/action-proposals/maintenance.create_logging_directory/request")
+            assert request.status_code == 200
+            command = request.json()["command"]
+            assert command["status"] == "pending_approval"
+            assert command["risk_level"] == "medium"
+            assert command["metadata"]["kind"] == "maintenance_action"
+            assert not (tmp_path / "logs").exists()
+
+            approval = await client.post(f"/command/{command['command_id']}/approve")
+            assert approval.status_code == 200
+            data = approval.json()
+            assert data["status"] == "executed"
+            assert data["intent"] == "create_logging_directory"
+            assert (tmp_path / "logs").is_dir()
+            evidence = data["actions"][0]["execution_evidence"]
+            assert evidence["verifier"] == "maintenance-action-verifier/1"
+            assert evidence["verification_state"] == "verified"
+        manager.reset_for_tests()
 
     @pytest.mark.asyncio
     async def test_environment_diagnostics_endpoint_is_read_only_report(self) -> None:
