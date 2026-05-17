@@ -16,6 +16,7 @@ from aegis.core.schemas import IntentResult
 from aegis.core.state_manager import AegisStateSnapshot
 from aegis.executor.deterministic_executor import get_deterministic_executor
 from aegis.executor.deterministic_executor import DeterministicExecutor
+from aegis.executor.desktop_verifier import DesktopObservation, DesktopTarget, DesktopVerificationResult
 
 
 class TestDeterministicExecutorContracts:
@@ -474,6 +475,105 @@ class TestDeterministicExecutorContracts:
         assert checks["focus_attempt_recorded"]["passed"] is True
         assert checks["focus_selected_hwnd_matches_foreground"]["passed"] is True
         assert result.proof["execution_evidence"]["window"]["hwnd"] == 101
+
+    @pytest.mark.asyncio
+    async def test_focus_app_unverified_result_preserves_execution_evidence(self, monkeypatch) -> None:
+        snapshot = AegisStateSnapshot(
+            version=1,
+            timestamp="2026-05-13T00:00:00Z",
+            active_app="desktop",
+            pid=None,
+            hwnd=None,
+            last_action=None,
+            last_status=None,
+            is_responsive=True,
+            focus_stable=False,
+        )
+
+        class FakeStateManager:
+            async def sync_with_os(self, trace_id, span_id) -> None:
+                return None
+
+            def get_state(self):
+                return snapshot
+
+            def update(self, trace_id, span_id, **kwargs):
+                return snapshot
+
+        class FakeFocusTool:
+            async def run(self, app: str, **kwargs) -> str:
+                kwargs["_focus_evidence"].append({
+                    "action": "focus_app",
+                    "app": app,
+                    "keywords": ["notepad"],
+                    "candidate_count": 1,
+                    "candidates": [{"title": "Untitled - Notepad", "hwnd": 101, "pid": 4242}],
+                    "selected_window": {"title": "Untitled - Notepad", "hwnd": 101, "pid": 4242},
+                    "restored": False,
+                    "activate_called": True,
+                    "foreground_after": {"title": "Calculator", "hwnd": 202, "pid": 5150},
+                    "outcome": "focused",
+                })
+                return "Focused 'notepad' (HWND: 101)."
+
+        def fake_verify_desktop_action(**kwargs):
+            observation = DesktopObservation(
+                target=DesktopTarget(
+                    app_id="notepad",
+                    display_name="notepad",
+                    process_name="notepad.exe",
+                    window_keywords=["Notepad"],
+                ),
+                pids=[4242],
+                process_alive=True,
+                active_window={"title": "Calculator", "hwnd": 202, "pid": 5150},
+                matching_windows=[],
+                focus_verified=False,
+            )
+            return DesktopVerificationResult(
+                action="focus_app",
+                method="focus_window",
+                observation=observation,
+                verification_state="unverified",
+                reason="active window did not match target",
+                checks=[
+                    {
+                        "check_name": "foreground_pid_matches_target_process",
+                        "expected": [4242],
+                        "observed": 5150,
+                        "passed": False,
+                        "reason": "Foreground window PID must belong to the target process PID set.",
+                    },
+                ],
+            )
+
+        executor = DeterministicExecutor()
+        executor.max_retries = 0
+        monkeypatch.setattr("aegis.executor.deterministic_executor.get_state_manager", lambda: FakeStateManager())
+        monkeypatch.setattr("aegis.executor.deterministic_executor.verify_desktop_action", fake_verify_desktop_action)
+        monkeypatch.setitem(deterministic_executor_module.TOOLS, "focus_app", FakeFocusTool())
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="focus_app",
+            confidence=1.0,
+            params={"app": "notepad"},
+            risk=RiskLevel.MEDIUM,
+            raw_input="focus notepad",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.FAILED
+        assert result.success is False
+        assert result.output == "active window did not match target"
+        assert result.execution_evidence is not None
+        assert result.execution_evidence.verification_state == "unverified"
+        assert result.execution_evidence.observed["active_pid"] == 5150
+        assert result.execution_evidence.attempts[0]["foreground_after"]["pid"] == 5150
+        assert result.proof["execution_evidence"]["verification_state"] == "unverified"
+        checks = {check["check_name"]: check for check in result.execution_evidence.verification_checks}
+        assert checks["foreground_pid_matches_target_process"]["passed"] is False
+        assert checks["focus_selected_hwnd_matches_foreground"]["passed"] is False
 
     @pytest.mark.asyncio
     async def test_close_app_success_includes_verified_execution_evidence(self, monkeypatch) -> None:

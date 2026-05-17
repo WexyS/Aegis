@@ -831,6 +831,19 @@ class DeterministicExecutor:
                         proof=proof,
                         execution_evidence=execution_evidence,
                     )
+                if intent in DESKTOP_EVIDENCE_TOOLS and execution_evidence and attempt == self.max_retries:
+                    return ActionResult(
+                        action=intent,
+                        params=params,
+                        status=ActionStatus.FAILED,
+                        success=False,
+                        confidence=metrics.determinism_score,
+                        output=evidence.details or output_text,
+                        recovery_hint="Desktop verifier did not produce verified evidence.",
+                        metrics=metrics,
+                        proof=proof,
+                        execution_evidence=execution_evidence,
+                    )
 
             except Exception as e:
                 if attempt == self.max_retries:
