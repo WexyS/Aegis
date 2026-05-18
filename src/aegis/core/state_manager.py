@@ -4,7 +4,7 @@ import threading
 import time
 import ctypes
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Callable
 from uuid import UUID, uuid4
 
@@ -135,7 +135,7 @@ class StateManager:
             return self._snapshot_internal()
 
     def _snapshot_internal(self) -> AegisStateSnapshot:
-        return AegisStateSnapshot(version=self._version, timestamp=datetime.utcnow().isoformat() + "Z", **self._current_state)
+        return AegisStateSnapshot(version=self._version, timestamp=datetime.now(timezone.utc).isoformat() + "Z", **self._current_state)
 
 _instance = None
 def get_state_manager() -> StateManager:

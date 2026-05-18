@@ -65,17 +65,17 @@ class ReplayEngine:
             e_type = e["event_type"]
             data = e.get("data", {})
             
-            if e_type == "ACTION_START":
+            if e_type == "ACTION_STARTED":
                 steps_map[span_id].update({
-                    "intent": data.get("intent"),
+                    "intent": data.get("intent") or data.get("tool"),
                     "params": data.get("params"),
                     "state_before": data.get("state_before"),
                     "trace_id": e.get("trace_id")
                 })
-            elif e_type in ["ACTION_SUCCESS", "ACTION_FAILED"]:
+            elif e_type in ["ACTION_COMPLETED", "ACTION_FAILED"]:
                 steps_map[span_id].update({
                     "expected_state_after": data.get("state_after"),
-                    "expected_status": data.get("proof", {}).get("status") or ("SUCCESS" if e_type == "ACTION_SUCCESS" else "FAILED")
+                    "expected_status": data.get("proof", {}).get("status") or ("EXECUTED" if e_type == "ACTION_COMPLETED" else "FAILED")
                 })
 
         # Sort by timestamp of ACTION_START to maintain logical order

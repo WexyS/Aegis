@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from aegis.core.constants import IntentSource, RiskLevel, IntentType
@@ -108,7 +108,7 @@ class AIParser:
                 risk=self._resolve_risk(intent_name),
                 source=IntentSource.AI,
                 raw_input=original_text,
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             ))
             
         return valid_results
@@ -162,7 +162,8 @@ Return ONLY a JSON list of alternative steps.
                 data = [data]
             
             return self._validate_and_filter(data, failed_intent.raw_input)
-        except:
+        except Exception as e:
+            logger.warning("[AI-PARSER] Self-healing parse failed: %s", e)
             return []
 
 # Singleton

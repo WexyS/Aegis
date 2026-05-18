@@ -1038,6 +1038,7 @@ async def _telemetry_loop():
                 )
             except Exception as e:
                 logger.error(f"Failed to gather telemetry: {e}")
+
 def start_telemetry_loop():
     global _heartbeat_task
     if _heartbeat_task is None or _heartbeat_task.done():

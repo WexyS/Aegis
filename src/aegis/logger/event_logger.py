@@ -6,7 +6,7 @@ import os
 import threading
 import queue
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from aegis.core.constants import EventType
 from typing import Any, Dict, Optional
 from uuid import UUID
@@ -59,7 +59,7 @@ class EventLogger:
         High-priority events (ERROR, SYSTEM_ERROR, VERIFICATION_FAILED) are never dropped.
         """
         entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
             "unix_time": time.time(),
             "trace_id": str(trace_id),
             "span_id": str(span_id),

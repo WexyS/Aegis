@@ -34,7 +34,8 @@ def clean_text(data: Any) -> str:
         for enc in ["utf-8", "latin-1", "cp1254"]:
             try:
                 return data.decode(enc).strip()
-            except:
+            except Exception as e:
+                api_logger.debug("Failed to decode bytes with %s: %s", enc, e)
                 continue
         return str(data)
 
@@ -47,7 +48,7 @@ def clean_text(data: Any) -> str:
             evaluated = ast.literal_eval(text)
             if isinstance(evaluated, bytes):
                 return clean_text(evaluated)
-        except:
+        except Exception:
             # Fallback manual strip if ast fails
             text = text[2:-1]
 

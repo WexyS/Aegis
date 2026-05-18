@@ -487,8 +487,18 @@ _executor: Executor | None = None
 
 
 def get_executor() -> Executor:
-    global _executor
-    if _executor is None:
-        from aegis.guard.action_guard import get_guard
-        _executor = Executor(safety=get_guard())
-    return _executor
+    """DEPRECATED: Use get_deterministic_executor() instead.
+
+    This redirects to the DeterministicExecutor to prevent any code path
+    from accidentally bypassing formal verification, transition model,
+    and evidence-based execution guarantees.
+    """
+    import warnings
+    from aegis.executor.deterministic_executor import get_deterministic_executor
+    warnings.warn(
+        "get_executor() is deprecated. Use get_deterministic_executor() for "
+        "formal verification and deterministic execution guarantees.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return get_deterministic_executor()

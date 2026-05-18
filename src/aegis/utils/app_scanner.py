@@ -35,7 +35,7 @@ class AppScanner:
                                     name = sub_entry.name.lower().replace(".exe", "")
                                     if name not in apps: # Don't overwrite
                                         apps[name] = sub_entry.path
-                        except:
+                        except Exception:
                             continue
             except Exception as e:
                 logger.warning(f"[SCANNER] Failed to scan {base_path}: {e}")

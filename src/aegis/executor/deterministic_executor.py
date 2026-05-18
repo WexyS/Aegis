@@ -227,6 +227,64 @@ def _type_evidence(
     expected_focus = params.get("_require_focus")
     before = _target_snapshot(before_state)
     after = _target_snapshot(after_state)
+    before_hwnd = before.get("hwnd")
+    after_hwnd = after.get("hwnd")
+    focus_verified_before = bool(before_hwnd and before.get("focus_stable"))
+    focus_verified_after = bool(after_hwnd and after.get("focus_stable"))
+    focus_did_not_change_unexpectedly = bool(before_hwnd and after_hwnd and before_hwnd == after_hwnd)
+    dispatch_ok = True
+    checks = [
+        _evidence_check(
+            "before_hwnd_present",
+            bool(before_hwnd),
+            "active HWND before typing",
+            before_hwnd,
+            "TypeTool must observe a focused HWND before sending keyboard input.",
+        ),
+        _evidence_check(
+            "after_hwnd_present",
+            bool(after_hwnd),
+            "active HWND after typing",
+            after_hwnd,
+            "TypeTool must observe a focused HWND after sending keyboard input.",
+        ),
+        _evidence_check(
+            "focus_did_not_change_unexpectedly",
+            focus_did_not_change_unexpectedly,
+            before_hwnd,
+            after_hwnd,
+            "TypeTool must not silently type into a different HWND than the one observed before execution.",
+        ),
+        _evidence_check(
+            "focus_verified_before",
+            focus_verified_before,
+            True,
+            before.get("focus_stable"),
+            "TypeTool requires stable focus before sending keyboard input.",
+        ),
+        _evidence_check(
+            "focus_verified_after",
+            focus_verified_after,
+            True,
+            after.get("focus_stable"),
+            "Post-type focus stability is recorded as confidence evidence.",
+        ),
+        _evidence_check(
+            "dispatch_ok",
+            dispatch_ok,
+            True,
+            dispatch_ok,
+            "TypeTool dispatch must complete without raising before focus evidence can be verified.",
+        ),
+    ]
+    critical_passed = bool(before_hwnd and after_hwnd and before_hwnd == after_hwnd and focus_verified_before and dispatch_ok)
+    if critical_passed:
+        verification_reason = "critical focus evidence passed"
+    elif before_hwnd and after_hwnd and before_hwnd != after_hwnd:
+        verification_reason = "focus changed unexpectedly during type action"
+    else:
+        failed_checks = [str(check["check_name"]) for check in checks[:4] if check["passed"] is False]
+        verification_reason = f"type focus verification failed: {', '.join(failed_checks)}"
     return {
         "tool": intent,
         "text_chars": len(text),
@@ -237,8 +295,13 @@ def _type_evidence(
         "expected_focus_keywords": list(params.get("_require_focus_keywords") or []),
         "target_before": before,
         "target_after": after,
-        "focus_verified_before": bool(before.get("hwnd") and before.get("focus_stable")),
-        "focus_verified_after": bool(after.get("hwnd") and after.get("focus_stable")),
+        "focus_verified_before": focus_verified_before,
+        "focus_verified_after": focus_verified_after,
+        "focus_did_not_change_unexpectedly": focus_did_not_change_unexpectedly,
+        "dispatch_ok": dispatch_ok,
+        "type_verification_state": "verified" if critical_passed else "unverified",
+        "type_verification_reason": verification_reason,
+        "verification_checks": checks,
         "output_sha256": _sha256_text(output_text),
     }
 
@@ -476,6 +539,11 @@ def _generic_execution_evidence_from_proof(
     target_type = "unknown"
     method = proof_key.replace("_evidence", "")
     target: str | None = intent
+    verification_state = "verified"
+    verification_reason: str | None = None
+    expected: dict[str, Any] = {}
+    observed: dict[str, Any] = {}
+    verification_checks: list[dict[str, Any]] = []
 
     if proof_key == "read_only_evidence":
         target_type = "read_only"
@@ -493,6 +561,29 @@ def _generic_execution_evidence_from_proof(
     elif proof_key == "type_evidence":
         target_type = "focused_input"
         target = "focused_input"
+        type_data = proof[proof_key]
+        if isinstance(type_data, dict):
+            verification_state = str(type_data.get("type_verification_state") or "unverified")
+            verification_reason = str(type_data.get("type_verification_reason") or "missing TypeTool verification state")
+            expected = {
+                "focus": type_data.get("expected_focus"),
+                "process_name": type_data.get("expected_focus_process_name"),
+                "keywords": type_data.get("expected_focus_keywords"),
+                "before_hwnd_equals_after_hwnd": True,
+                "focus_verified_before": True,
+            }
+            observed = {
+                "target_before": type_data.get("target_before"),
+                "target_after": type_data.get("target_after"),
+                "focus_verified_before": type_data.get("focus_verified_before"),
+                "focus_verified_after": type_data.get("focus_verified_after"),
+                "focus_did_not_change_unexpectedly": type_data.get("focus_did_not_change_unexpectedly"),
+                "dispatch_ok": type_data.get("dispatch_ok"),
+            }
+            verification_checks = list(type_data.get("verification_checks") or [])
+        else:
+            verification_state = "unverified"
+            verification_reason = "missing TypeTool evidence payload"
     elif proof_key == "git_evidence":
         target_type = "git"
         target = str(params.get("git_cmd") or proof[proof_key].get("git_cmd") or "git")
@@ -505,9 +596,14 @@ def _generic_execution_evidence_from_proof(
         target=target,
         target_type=target_type,
         method=method,
-        verification_state="verified",
+        verifier="type-tool-focus-gate/1" if proof_key == "type_evidence" else None,
+        verification_state=verification_state,
+        verification_reason=verification_reason,
         started_at_ms=started_at_ms,
         completed_at_ms=now_ms(),
+        expected=expected,
+        observed=observed,
+        verification_checks=verification_checks,
         warnings=[],
     )
 
@@ -868,6 +964,26 @@ class DeterministicExecutor:
                     return ActionResult(
                         action=intent, params=params, status=ActionStatus.FAILED, success=False,
                         confidence=0.5, output=evidence.details, metrics=metrics, proof=proof,
+                        execution_evidence=execution_evidence,
+                    )
+
+                if intent == "type" and (not execution_evidence or execution_evidence.verification_state != "verified"):
+                    reason = (
+                        execution_evidence.verification_reason
+                        if execution_evidence
+                        else "TypeTool did not produce execution evidence."
+                    )
+                    return ActionResult(
+                        action=intent,
+                        params=params,
+                        status=ActionStatus.EXECUTED,
+                        success=False,
+                        confidence=min(metrics.determinism_score, 0.5),
+                        output=output,
+                        recovery_hint=reason,
+                        focus_verified=False,
+                        metrics=metrics,
+                        proof=proof,
                         execution_evidence=execution_evidence,
                     )
 

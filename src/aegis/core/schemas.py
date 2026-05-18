@@ -6,7 +6,7 @@ All models needed for: intent → guard → executor → logger → response.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Union
 from uuid import UUID, uuid4
 
@@ -36,7 +36,7 @@ class IntentResult(BaseModel):
     risk: RiskLevel = RiskLevel.NONE
     source: IntentSource = IntentSource.RULE
     raw_input: str = ""
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -129,7 +129,7 @@ class LogEvent(BaseModel):
     event_id: UUID = Field(default_factory=uuid4)
     event_type: EventType
     trace_id: UUID
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     data: dict[str, Any] = Field(default_factory=dict)
     source_component: str = ""
     severity: Severity = Severity.INFO
@@ -160,7 +160,7 @@ class CommandResponse(BaseModel):
     actions: list[ActionResult] = Field(default_factory=list)
     guard: Union[GuardResult, dict[str, Any], None] = None
     warnings: list[str] = Field(default_factory=list)
-    timestamp: Union[datetime, str] = Field(default_factory=datetime.utcnow)
+    timestamp: Union[datetime, str] = Field(default_factory=lambda: datetime.now(timezone.utc))
     duration_ms: float = Field(0.0, ge=0.0)
 
     @model_validator(mode="after")

@@ -39,6 +39,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     start_runtime_workers()
     logger.info("📡 WebSocket event bridge online.")
 
+    # Startup integrity: verify tool registry drift
+    try:
+        from aegis.tools.registry import validate_registry_drift
+        drift = validate_registry_drift()
+        if drift["status"] != "ok":
+            logger.warning(
+                "⚠️  Tool registry drift detected at startup: missing_in_config=%s, missing_in_code=%s, mismatches=%d",
+                drift.get("missing_in_config", []),
+                drift.get("missing_in_code", []),
+                len(drift.get("mismatches", [])),
+            )
+        else:
+            logger.info("✅ Tool registry integrity verified — no drift.")
+    except Exception as e:
+        logger.warning("Tool registry drift check failed: %s", e)
+
     try:
         yield
     finally:
@@ -47,7 +63,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Aegis shutting down.")
 
 
-def create_app() -> FastAPI:
+def create_app():
     settings = get_settings()
 
     fastapi_app = FastAPI(

@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Any
 from aegis.core.schemas import ActionResult
@@ -26,7 +26,7 @@ class GoldenJournal:
             "metadata": {
                 "trace_id": trace_id,
                 "goal": goal,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
                 "final_status": metrics.get("status"),
                 "avg_determinism": metrics.get("avg_determinism"),
                 "recovery_used": metrics.get("recovery_used")

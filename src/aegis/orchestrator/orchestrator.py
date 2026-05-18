@@ -5,7 +5,7 @@ import json
 import logging
 from typing import List, Optional, Set, Dict, Any
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from aegis.core.commands import CancellationToken, get_approval_manager
 from aegis.core.constants import ActionStatus, CommandStatus, EventType, ExecutionMode, RiskLevel
@@ -456,7 +456,7 @@ class Orchestrator:
                             "evaluations": guard_events,
                         },
                         warnings=all_warnings,
-                        timestamp=datetime.utcnow().isoformat() + "Z",
+                        timestamp=datetime.now(timezone.utc).isoformat() + "Z",
                         duration_ms=duration_ms,
                     )
                 elif approval_granted and command_record.status == CommandStatus.CANCELLED:
@@ -736,7 +736,7 @@ class Orchestrator:
             actions=all_actions,
             guard=guard_summary,
             warnings=all_warnings,
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.now(timezone.utc).isoformat() + "Z",
             duration_ms=duration_ms
         )
 

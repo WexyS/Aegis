@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from aegis.core.constants import IntentSource, RiskLevel
@@ -188,7 +188,7 @@ class IntentParser:
             app_id = self.normalize_app_name(app_raw) or resolve_app_name(app_raw)
             if not app_id or not query:
                 continue
-            timestamp = datetime.utcnow()
+            timestamp = datetime.now(timezone.utc)
             return [
                 IntentResult(
                     intent="open_app",
@@ -271,7 +271,7 @@ class IntentParser:
                         risk=risk,
                         source=IntentSource.RULE,
                         raw_input=text,
-                        timestamp=datetime.utcnow(),
+                        timestamp=datetime.now(timezone.utc),
                         metadata={"matched_pattern": pattern.pattern},
                     )
                     logger.info("Sub-intent parsed: %s (params=%s)", rule.intent, params)
@@ -366,7 +366,7 @@ class IntentParser:
             risk=RiskLevel.NONE,
             source=IntentSource.RULE,
             raw_input=text,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
 
 

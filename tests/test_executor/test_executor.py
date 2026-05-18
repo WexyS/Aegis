@@ -16,7 +16,45 @@ from aegis.core.schemas import IntentResult
 from aegis.core.state_manager import AegisStateSnapshot
 from aegis.executor.deterministic_executor import get_deterministic_executor
 from aegis.executor.deterministic_executor import DeterministicExecutor
+from aegis.executor.deterministic_executor import _type_evidence
 from aegis.executor.desktop_verifier import DesktopObservation, DesktopTarget, DesktopVerificationResult
+
+
+def _snapshot(*, hwnd: int | None, pid: int | None = 1234, focus_stable: bool = True) -> AegisStateSnapshot:
+    return AegisStateSnapshot(
+        version=1,
+        timestamp="2026-05-11T00:00:00Z",
+        active_app="notepad",
+        pid=pid,
+        hwnd=hwnd,
+        last_action=None,
+        last_status=None,
+        is_responsive=True,
+        focus_stable=focus_stable,
+    )
+
+
+class TypeStateManager:
+    def __init__(self, before: AegisStateSnapshot, after: AegisStateSnapshot) -> None:
+        self.before = before
+        self.after = after
+        self._reads = 0
+
+    async def sync_with_os(self, trace_id, span_id) -> None:
+        return None
+
+    def get_state(self):
+        self._reads += 1
+        return self.before if self._reads == 1 else self.after
+
+    def update(self, trace_id, span_id, **kwargs):
+        return self.after
+
+
+class FakeTypeTool:
+    async def run(self, text: str, **kwargs) -> str:
+        assert text == "secret text"
+        return "Typed: '[redacted]'"
 
 
 class TestDeterministicExecutorContracts:
@@ -385,35 +423,11 @@ class TestDeterministicExecutorContracts:
 
     @pytest.mark.asyncio
     async def test_type_success_includes_type_evidence_without_raw_text(self, monkeypatch) -> None:
-        snapshot = AegisStateSnapshot(
-            version=1,
-            timestamp="2026-05-11T00:00:00Z",
-            active_app="notepad",
-            pid=1234,
-            hwnd=5678,
-            last_action=None,
-            last_status=None,
-            is_responsive=True,
-            focus_stable=True,
-        )
-
-        class FakeStateManager:
-            async def sync_with_os(self, trace_id, span_id) -> None:
-                return None
-
-            def get_state(self):
-                return snapshot
-
-            def update(self, trace_id, span_id, **kwargs):
-                return snapshot
-
-        class FakeTypeTool:
-            async def run(self, text: str, **kwargs) -> str:
-                assert text == "secret text"
-                return "Typed: '[redacted]'"
-
         executor = DeterministicExecutor()
-        monkeypatch.setattr("aegis.executor.deterministic_executor.get_state_manager", lambda: FakeStateManager())
+        monkeypatch.setattr(
+            "aegis.executor.deterministic_executor.get_state_manager",
+            lambda: TypeStateManager(_snapshot(hwnd=5678), _snapshot(hwnd=5678)),
+        )
         monkeypatch.setitem(deterministic_executor_module.TOOLS, "type", FakeTypeTool())
         ctx = ExecutionContext.create_root()
         intent = IntentResult(
@@ -442,6 +456,11 @@ class TestDeterministicExecutorContracts:
         assert evidence["expected_focus_keywords"] == ["Notepad"]
         assert evidence["focus_verified_before"] is True
         assert evidence["focus_verified_after"] is True
+        assert evidence["focus_did_not_change_unexpectedly"] is True
+        assert evidence["dispatch_ok"] is True
+        assert evidence["type_verification_state"] == "verified"
+        checks = {check["check_name"]: check for check in evidence["verification_checks"]}
+        assert checks["dispatch_ok"]["passed"] is True
         assert evidence["target_before"]["hwnd"] == 5678
         assert evidence["target_after"]["pid"] == 1234
         assert "secret text" not in str(evidence)
@@ -451,6 +470,90 @@ class TestDeterministicExecutorContracts:
         assert result.execution_evidence.target_type == "focused_input"
         assert result.execution_evidence.verification_state == "verified"
         assert "secret text" not in str(result.execution_evidence)
+
+    @pytest.mark.parametrize(
+        ("before", "after", "expected_failed_check"),
+        [
+            (_snapshot(hwnd=None), _snapshot(hwnd=5678), "before_hwnd_present"),
+            (_snapshot(hwnd=5678), _snapshot(hwnd=None), "after_hwnd_present"),
+            (_snapshot(hwnd=5678), _snapshot(hwnd=8765), "focus_did_not_change_unexpectedly"),
+            (_snapshot(hwnd=5678, focus_stable=False), _snapshot(hwnd=5678), "focus_verified_before"),
+        ],
+    )
+    def test_type_evidence_marks_missing_or_unstable_focus_unverified(
+        self,
+        before: AegisStateSnapshot,
+        after: AegisStateSnapshot,
+        expected_failed_check: str,
+    ) -> None:
+        evidence = _type_evidence(
+            "type",
+            {"text": "secret text", "_require_focus": "notepad"},
+            before,
+            after,
+            "Typed: '[redacted]'",
+        )
+
+        assert evidence is not None
+        assert evidence["type_verification_state"] == "unverified"
+        assert evidence["focus_did_not_change_unexpectedly"] is bool(before.hwnd and after.hwnd and before.hwnd == after.hwnd)
+        checks = {check["check_name"]: check for check in evidence["verification_checks"]}
+        assert checks[expected_failed_check]["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_type_evidence_exists_but_focus_change_is_not_verified_success(self, monkeypatch) -> None:
+        executor = DeterministicExecutor()
+        monkeypatch.setattr(
+            "aegis.executor.deterministic_executor.get_state_manager",
+            lambda: TypeStateManager(_snapshot(hwnd=5678), _snapshot(hwnd=8765)),
+        )
+        monkeypatch.setitem(deterministic_executor_module.TOOLS, "type", FakeTypeTool())
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="type",
+            confidence=1.0,
+            params={"text": "secret text", "_require_focus": "notepad"},
+            risk=RiskLevel.MEDIUM,
+            raw_input="type secret text",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.EXECUTED
+        assert result.success is False
+        assert result.proof["type_evidence"]["type_verification_state"] == "unverified"
+        assert result.execution_evidence is not None
+        assert result.execution_evidence.verification_state == "unverified"
+        assert result.execution_evidence.verification_reason == "focus changed unexpectedly during type action"
+
+    @pytest.mark.asyncio
+    async def test_type_dispatch_exception_is_failed_not_verified(self, monkeypatch) -> None:
+        class RaisingTypeTool:
+            async def run(self, text: str, **kwargs) -> str:
+                raise RuntimeError("keyboard dispatch failed")
+
+        executor = DeterministicExecutor()
+        executor.max_retries = 0
+        monkeypatch.setattr(
+            "aegis.executor.deterministic_executor.get_state_manager",
+            lambda: TypeStateManager(_snapshot(hwnd=5678), _snapshot(hwnd=5678)),
+        )
+        monkeypatch.setitem(deterministic_executor_module.TOOLS, "type", RaisingTypeTool())
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="type",
+            confidence=1.0,
+            params={"text": "secret text", "_require_focus": "notepad"},
+            risk=RiskLevel.MEDIUM,
+            raw_input="type secret text",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.FAILED
+        assert result.success is False
+        assert result.execution_evidence is None or result.execution_evidence.verification_state != "verified"
+        assert "keyboard dispatch failed" in result.output
 
     @pytest.mark.asyncio
     async def test_git_status_success_includes_git_evidence(self, monkeypatch) -> None:
