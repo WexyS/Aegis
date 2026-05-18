@@ -35,6 +35,13 @@ def _tool_name(payload: Mapping[str, Any], evidence: Mapping[str, Any], fallback
     return str(fallback)
 
 
+def _status_from_evidence(evidence: Mapping[str, Any], fallback: str) -> str:
+    verification_state = str(evidence.get("verification_state") or "")
+    if verification_state == "approval_required":
+        return "approval_required"
+    return fallback
+
+
 def project_action_timeline(
     events: Iterable[Mapping[str, Any]],
     *,
@@ -95,7 +102,7 @@ def project_action_timeline(
             record["started_at"] = event_time or record.get("started_at")
             record["status"] = "active"
         elif event_type == ProtocolEventType.ACTION_COMPLETED.value:
-            record["status"] = "success" if bool(payload.get("success", False)) else "error"
+            record["status"] = "success" if bool(payload.get("success", False)) else _status_from_evidence(evidence_map, "error")
             record["completed_at"] = event_time
             record["latency_ms"] = payload.get("latency_ms")
             if isinstance(evidence, Mapping):
@@ -110,7 +117,7 @@ def project_action_timeline(
                 record["tool"] = _tool_name({}, evidence, record.get("tool") if record.get("tool") is not None else "executor")
                 record["target"] = record.get("target") or evidence.get("target")
             if event_type == ProtocolEventType.VERIFICATION_FAILED.value:
-                record["status"] = "error"
+                record["status"] = _status_from_evidence(evidence_map, "error")
                 record["completed_at"] = record.get("completed_at") or event_time
                 record["target"] = record.get("target") or evidence_map.get("target")
             elif event_type == ProtocolEventType.VERIFICATION_PASSED.value and record["status"] == "active":

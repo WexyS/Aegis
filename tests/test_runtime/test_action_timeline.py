@@ -141,6 +141,51 @@ def test_action_timeline_updates_evidence_from_verification_events() -> None:
     assert timeline[0]["execution_evidence"]["verification_state"] == "unverified"
 
 
+def test_action_timeline_preserves_approval_required_verification_state() -> None:
+    started = create_event(
+        ProtocolEventType.ACTION_STARTED,
+        {"action_id": "action-browser", "tool": "search_web", "target": "aegis runtime"},
+        session_id="session-one",
+    ).to_dict()
+    completed = create_event(
+        ProtocolEventType.ACTION_COMPLETED,
+        {
+            "action_id": "action-browser",
+            "success": False,
+            "latency_ms": 30,
+            "execution_evidence": {
+                "action": "search_web",
+                "target": "https://www.google.com/search?q=aegis+runtime",
+                "target_type": "browser",
+                "method": "browser",
+                "verifier": "browser-url-gate/1",
+                "verification_state": "approval_required",
+                "verification_reason": "browser challenge detected",
+                "expected": {"bot_challenge_detected": False},
+                "observed": {"bot_challenge_detected": True},
+            },
+        },
+        session_id="session-one",
+    ).to_dict()
+    verification = create_event(
+        ProtocolEventType.VERIFICATION_FAILED,
+        {
+            "action_id": "action-browser",
+            "passed": False,
+            "verification_state": "approval_required",
+            "verifier": "browser-url-gate/1",
+            "execution_evidence": completed["payload"]["execution_evidence"],
+        },
+        session_id="session-one",
+    ).to_dict()
+
+    timeline = project_action_timeline([started, completed, verification], session_id="session-one")
+
+    assert timeline[0]["status"] == "approval_required"
+    assert timeline[0]["execution_evidence"]["verification_state"] == "approval_required"
+    assert timeline[0]["execution_evidence"]["verifier"] == "browser-url-gate/1"
+
+
 def test_action_timeline_replay_is_sequence_ordered() -> None:
     trace_id = "11111111-1111-4111-8111-111111111111"
     started = create_event(

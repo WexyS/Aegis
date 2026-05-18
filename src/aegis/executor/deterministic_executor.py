@@ -9,7 +9,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import UUID
-from urllib.parse import quote_plus
+from urllib.parse import parse_qs, quote_plus, urlparse
 
 from aegis.core.context import ExecutionContext
 from aegis.core.schemas import IntentResult, ActionResult, ExecutionEvidence, ReliabilityMetrics
@@ -19,7 +19,7 @@ from aegis.logger.event_logger import get_event_logger, EventType
 from aegis.core.state_manager import get_state_manager
 from aegis.core.transition_model import get_transition_model
 from aegis.tools.registry import TOOLS, get_tool_spec
-from aegis.tools.file_tools import _resolve_write_path
+from aegis.tools.file_tools import _resolve_read_path, _resolve_write_path
 from aegis.executor.utils import verify_path
 from aegis.executor.desktop_verifier import (
     DesktopVerificationResult,
@@ -29,6 +29,30 @@ from aegis.executor.desktop_verifier import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _normalized_url(value: str) -> str:
+    return value.rstrip("/")
+
+
+def _google_search_query(value: str) -> str:
+    parsed = urlparse(value)
+    host = parsed.netloc.lower()
+    if not host.endswith("google.com") or parsed.path != "/search":
+        return ""
+    return str(parse_qs(parsed.query).get("q", [""])[0]).strip()
+
+
+def _bot_challenge_detected(value: str) -> bool:
+    lowered = value.lower()
+    markers = (
+        "/sorry/",
+        "captcha",
+        "unusual traffic",
+        "robot",
+        "bot challenge",
+    )
+    return any(marker in lowered for marker in markers)
 
 
 def _read_only_evidence(intent: str, params: Dict[str, Any], output_text: str) -> Dict[str, Any] | None:
@@ -43,6 +67,54 @@ def _read_only_evidence(intent: str, params: Dict[str, Any], output_text: str) -
     }
     if intent in {"read_file", "list_directory", "search_files", "grep_in_files", "file_info"}:
         evidence["path"] = str(params.get("path", ""))
+    if intent == "read_file":
+        resolved = _resolve_read_path(str(params.get("path", "")))
+        file_exists = resolved.exists()
+        is_file = resolved.is_file() if file_exists else False
+        disk_sha256 = None
+        read_error = None
+        if is_file:
+            try:
+                disk_sha256 = _sha256_text(resolved.read_text(encoding="utf-8"))
+            except Exception as exc:
+                read_error = str(exc)
+        content_hash_matches_disk = bool(disk_sha256 and disk_sha256 == evidence["sha256"])
+        checks = [
+            _evidence_check(
+                "read_file_exists",
+                file_exists,
+                True,
+                file_exists,
+                "read_file is verified only when the resolved source file still exists.",
+            ),
+            _evidence_check(
+                "read_path_is_file",
+                is_file,
+                True,
+                is_file,
+                "read_file is verified only when the resolved source path is a file.",
+            ),
+            _evidence_check(
+                "read_content_hash_matches_disk",
+                content_hash_matches_disk,
+                evidence["sha256"],
+                disk_sha256,
+                "read_file output hash must match the resolved file content hash.",
+            ),
+        ]
+        critical_passed = bool(file_exists and is_file and content_hash_matches_disk)
+        failed_checks = [str(check["check_name"]) for check in checks if check["passed"] is False]
+        evidence.update({
+            "resolved_path": str(resolved),
+            "file_exists": file_exists,
+            "is_file": is_file,
+            "disk_sha256": disk_sha256,
+            "content_hash_matches_disk": content_hash_matches_disk,
+            "read_error": read_error,
+            "read_verification_state": "verified" if critical_passed else "unverified",
+            "read_verification_reason": "read file evidence matched disk" if critical_passed else f"read file verification failed: {', '.join(failed_checks)}",
+            "verification_checks": checks,
+        })
     if intent in {"search_files", "grep_in_files"}:
         evidence["query"] = str(params.get("query") or params.get("pattern") or "")
     if intent == "search_web":
@@ -117,15 +189,97 @@ def _browser_evidence(
     params: Dict[str, Any],
     output_text: str,
     *,
+    observed_url: str | None = None,
     click_before: Dict[str, Any] | None = None,
     click_after: Dict[str, Any] | None = None,
 ) -> Dict[str, Any] | None:
-    if intent not in {"open_url", "scroll"}:
+    if intent not in {"open_url", "search_web", "scroll"}:
         if intent != "click":
             return None
     evidence: Dict[str, Any] = {"tool": intent}
     if intent == "open_url":
-        evidence["url"] = str(params.get("url", ""))
+        requested_url = str(params.get("url", ""))
+        observed = str(observed_url or "")
+        url_matches = bool(observed and _normalized_url(observed) == _normalized_url(requested_url))
+        challenge = _bot_challenge_detected(observed) or _bot_challenge_detected(output_text)
+        state = "approval_required" if challenge else "verified" if url_matches else "unverified"
+        checks = [
+            _evidence_check(
+                "browser_observed_url_present",
+                bool(observed),
+                "browser URL after navigation",
+                observed,
+                "Browser navigation is verified only when the controlled page reports an observed URL.",
+            ),
+            _evidence_check(
+                "browser_url_matches_request",
+                url_matches,
+                requested_url,
+                observed,
+                "open_url is verified only when the observed URL matches the requested URL.",
+            ),
+            _evidence_check(
+                "browser_no_bot_challenge",
+                not challenge,
+                False,
+                challenge,
+                "Bot/CAPTCHA challenge pages require user approval instead of automatic success.",
+            ),
+        ]
+        failed_checks = [str(check["check_name"]) for check in checks if check["passed"] is False]
+        evidence.update({
+            "url": requested_url,
+            "requested_url": requested_url,
+            "observed_url": observed,
+            "url_matches_request": url_matches,
+            "bot_challenge_detected": challenge,
+            "browser_verification_state": state,
+            "browser_verification_reason": "browser URL matched request" if state == "verified" else f"browser URL verification failed: {', '.join(failed_checks)}",
+            "verification_checks": checks,
+        })
+    if intent == "search_web":
+        query = str(params.get("query", "")).strip()
+        requested_url = f"https://www.google.com/search?q={quote_plus(query)}"
+        observed = str(observed_url or "")
+        observed_query = _google_search_query(observed)
+        query_matches = bool(observed_query and observed_query == query)
+        challenge = _bot_challenge_detected(observed) or _bot_challenge_detected(output_text)
+        state = "approval_required" if challenge else "verified" if query_matches else "unverified"
+        checks = [
+            _evidence_check(
+                "browser_observed_url_present",
+                bool(observed),
+                "browser URL after search navigation",
+                observed,
+                "search_web is verified only when the controlled page reports an observed URL.",
+            ),
+            _evidence_check(
+                "search_query_matches_observed_url",
+                query_matches,
+                query,
+                observed_query,
+                "search_web is verified only when the observed search URL carries the requested query.",
+            ),
+            _evidence_check(
+                "browser_no_bot_challenge",
+                not challenge,
+                False,
+                challenge,
+                "Bot/CAPTCHA challenge pages require user approval instead of automatic success.",
+            ),
+        ]
+        failed_checks = [str(check["check_name"]) for check in checks if check["passed"] is False]
+        evidence.update({
+            "query": query,
+            "requested_url": requested_url,
+            "observed_url": observed,
+            "observed_query": observed_query,
+            "query_matches_observed_url": query_matches,
+            "bot_challenge_detected": challenge,
+            "browser_verification_state": state,
+            "browser_verification_reason": "search query matched observed URL" if state == "verified" else f"search URL verification failed: {', '.join(failed_checks)}",
+            "verification_checks": checks,
+        })
     if intent == "scroll":
         evidence["direction"] = str(params.get("direction", "down"))
         evidence["amount"] = int(params.get("amount", 500) or 500)
@@ -189,6 +343,43 @@ def _write_evidence(
         )
     )
     diff_preview = "\n".join(diff_lines[:120])
+    expected_after_sha256 = None
+    write_confirmed = False
+    path_unchanged = str(path) == str(Path(_resolve_write_path(str(params.get("path", "")))))
+    verification_checks: list[dict[str, Any]] = []
+    verification_state = "verified"
+    verification_reason = "write evidence captured"
+
+    if intent == "write_file":
+        expected_content = str(params.get("content", ""))
+        expected_after_sha256 = _sha256_text(expected_content)
+        write_confirmed = bool(path.exists() and _sha256_text(after_content) == expected_after_sha256)
+        verification_checks = [
+            _evidence_check(
+                "write_path_unchanged",
+                path_unchanged,
+                str(path),
+                str(Path(_resolve_write_path(str(params.get("path", ""))))),
+                "write_file is verified only when the resolved path remains unchanged.",
+            ),
+            _evidence_check(
+                "write_file_exists_after",
+                path.exists(),
+                True,
+                path.exists(),
+                "write_file is verified only when the target file exists after dispatch.",
+            ),
+            _evidence_check(
+                "write_content_hash_matches_expected",
+                write_confirmed,
+                expected_after_sha256,
+                _sha256_text(after_content) if path.exists() else None,
+                "write_file is verified only when the after-content hash matches the requested content.",
+            ),
+        ]
+        verification_state = "verified" if path_unchanged and write_confirmed else "unverified"
+        failed_checks = [str(check["check_name"]) for check in verification_checks if check["passed"] is False]
+        verification_reason = "write file evidence matched requested content" if verification_state == "verified" else f"write file verification failed: {', '.join(failed_checks)}"
 
     return {
         "tool": intent,
@@ -199,6 +390,12 @@ def _write_evidence(
         "after_bytes": len(after_content.encode("utf-8")),
         "before_sha256": before["sha256"],
         "after_sha256": _sha256_text(after_content),
+        "expected_after_sha256": expected_after_sha256,
+        "path_unchanged": path_unchanged,
+        "write_confirmed": write_confirmed,
+        "write_verification_state": verification_state,
+        "write_verification_reason": verification_reason,
+        "verification_checks": verification_checks,
         "diff_preview": diff_preview,
         "output_sha256": _sha256_text(output_text),
     }
@@ -532,7 +729,10 @@ def _generic_execution_evidence_from_proof(
     proof: Dict[str, Any],
     started_at_ms: int,
 ) -> ExecutionEvidence | None:
-    proof_key = next((key for key in PROOF_EVIDENCE_KEYS if key in proof), None)
+    if intent in {"open_url", "search_web"} and "browser_evidence" in proof:
+        proof_key = "browser_evidence"
+    else:
+        proof_key = next((key for key in PROOF_EVIDENCE_KEYS if key in proof), None)
     if not proof_key:
         return None
 
@@ -541,6 +741,7 @@ def _generic_execution_evidence_from_proof(
     target: str | None = intent
     verification_state = "verified"
     verification_reason: str | None = None
+    verifier: str | None = None
     expected: dict[str, Any] = {}
     observed: dict[str, Any] = {}
     verification_checks: list[dict[str, Any]] = []
@@ -550,14 +751,69 @@ def _generic_execution_evidence_from_proof(
         data = proof[proof_key]
         if isinstance(data, dict):
             target = str(data.get("path") or data.get("query") or data.get("search_url") or intent)
+            if data.get("tool") == "read_file":
+                verifier = "file-read-gate/1"
+                verification_state = str(data.get("read_verification_state") or "unverified")
+                verification_reason = str(data.get("read_verification_reason") or "missing read_file verification state")
+                expected = {
+                    "resolved_path": data.get("resolved_path"),
+                    "content_sha256": data.get("sha256"),
+                    "file_exists": True,
+                    "is_file": True,
+                }
+                observed = {
+                    "resolved_path": data.get("resolved_path"),
+                    "file_exists": data.get("file_exists"),
+                    "is_file": data.get("is_file"),
+                    "disk_sha256": data.get("disk_sha256"),
+                    "content_hash_matches_disk": data.get("content_hash_matches_disk"),
+                    "read_error": data.get("read_error"),
+                }
+                verification_checks = list(data.get("verification_checks") or [])
     elif proof_key == "browser_evidence":
         target_type = "browser"
         browser = proof[proof_key]
         if isinstance(browser, dict):
             target = str(browser.get("url") or browser.get("selector") or browser.get("coordinates") or intent)
+            if browser.get("tool") in {"open_url", "search_web"}:
+                verifier = "browser-url-gate/1"
+                verification_state = str(browser.get("browser_verification_state") or "unverified")
+                verification_reason = str(browser.get("browser_verification_reason") or "missing browser URL verification state")
+                target = str(browser.get("requested_url") or target)
+                expected = {
+                    "requested_url": browser.get("requested_url"),
+                    "query": browser.get("query"),
+                    "bot_challenge_detected": False,
+                }
+                observed = {
+                    "observed_url": browser.get("observed_url"),
+                    "observed_query": browser.get("observed_query"),
+                    "url_matches_request": browser.get("url_matches_request"),
+                    "query_matches_observed_url": browser.get("query_matches_observed_url"),
+                    "bot_challenge_detected": browser.get("bot_challenge_detected"),
+                }
+                verification_checks = list(browser.get("verification_checks") or [])
     elif proof_key == "write_evidence":
         target_type = "file"
-        target = str(params.get("path") or proof[proof_key].get("path") or "file")
+        write_data = proof[proof_key]
+        target = str(params.get("path") or write_data.get("path") or "file")
+        if isinstance(write_data, dict) and write_data.get("tool") == "write_file":
+            verifier = "file-write-gate/1"
+            verification_state = str(write_data.get("write_verification_state") or "unverified")
+            verification_reason = str(write_data.get("write_verification_reason") or "missing write_file verification state")
+            expected = {
+                "path": write_data.get("path"),
+                "after_sha256": write_data.get("expected_after_sha256"),
+                "path_unchanged": True,
+                "write_confirmed": True,
+            }
+            observed = {
+                "path": write_data.get("path"),
+                "after_sha256": write_data.get("after_sha256"),
+                "path_unchanged": write_data.get("path_unchanged"),
+                "write_confirmed": write_data.get("write_confirmed"),
+            }
+            verification_checks = list(write_data.get("verification_checks") or [])
     elif proof_key == "type_evidence":
         target_type = "focused_input"
         target = "focused_input"
@@ -596,7 +852,7 @@ def _generic_execution_evidence_from_proof(
         target=target,
         target_type=target_type,
         method=method,
-        verifier="type-tool-focus-gate/1" if proof_key == "type_evidence" else None,
+        verifier="type-tool-focus-gate/1" if proof_key == "type_evidence" else verifier,
         verification_state=verification_state,
         verification_reason=verification_reason,
         started_at_ms=started_at_ms,
@@ -937,6 +1193,7 @@ class DeterministicExecutor:
                     intent,
                     params,
                     output_text,
+                    observed_url=str(getattr(page, "url", "")) if page is not None else None,
                     click_before=click_before,
                     click_after=click_after,
                 )
@@ -972,6 +1229,50 @@ class DeterministicExecutor:
                         execution_evidence.verification_reason
                         if execution_evidence
                         else "TypeTool did not produce execution evidence."
+                    )
+                    return ActionResult(
+                        action=intent,
+                        params=params,
+                        status=ActionStatus.EXECUTED,
+                        success=False,
+                        confidence=min(metrics.determinism_score, 0.5),
+                        output=output,
+                        recovery_hint=reason,
+                        focus_verified=False,
+                        metrics=metrics,
+                        proof=proof,
+                        execution_evidence=execution_evidence,
+                    )
+
+                if intent in {"read_file", "write_file"} and (
+                    not execution_evidence or execution_evidence.verification_state != "verified"
+                ):
+                    reason = (
+                        execution_evidence.verification_reason
+                        if execution_evidence
+                        else f"{intent} did not produce execution evidence."
+                    )
+                    return ActionResult(
+                        action=intent,
+                        params=params,
+                        status=ActionStatus.EXECUTED,
+                        success=False,
+                        confidence=min(metrics.determinism_score, 0.5),
+                        output=output,
+                        recovery_hint=reason,
+                        focus_verified=False,
+                        metrics=metrics,
+                        proof=proof,
+                        execution_evidence=execution_evidence,
+                    )
+
+                if intent in {"open_url", "search_web"} and (
+                    not execution_evidence or execution_evidence.verification_state != "verified"
+                ):
+                    reason = (
+                        execution_evidence.verification_reason
+                        if execution_evidence
+                        else f"{intent} did not produce browser execution evidence."
                     )
                     return ActionResult(
                         action=intent,
