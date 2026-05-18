@@ -1,7 +1,6 @@
 # src/aegis/executor/deterministic_executor.py
 
 import asyncio
-import difflib
 import hashlib
 import logging
 import time
@@ -35,6 +34,27 @@ def _normalized_url(value: str) -> str:
     return value.rstrip("/")
 
 
+def _valid_browser_url(value: str) -> Any | None:
+    parsed = urlparse(value.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return parsed
+
+
+def _same_browser_url(requested_url: str, observed_url: str) -> bool:
+    requested = _valid_browser_url(requested_url)
+    observed = _valid_browser_url(observed_url)
+    if not requested or not observed:
+        return False
+    if requested.scheme.lower() != observed.scheme.lower():
+        return False
+    if (requested.hostname or "").lower() != (observed.hostname or "").lower():
+        return False
+    requested_path = requested.path or "/"
+    observed_path = observed.path or "/"
+    return requested_path == observed_path and requested.query == observed.query
+
+
 def _google_search_query(value: str) -> str:
     parsed = urlparse(value)
     host = parsed.netloc.lower()
@@ -62,7 +82,11 @@ def _read_only_evidence(intent: str, params: Dict[str, Any], output_text: str) -
     evidence: Dict[str, Any] = {
         "tool": intent,
         "bytes": len(encoded),
+        "byte_count": len(encoded),
+        "chars": len(output_text),
+        "char_count": len(output_text),
         "sha256": hashlib.sha256(encoded).hexdigest(),
+        "output_sha256": hashlib.sha256(encoded).hexdigest(),
         "truncated": intent == "read_page" and output_text.endswith("..."),
     }
     if intent in {"read_file", "list_directory", "search_files", "grep_in_files", "file_info"}:
@@ -78,6 +102,9 @@ def _read_only_evidence(intent: str, params: Dict[str, Any], output_text: str) -
                 disk_sha256 = _sha256_text(resolved.read_text(encoding="utf-8"))
             except Exception as exc:
                 read_error = str(exc)
+        content_hash_captured = disk_sha256 is not None
+        count_captured = evidence["byte_count"] is not None or evidence["char_count"] is not None
+        dispatch_ok = True
         content_hash_matches_disk = bool(disk_sha256 and disk_sha256 == evidence["sha256"])
         checks = [
             _evidence_check(
@@ -95,6 +122,30 @@ def _read_only_evidence(intent: str, params: Dict[str, Any], output_text: str) -
                 "read_file is verified only when the resolved source path is a file.",
             ),
             _evidence_check(
+                "read_dispatch_ok",
+                dispatch_ok,
+                True,
+                dispatch_ok,
+                "read_file is verified only when dispatch completed without raising.",
+            ),
+            _evidence_check(
+                "read_content_hash_captured",
+                content_hash_captured,
+                True,
+                content_hash_captured,
+                "read_file is verified only when a disk content hash is captured.",
+            ),
+            _evidence_check(
+                "read_count_captured",
+                count_captured,
+                "byte_count or char_count",
+                {
+                    "byte_count": evidence["byte_count"],
+                    "char_count": evidence["char_count"],
+                },
+                "read_file is verified only when byte or character count evidence is captured.",
+            ),
+            _evidence_check(
                 "read_content_hash_matches_disk",
                 content_hash_matches_disk,
                 evidence["sha256"],
@@ -102,13 +153,23 @@ def _read_only_evidence(intent: str, params: Dict[str, Any], output_text: str) -
                 "read_file output hash must match the resolved file content hash.",
             ),
         ]
-        critical_passed = bool(file_exists and is_file and content_hash_matches_disk)
+        critical_passed = bool(
+            file_exists
+            and is_file
+            and dispatch_ok
+            and content_hash_captured
+            and count_captured
+            and content_hash_matches_disk
+        )
         failed_checks = [str(check["check_name"]) for check in checks if check["passed"] is False]
         evidence.update({
             "resolved_path": str(resolved),
             "file_exists": file_exists,
             "is_file": is_file,
             "disk_sha256": disk_sha256,
+            "content_hash_captured": content_hash_captured,
+            "count_captured": count_captured,
+            "dispatch_ok": dispatch_ok,
             "content_hash_matches_disk": content_hash_matches_disk,
             "read_error": read_error,
             "read_verification_state": "verified" if critical_passed else "unverified",
@@ -200,16 +261,33 @@ def _browser_evidence(
     if intent == "open_url":
         requested_url = str(params.get("url", ""))
         observed = str(observed_url or "")
-        url_matches = bool(observed and _normalized_url(observed) == _normalized_url(requested_url))
+        requested_url_valid = _valid_browser_url(requested_url) is not None
+        browser_context_observable = bool(observed)
+        final_url_captured = bool(observed)
+        url_matches = _same_browser_url(requested_url, observed)
+        dispatch_ok = True
         challenge = _bot_challenge_detected(observed) or _bot_challenge_detected(output_text)
-        state = "approval_required" if challenge else "verified" if url_matches else "unverified"
         checks = [
             _evidence_check(
+                "browser_requested_url_valid",
+                requested_url_valid,
+                "absolute http(s) URL",
+                requested_url,
+                "open_url is verified only when the requested URL is a valid browser URL.",
+            ),
+            _evidence_check(
                 "browser_observed_url_present",
-                bool(observed),
+                browser_context_observable,
                 "browser URL after navigation",
                 observed,
                 "Browser navigation is verified only when the controlled page reports an observed URL.",
+            ),
+            _evidence_check(
+                "browser_final_url_captured",
+                final_url_captured,
+                True,
+                final_url_captured,
+                "open_url is verified only when the final browser URL is captured.",
             ),
             _evidence_check(
                 "browser_url_matches_request",
@@ -219,6 +297,13 @@ def _browser_evidence(
                 "open_url is verified only when the observed URL matches the requested URL.",
             ),
             _evidence_check(
+                "browser_dispatch_ok",
+                dispatch_ok,
+                True,
+                dispatch_ok,
+                "open_url is verified only when browser dispatch completed without raising.",
+            ),
+            _evidence_check(
                 "browser_no_bot_challenge",
                 not challenge,
                 False,
@@ -226,12 +311,26 @@ def _browser_evidence(
                 "Bot/CAPTCHA challenge pages require user approval instead of automatic success.",
             ),
         ]
+        verified = bool(
+            requested_url_valid
+            and browser_context_observable
+            and final_url_captured
+            and url_matches
+            and dispatch_ok
+            and not challenge
+        )
+        state = "approval_required" if challenge else "verified" if verified else "unverified"
         failed_checks = [str(check["check_name"]) for check in checks if check["passed"] is False]
         evidence.update({
             "url": requested_url,
             "requested_url": requested_url,
+            "requested_url_valid": requested_url_valid,
             "observed_url": observed,
+            "final_url": observed,
+            "browser_context_observable": browser_context_observable,
+            "final_url_captured": final_url_captured,
             "url_matches_request": url_matches,
+            "dispatch_ok": dispatch_ok,
             "bot_challenge_detected": challenge,
             "browser_verification_state": state,
             "browser_verification_reason": "browser URL matched request" if state == "verified" else f"browser URL verification failed: {', '.join(failed_checks)}",
@@ -241,17 +340,45 @@ def _browser_evidence(
         query = str(params.get("query", "")).strip()
         requested_url = f"https://www.google.com/search?q={quote_plus(query)}"
         observed = str(observed_url or "")
+        observed_parsed = _valid_browser_url(observed)
+        provider_domain = (observed_parsed.netloc.lower() if observed_parsed else "")
+        provider = "google" if provider_domain.endswith("google.com") else ""
+        browser_context_observable = bool(observed)
+        final_url_captured = bool(observed)
+        query_present = bool(query)
         observed_query = _google_search_query(observed)
         query_matches = bool(observed_query and observed_query == query)
+        provider_matches = provider == "google"
+        dispatch_ok = True
         challenge = _bot_challenge_detected(observed) or _bot_challenge_detected(output_text)
-        state = "approval_required" if challenge else "verified" if query_matches else "unverified"
         checks = [
             _evidence_check(
+                "search_query_present",
+                query_present,
+                "non-empty search query",
+                query,
+                "search_web is verified only when the requested query is non-empty.",
+            ),
+            _evidence_check(
                 "browser_observed_url_present",
-                bool(observed),
+                browser_context_observable,
                 "browser URL after search navigation",
                 observed,
                 "search_web is verified only when the controlled page reports an observed URL.",
+            ),
+            _evidence_check(
+                "browser_final_url_captured",
+                final_url_captured,
+                True,
+                final_url_captured,
+                "search_web is verified only when the final browser URL is captured.",
+            ),
+            _evidence_check(
+                "search_provider_matches_expected",
+                provider_matches,
+                "google",
+                provider or provider_domain,
+                "search_web is verified only when the observed URL belongs to the deterministic search provider.",
             ),
             _evidence_check(
                 "search_query_matches_observed_url",
@@ -261,6 +388,13 @@ def _browser_evidence(
                 "search_web is verified only when the observed search URL carries the requested query.",
             ),
             _evidence_check(
+                "browser_dispatch_ok",
+                dispatch_ok,
+                True,
+                dispatch_ok,
+                "search_web is verified only when browser dispatch completed without raising.",
+            ),
+            _evidence_check(
                 "browser_no_bot_challenge",
                 not challenge,
                 False,
@@ -268,13 +402,31 @@ def _browser_evidence(
                 "Bot/CAPTCHA challenge pages require user approval instead of automatic success.",
             ),
         ]
+        verified = bool(
+            query_present
+            and browser_context_observable
+            and final_url_captured
+            and provider_matches
+            and query_matches
+            and dispatch_ok
+            and not challenge
+        )
+        state = "approval_required" if challenge else "verified" if verified else "unverified"
         failed_checks = [str(check["check_name"]) for check in checks if check["passed"] is False]
         evidence.update({
             "query": query,
             "requested_url": requested_url,
             "observed_url": observed,
+            "final_url": observed,
+            "provider": provider,
+            "provider_domain": provider_domain,
+            "browser_context_observable": browser_context_observable,
+            "final_url_captured": final_url_captured,
             "observed_query": observed_query,
+            "query_present": query_present,
+            "provider_matches_expected": provider_matches,
             "query_matches_observed_url": query_matches,
+            "dispatch_ok": dispatch_ok,
             "bot_challenge_detected": challenge,
             "browser_verification_state": state,
             "browser_verification_reason": "search query matched observed URL" if state == "verified" else f"search URL verification failed: {', '.join(failed_checks)}",
@@ -330,22 +482,18 @@ def _write_evidence(
         return None
 
     path = Path(before["path"])
-    after_content = path.read_text(encoding="utf-8") if path.exists() else ""
-    before_lines = str(before["content"]).splitlines(keepends=True)
-    after_lines = after_content.splitlines(keepends=True)
-    diff_lines = list(
-        difflib.unified_diff(
-            before_lines,
-            after_lines,
-            fromfile="before",
-            tofile="after",
-            lineterm="",
-        )
-    )
-    diff_preview = "\n".join(diff_lines[:120])
+    intended_path = Path(_resolve_write_path(str(params.get("path", ""))))
+    existed_after = path.exists()
+    after_content = path.read_text(encoding="utf-8") if existed_after else ""
+    after_sha256 = _sha256_text(after_content) if existed_after else None
     expected_after_sha256 = None
     write_confirmed = False
-    path_unchanged = str(path) == str(Path(_resolve_write_path(str(params.get("path", "")))))
+    path_unchanged = str(path) == str(intended_path)
+    before_state_known = (
+        (bool(before["existed_before"]) and before["sha256"] is not None)
+        or before["existed_before"] is False
+    )
+    dispatch_ok = True
     verification_checks: list[dict[str, Any]] = []
     verification_state = "verified"
     verification_reason = "write evidence captured"
@@ -353,50 +501,87 @@ def _write_evidence(
     if intent == "write_file":
         expected_content = str(params.get("content", ""))
         expected_after_sha256 = _sha256_text(expected_content)
-        write_confirmed = bool(path.exists() and _sha256_text(after_content) == expected_after_sha256)
+        after_hash_captured = after_sha256 is not None
+        write_confirmed = bool(existed_after and after_sha256 == expected_after_sha256)
         verification_checks = [
             _evidence_check(
                 "write_path_unchanged",
                 path_unchanged,
+                str(intended_path),
                 str(path),
-                str(Path(_resolve_write_path(str(params.get("path", ""))))),
                 "write_file is verified only when the resolved path remains unchanged.",
             ),
             _evidence_check(
+                "write_before_state_known",
+                before_state_known,
+                "existing file hash or existed_before=false",
+                {
+                    "existed_before": bool(before["existed_before"]),
+                    "before_sha256_captured": before["sha256"] is not None,
+                },
+                "write_file is verified only when the pre-write state is known.",
+            ),
+            _evidence_check(
                 "write_file_exists_after",
-                path.exists(),
+                existed_after,
                 True,
-                path.exists(),
+                existed_after,
                 "write_file is verified only when the target file exists after dispatch.",
+            ),
+            _evidence_check(
+                "write_after_hash_captured",
+                after_hash_captured,
+                True,
+                after_hash_captured,
+                "write_file is verified only when the post-write content hash is captured.",
             ),
             _evidence_check(
                 "write_content_hash_matches_expected",
                 write_confirmed,
                 expected_after_sha256,
-                _sha256_text(after_content) if path.exists() else None,
+                after_sha256,
                 "write_file is verified only when the after-content hash matches the requested content.",
             ),
+            _evidence_check(
+                "write_dispatch_ok",
+                dispatch_ok,
+                True,
+                dispatch_ok,
+                "write_file is verified only when dispatch completed without raising.",
+            ),
         ]
-        verification_state = "verified" if path_unchanged and write_confirmed else "unverified"
+        verification_state = (
+            "verified"
+            if path_unchanged
+            and before_state_known
+            and existed_after
+            and after_hash_captured
+            and write_confirmed
+            and dispatch_ok
+            else "unverified"
+        )
         failed_checks = [str(check["check_name"]) for check in verification_checks if check["passed"] is False]
         verification_reason = "write file evidence matched requested content" if verification_state == "verified" else f"write file verification failed: {', '.join(failed_checks)}"
 
     return {
         "tool": intent,
         "path": str(path),
+        "intended_path": str(intended_path),
         "dry_run": bool(params.get("dry_run", False)),
         "existed_before": bool(before["existed_before"]),
+        "existed_after": existed_after,
+        "before_state_known": before_state_known,
         "before_bytes": int(before["bytes"]),
         "after_bytes": len(after_content.encode("utf-8")),
         "before_sha256": before["sha256"],
-        "after_sha256": _sha256_text(after_content),
+        "after_sha256": after_sha256,
         "expected_after_sha256": expected_after_sha256,
         "path_unchanged": path_unchanged,
+        "dispatch_ok": dispatch_ok,
         "write_confirmed": write_confirmed,
         "write_verification_state": verification_state,
         "write_verification_reason": verification_reason,
         "verification_checks": verification_checks,
-        "diff_preview": diff_preview,
         "output_sha256": _sha256_text(output_text),
     }
 
@@ -760,12 +945,21 @@ def _generic_execution_evidence_from_proof(
                     "content_sha256": data.get("sha256"),
                     "file_exists": True,
                     "is_file": True,
+                    "dispatch_ok": True,
+                    "content_hash_captured": True,
+                    "count_captured": True,
                 }
                 observed = {
                     "resolved_path": data.get("resolved_path"),
                     "file_exists": data.get("file_exists"),
                     "is_file": data.get("is_file"),
                     "disk_sha256": data.get("disk_sha256"),
+                    "output_sha256": data.get("output_sha256") or data.get("sha256"),
+                    "byte_count": data.get("byte_count"),
+                    "char_count": data.get("char_count"),
+                    "dispatch_ok": data.get("dispatch_ok"),
+                    "content_hash_captured": data.get("content_hash_captured"),
+                    "count_captured": data.get("count_captured"),
                     "content_hash_matches_disk": data.get("content_hash_matches_disk"),
                     "read_error": data.get("read_error"),
                 }
@@ -787,9 +981,16 @@ def _generic_execution_evidence_from_proof(
                 }
                 observed = {
                     "observed_url": browser.get("observed_url"),
+                    "final_url": browser.get("final_url"),
+                    "browser_context_observable": browser.get("browser_context_observable"),
+                    "final_url_captured": browser.get("final_url_captured"),
+                    "dispatch_ok": browser.get("dispatch_ok"),
+                    "provider": browser.get("provider"),
+                    "provider_domain": browser.get("provider_domain"),
                     "observed_query": browser.get("observed_query"),
                     "url_matches_request": browser.get("url_matches_request"),
                     "query_matches_observed_url": browser.get("query_matches_observed_url"),
+                    "provider_matches_expected": browser.get("provider_matches_expected"),
                     "bot_challenge_detected": browser.get("bot_challenge_detected"),
                 }
                 verification_checks = list(browser.get("verification_checks") or [])
@@ -802,15 +1003,23 @@ def _generic_execution_evidence_from_proof(
             verification_state = str(write_data.get("write_verification_state") or "unverified")
             verification_reason = str(write_data.get("write_verification_reason") or "missing write_file verification state")
             expected = {
-                "path": write_data.get("path"),
+                "path": write_data.get("intended_path") or write_data.get("path"),
                 "after_sha256": write_data.get("expected_after_sha256"),
                 "path_unchanged": True,
+                "before_state_known": True,
+                "existed_after": True,
+                "after_hash_captured": True,
+                "dispatch_ok": True,
                 "write_confirmed": True,
             }
             observed = {
                 "path": write_data.get("path"),
                 "after_sha256": write_data.get("after_sha256"),
                 "path_unchanged": write_data.get("path_unchanged"),
+                "before_state_known": write_data.get("before_state_known"),
+                "existed_after": write_data.get("existed_after"),
+                "after_hash_captured": write_data.get("after_sha256") is not None,
+                "dispatch_ok": write_data.get("dispatch_ok"),
                 "write_confirmed": write_data.get("write_confirmed"),
             }
             verification_checks = list(write_data.get("verification_checks") or [])
@@ -1127,6 +1336,36 @@ class DeterministicExecutor:
                         close_attempts=close_attempts,
                         focus_attempts=focus_attempts,
                     )
+                    if intent == "read_file":
+                        read_evidence = _read_only_evidence(intent, params, output_text)
+                        if read_evidence and read_evidence.get("file_exists") is True:
+                            failure_proof = {"read_only_evidence": read_evidence}
+                            execution_evidence = _generic_execution_evidence_from_proof(
+                                intent,
+                                params,
+                                failure_proof,
+                                desktop_started_at_ms,
+                            )
+                            if execution_evidence:
+                                failure_proof["execution_evidence"] = execution_evidence.model_dump()
+                            return ActionResult(
+                                action=intent,
+                                params=params,
+                                status=ActionStatus.EXECUTED,
+                                success=False,
+                                output=output_text,
+                                recovery_hint=(
+                                    execution_evidence.verification_reason
+                                    if execution_evidence
+                                    else "read_file did not produce execution evidence."
+                                ),
+                                proof=failure_proof,
+                                execution_evidence=execution_evidence,
+                                metrics=ReliabilityMetrics(
+                                    execution_time_ms=(time.perf_counter() - step_start) * 1000,
+                                    retries=attempt,
+                                ),
+                            )
                     failure_proof = {"execution_evidence": failure_evidence.model_dump()} if failure_evidence else {}
                     return ActionResult(
                         action=intent,

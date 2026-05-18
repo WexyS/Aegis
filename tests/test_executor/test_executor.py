@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -50,6 +51,27 @@ class TypeStateManager:
 
     def update(self, trace_id, span_id, **kwargs):
         return self.after
+
+
+def _assert_evidence_state_source_of_truth(
+    result: Any,
+    *,
+    expected_state: str,
+    expected_success: bool,
+) -> None:
+    assert result.success is expected_success
+    assert result.execution_evidence is not None
+    assert result.execution_evidence.verification_state == expected_state
+    assert result.proof["execution_evidence"]["verification_state"] == expected_state
+    assert result.execution_evidence.verification_reason
+    if expected_state == "unverified":
+        failed_checks = [
+            check
+            for check in result.execution_evidence.verification_checks
+            if check.get("passed") is False
+        ]
+        assert failed_checks
+        assert all(check.get("reason") for check in failed_checks)
 
 
 class FakeTypeTool:
@@ -199,7 +221,10 @@ class TestDeterministicExecutorContracts:
         assert evidence["tool"] == "read_file"
         assert evidence["path"] == str(path)
         assert evidence["bytes"] == len("hello evidence".encode("utf-8"))
+        assert evidence["chars"] == len("hello evidence")
         assert evidence["sha256"]
+        assert evidence["content_hash_captured"] is True
+        assert evidence["dispatch_ok"] is True
         assert evidence["truncated"] is False
         assert evidence["resolved_path"] == str(path.resolve())
         assert evidence["file_exists"] is True
@@ -238,12 +263,156 @@ class TestDeterministicExecutorContracts:
         result = await executor.execute(intent, ctx)
 
         assert result.status == ActionStatus.EXECUTED
-        assert result.success is False
         evidence = result.proof["read_only_evidence"]
         assert evidence["read_verification_state"] == "unverified"
         assert evidence["file_exists"] is False
+        _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
+
+    @pytest.mark.asyncio
+    async def test_read_file_path_is_directory_is_unverified_not_success(self, tmp_path) -> None:
+        path = tmp_path / "read-dir"
+        path.mkdir()
+        executor = DeterministicExecutor()
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="read_file",
+            confidence=1.0,
+            params={"path": str(path)},
+            risk=RiskLevel.LOW,
+            raw_input="read directory",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.EXECUTED
+        evidence = result.proof["read_only_evidence"]
+        assert evidence["file_exists"] is True
+        assert evidence["is_file"] is False
+        assert evidence["read_verification_state"] == "unverified"
+        checks = {check["check_name"]: check for check in evidence["verification_checks"]}
+        assert checks["read_path_is_file"]["passed"] is False
+        _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
+
+    @pytest.mark.asyncio
+    async def test_read_file_tool_returns_content_but_disk_hash_cannot_be_captured_is_unverified(self, tmp_path, monkeypatch) -> None:
+        path = tmp_path / "unreadable-after-tool.txt"
+
+        class ReadTextRaisesPath:
+            def exists(self) -> bool:
+                return True
+
+            def is_file(self) -> bool:
+                return True
+
+            def read_text(self, encoding: str = "utf-8") -> str:
+                raise OSError("disk hash unavailable")
+
+            def resolve(self):
+                return self
+
+            def __str__(self) -> str:
+                return str(path)
+
+        class ReturningReadTool:
+            async def run(self, path: str, **kwargs) -> str:
+                return "returned content"
+
+        executor = DeterministicExecutor()
+        monkeypatch.setitem(deterministic_executor_module.TOOLS, "read_file", ReturningReadTool())
+        monkeypatch.setattr(deterministic_executor_module, "_resolve_read_path", lambda raw_path: ReadTextRaisesPath())
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="read_file",
+            confidence=1.0,
+            params={"path": str(path)},
+            risk=RiskLevel.LOW,
+            raw_input="read file",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.EXECUTED
+        evidence = result.proof["read_only_evidence"]
+        assert evidence["content_hash_captured"] is False
+        assert evidence["read_error"] == "disk hash unavailable"
+        assert evidence["read_verification_state"] == "unverified"
+        _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
+
+    @pytest.mark.asyncio
+    async def test_read_file_returned_output_differs_from_disk_content_is_unverified(self, tmp_path, monkeypatch) -> None:
+        path = tmp_path / "mismatch.txt"
+        path.write_text("disk content", encoding="utf-8")
+
+        class StaleReadTool:
+            async def run(self, path: str, **kwargs) -> str:
+                return "different returned content"
+
+        executor = DeterministicExecutor()
+        monkeypatch.setitem(deterministic_executor_module.TOOLS, "read_file", StaleReadTool())
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="read_file",
+            confidence=1.0,
+            params={"path": str(path)},
+            risk=RiskLevel.LOW,
+            raw_input="read file",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.EXECUTED
+        evidence = result.proof["read_only_evidence"]
+        assert evidence["content_hash_matches_disk"] is False
+        assert evidence["read_verification_state"] == "unverified"
+        _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
+
+    @pytest.mark.asyncio
+    async def test_read_file_dispatch_exception_is_failed_not_verified(self, tmp_path, monkeypatch) -> None:
+        path = tmp_path / "raise-read.txt"
+        path.write_text("disk content", encoding="utf-8")
+
+        class RaisingReadTool:
+            async def run(self, path: str, **kwargs) -> str:
+                raise RuntimeError("read dispatch failed")
+
+        executor = DeterministicExecutor()
+        executor.max_retries = 0
+        monkeypatch.setitem(deterministic_executor_module.TOOLS, "read_file", RaisingReadTool())
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="read_file",
+            confidence=1.0,
+            params={"path": str(path)},
+            risk=RiskLevel.LOW,
+            raw_input="read file",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.FAILED
+        assert result.success is False
+        assert result.execution_evidence is None or result.execution_evidence.verification_state != "verified"
+        assert "read dispatch failed" in result.output
+
+    @pytest.mark.asyncio
+    async def test_read_file_execution_evidence_does_not_contain_raw_file_content(self, tmp_path) -> None:
+        path = tmp_path / "sensitive-read.txt"
+        path.write_text("read-secret-token", encoding="utf-8")
+        executor = DeterministicExecutor()
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="read_file",
+            confidence=1.0,
+            params={"path": str(path)},
+            risk=RiskLevel.LOW,
+            raw_input="read sensitive file",
+        )
+
+        result = await executor.execute(intent, ctx)
+
         assert result.execution_evidence is not None
-        assert result.execution_evidence.verification_state == "unverified"
+        assert "read-secret-token" not in str(result.execution_evidence.model_dump())
+        assert result.execution_evidence.verification_state == "verified"
 
     @pytest.mark.asyncio
     async def test_read_page_success_includes_read_only_evidence(self, monkeypatch) -> None:
@@ -311,6 +480,10 @@ class TestDeterministicExecutorContracts:
         assert browser_evidence["query"] == "aegis runtime"
         assert browser_evidence["requested_url"] == "https://www.google.com/search?q=aegis+runtime"
         assert browser_evidence["observed_url"] == "https://www.google.com/search?q=aegis+runtime"
+        assert browser_evidence["provider"] == "google"
+        assert browser_evidence["provider_domain"] == "www.google.com"
+        assert browser_evidence["browser_context_observable"] is True
+        assert browser_evidence["dispatch_ok"] is True
         assert browser_evidence["browser_verification_state"] == "verified"
         assert result.execution_evidence is not None
         assert result.execution_evidence.verifier == "browser-url-gate/1"
@@ -346,6 +519,9 @@ class TestDeterministicExecutorContracts:
         assert evidence["url"] == "https://example.com"
         assert evidence["requested_url"] == "https://example.com"
         assert evidence["observed_url"] == "https://example.com"
+        assert evidence["requested_url_valid"] is True
+        assert evidence["browser_context_observable"] is True
+        assert evidence["dispatch_ok"] is True
         assert evidence["url_matches_request"] is True
         assert evidence["browser_verification_state"] == "verified"
         assert result.execution_evidence is not None
@@ -379,12 +555,132 @@ class TestDeterministicExecutorContracts:
         result = await executor.execute(intent, ctx)
 
         assert result.status == ActionStatus.EXECUTED
-        assert result.success is False
         evidence = result.proof["browser_evidence"]
         assert evidence["browser_verification_state"] == "unverified"
         assert evidence["url_matches_request"] is False
+        _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
+
+    @pytest.mark.asyncio
+    async def test_open_url_dispatch_exception_is_failed_not_verified(self, monkeypatch) -> None:
+        class RaisingOpenURLTool:
+            async def run(self, url: str, page=None, **kwargs) -> str:
+                raise RuntimeError("browser dispatch failed")
+
+        executor = DeterministicExecutor()
+        executor.max_retries = 0
+        monkeypatch.setitem(deterministic_executor_module.TOOLS, "open_url", RaisingOpenURLTool())
+
+        async def fake_get_page():
+            return object()
+
+        monkeypatch.setattr(executor, "_get_page", fake_get_page)
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="open_url",
+            confidence=1.0,
+            params={"url": "https://example.com"},
+            risk=RiskLevel.LOW,
+            raw_input="open example",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.FAILED
+        assert result.success is False
+        assert result.execution_evidence is None or result.execution_evidence.verification_state != "verified"
+        assert "browser dispatch failed" in result.output
+
+    @pytest.mark.asyncio
+    async def test_search_web_query_missing_from_observable_url_is_unverified_not_success(self, monkeypatch) -> None:
+        class FakePage:
+            async def goto(self, url: str, wait_until: str = "networkidle") -> None:
+                self.url = "https://www.google.com/search?q=different"
+
+        executor = DeterministicExecutor()
+
+        async def fake_get_page():
+            return FakePage()
+
+        monkeypatch.setattr(executor, "_get_page", fake_get_page)
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="search_web",
+            confidence=1.0,
+            params={"query": "aegis runtime"},
+            risk=RiskLevel.LOW,
+            raw_input="aegis runtime search",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.EXECUTED
+        evidence = result.proof["browser_evidence"]
+        assert evidence["browser_verification_state"] == "unverified"
+        assert evidence["query_matches_observed_url"] is False
+        _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
+
+    @pytest.mark.asyncio
+    async def test_open_url_missing_browser_context_is_unverified_not_success(self, monkeypatch) -> None:
+        class FakePage:
+            async def goto(self, url: str, wait_until: str = "networkidle") -> None:
+                return None
+
+        executor = DeterministicExecutor()
+
+        async def fake_get_page():
+            return FakePage()
+
+        monkeypatch.setattr(executor, "_get_page", fake_get_page)
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="open_url",
+            confidence=1.0,
+            params={"url": "https://example.com"},
+            risk=RiskLevel.LOW,
+            raw_input="open example",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.EXECUTED
+        evidence = result.proof["browser_evidence"]
+        assert evidence["browser_context_observable"] is False
+        assert evidence["browser_verification_state"] == "unverified"
+        _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
+
+    @pytest.mark.asyncio
+    async def test_open_url_execution_evidence_does_not_contain_full_page_content(self, monkeypatch) -> None:
+        secret_page_content = "full-page-secret-content"
+
+        class ContentReturningOpenURLTool:
+            async def run(self, url: str, page=None, **kwargs) -> str:
+                page.url = url
+                return secret_page_content
+
+        class FakePage:
+            url = ""
+
+        executor = DeterministicExecutor()
+        monkeypatch.setitem(deterministic_executor_module.TOOLS, "open_url", ContentReturningOpenURLTool())
+
+        async def fake_get_page():
+            return FakePage()
+
+        monkeypatch.setattr(executor, "_get_page", fake_get_page)
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="open_url",
+            confidence=1.0,
+            params={"url": "https://example.com"},
+            risk=RiskLevel.LOW,
+            raw_input="open example",
+        )
+
+        result = await executor.execute(intent, ctx)
+
         assert result.execution_evidence is not None
-        assert result.execution_evidence.verification_state == "unverified"
+        assert secret_page_content not in str(result.execution_evidence.model_dump())
+        assert result.execution_evidence.verification_state == "verified"
 
     @pytest.mark.asyncio
     async def test_search_web_bot_challenge_requires_approval_not_verified_success(self, monkeypatch) -> None:
@@ -410,12 +706,10 @@ class TestDeterministicExecutorContracts:
         result = await executor.execute(intent, ctx)
 
         assert result.status == ActionStatus.EXECUTED
-        assert result.success is False
         evidence = result.proof["browser_evidence"]
         assert evidence["bot_challenge_detected"] is True
         assert evidence["browser_verification_state"] == "approval_required"
-        assert result.execution_evidence is not None
-        assert result.execution_evidence.verification_state == "approval_required"
+        _assert_evidence_state_source_of_truth(result, expected_state="approval_required", expected_success=False)
 
     @pytest.mark.asyncio
     async def test_scroll_success_includes_browser_evidence(self, monkeypatch) -> None:
@@ -534,8 +828,9 @@ class TestDeterministicExecutorContracts:
             assert evidence["path_unchanged"] is True
             assert evidence["write_confirmed"] is True
             assert evidence["write_verification_state"] == "verified"
-            assert "-old line" in evidence["diff_preview"]
-            assert "+new line" in evidence["diff_preview"]
+            assert "diff_preview" not in evidence
+            assert "old line" not in str(evidence)
+            assert "new line" not in str(evidence)
             assert result.execution_evidence is not None
             assert result.execution_evidence.action == "write_file"
             assert result.execution_evidence.target_type == "file"
@@ -569,12 +864,154 @@ class TestDeterministicExecutorContracts:
         result = await executor.execute(intent, ctx)
 
         assert result.status == ActionStatus.EXECUTED
-        assert result.success is False
         evidence = result.proof["write_evidence"]
         assert evidence["write_verification_state"] == "unverified"
         assert evidence["write_confirmed"] is False
-        assert result.execution_evidence is not None
-        assert result.execution_evidence.verification_state == "unverified"
+        _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
+
+    @pytest.mark.asyncio
+    async def test_write_file_new_file_success_records_existed_before_false_and_verifies(self) -> None:
+        path = PROJECT_ROOT / "scratch" / "executor-write-new-file-test.txt"
+        if path.exists():
+            path.unlink()
+        executor = DeterministicExecutor()
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="write_file",
+            confidence=1.0,
+            params={"path": str(path), "content": "new file content\n"},
+            risk=RiskLevel.MEDIUM,
+            raw_input="write new file",
+        )
+
+        try:
+            result = await executor.execute(intent, ctx)
+
+            assert result.status == ActionStatus.EXECUTED
+            assert result.success is True
+            evidence = result.proof["write_evidence"]
+            assert evidence["existed_before"] is False
+            assert evidence["before_sha256"] is None
+            assert evidence["before_state_known"] is True
+            assert evidence["write_confirmed"] is True
+            assert evidence["write_verification_state"] == "verified"
+            assert result.execution_evidence is not None
+            assert result.execution_evidence.verification_state == "verified"
+        finally:
+            if path.exists():
+                path.unlink()
+
+    @pytest.mark.asyncio
+    async def test_write_file_success_text_but_target_missing_after_dispatch_is_unverified(self, tmp_path, monkeypatch) -> None:
+        path = tmp_path / "missing-after.txt"
+
+        class NoCreateWriteTool:
+            async def run(self, path: str, content: str, **kwargs) -> str:
+                return f"Successfully written to {path}"
+
+        executor = DeterministicExecutor()
+        monkeypatch.setitem(deterministic_executor_module.TOOLS, "write_file", NoCreateWriteTool())
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="write_file",
+            confidence=1.0,
+            params={"path": str(path), "content": "new content\n"},
+            risk=RiskLevel.MEDIUM,
+            raw_input="write file",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.EXECUTED
+        evidence = result.proof["write_evidence"]
+        assert evidence["write_verification_state"] == "unverified"
+        checks = {check["check_name"]: check for check in evidence["verification_checks"]}
+        assert checks["write_file_exists_after"]["passed"] is False
+        _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
+
+    @pytest.mark.asyncio
+    async def test_write_file_after_hash_differs_from_requested_content_is_unverified(self, tmp_path, monkeypatch) -> None:
+        path = tmp_path / "wrong-content.txt"
+        path.write_text("old line\n", encoding="utf-8")
+
+        class WrongContentWriteTool:
+            async def run(self, path: str, content: str, **kwargs) -> str:
+                Path(path).write_text("different content\n", encoding="utf-8")
+                return f"Successfully written to {path}"
+
+        executor = DeterministicExecutor()
+        monkeypatch.setitem(deterministic_executor_module.TOOLS, "write_file", WrongContentWriteTool())
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="write_file",
+            confidence=1.0,
+            params={"path": str(path), "content": "requested content\n"},
+            risk=RiskLevel.MEDIUM,
+            raw_input="write file",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.EXECUTED
+        evidence = result.proof["write_evidence"]
+        assert evidence["write_verification_state"] == "unverified"
+        assert evidence["write_confirmed"] is False
+        assert evidence["after_sha256"] != evidence["expected_after_sha256"]
+        _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
+
+    @pytest.mark.asyncio
+    async def test_write_file_dispatch_exception_is_failed_not_verified(self, tmp_path, monkeypatch) -> None:
+        path = tmp_path / "raise.txt"
+
+        class RaisingWriteTool:
+            async def run(self, path: str, content: str, **kwargs) -> str:
+                raise RuntimeError("write dispatch failed")
+
+        executor = DeterministicExecutor()
+        executor.max_retries = 0
+        monkeypatch.setitem(deterministic_executor_module.TOOLS, "write_file", RaisingWriteTool())
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="write_file",
+            confidence=1.0,
+            params={"path": str(path), "content": "new content\n"},
+            risk=RiskLevel.MEDIUM,
+            raw_input="write file",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.FAILED
+        assert result.success is False
+        assert result.execution_evidence is None or result.execution_evidence.verification_state != "verified"
+        assert "write dispatch failed" in result.output
+
+    @pytest.mark.asyncio
+    async def test_write_file_execution_evidence_does_not_contain_raw_file_content(self) -> None:
+        path = PROJECT_ROOT / "scratch" / "executor-write-sensitive-test.txt"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("old-secret-token\n", encoding="utf-8")
+        executor = DeterministicExecutor()
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="write_file",
+            confidence=1.0,
+            params={"path": str(path), "content": "new-secret-token\n"},
+            risk=RiskLevel.MEDIUM,
+            raw_input="write sensitive file",
+        )
+
+        try:
+            result = await executor.execute(intent, ctx)
+
+            assert result.execution_evidence is not None
+            evidence_text = str(result.execution_evidence.model_dump())
+            assert "old-secret-token" not in evidence_text
+            assert "new-secret-token" not in evidence_text
+            assert result.execution_evidence.verification_state == "verified"
+        finally:
+            if path.exists():
+                path.unlink()
 
     @pytest.mark.asyncio
     async def test_type_success_includes_type_evidence_without_raw_text(self, monkeypatch) -> None:
@@ -675,10 +1112,8 @@ class TestDeterministicExecutorContracts:
         result = await executor.execute(intent, ctx)
 
         assert result.status == ActionStatus.EXECUTED
-        assert result.success is False
         assert result.proof["type_evidence"]["type_verification_state"] == "unverified"
-        assert result.execution_evidence is not None
-        assert result.execution_evidence.verification_state == "unverified"
+        _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
         assert result.execution_evidence.verification_reason == "focus changed unexpectedly during type action"
 
     @pytest.mark.asyncio
