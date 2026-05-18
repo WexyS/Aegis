@@ -39,6 +39,88 @@ class TestDeterministicExecutorContracts:
         assert "Unknown tool" in result.output
 
     @pytest.mark.asyncio
+    async def test_open_app_launch_error_can_attach_to_verified_existing_window(self, monkeypatch) -> None:
+        snapshot = AegisStateSnapshot(
+            version=1,
+            timestamp="2026-05-13T00:00:00Z",
+            active_app="notepad",
+            pid=4242,
+            hwnd=101,
+            last_action=None,
+            last_status=None,
+            is_responsive=True,
+            focus_stable=True,
+        )
+
+        class FakeStateManager:
+            async def sync_with_os(self, trace_id, span_id) -> None:
+                return None
+
+            def get_state(self):
+                return snapshot
+
+            def update(self, trace_id, span_id, **kwargs):
+                return snapshot
+
+        class FakeOpenTool:
+            async def run(self, app: str, **kwargs) -> str:
+                return "Error launching 'notepad': Error code from Windows: 0"
+
+        def fake_verify_desktop_action(**kwargs):
+            observation = DesktopObservation(
+                target=DesktopTarget(
+                    app_id="notepad",
+                    display_name="notepad",
+                    process_name="notepad.exe",
+                    window_keywords=["Notepad"],
+                ),
+                pids=[4242],
+                process_alive=True,
+                active_window={"title": "Untitled - Notepad", "hwnd": 101, "pid": 4242},
+                matching_windows=[{"title": "Untitled - Notepad", "hwnd": 101, "pid": 4242}],
+                focus_verified=True,
+            )
+            return DesktopVerificationResult(
+                action="open_app",
+                method="open_or_focus_window",
+                observation=observation,
+                verification_state="verified",
+                reason="target process is alive and a matching window is present",
+                checks=[
+                    {
+                        "check_name": "window_manifested",
+                        "expected": "matching HWND/title",
+                        "observed": {"title": "Untitled - Notepad", "hwnd": 101, "pid": 4242},
+                        "passed": True,
+                        "reason": "Open is window-verified only when a matching HWND/title is observed.",
+                    },
+                ],
+            )
+
+        executor = DeterministicExecutor()
+        executor.max_retries = 0
+        monkeypatch.setattr("aegis.executor.deterministic_executor.get_state_manager", lambda: FakeStateManager())
+        monkeypatch.setattr("aegis.executor.deterministic_executor.verify_desktop_action", fake_verify_desktop_action)
+        monkeypatch.setitem(deterministic_executor_module.TOOLS, "open_app", FakeOpenTool())
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="open_app",
+            confidence=1.0,
+            params={"app": "notepad", "_process_name": "notepad.exe", "_keywords": ["Notepad"]},
+            risk=RiskLevel.MEDIUM,
+            raw_input="open notepad",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.EXECUTED
+        assert result.success is True
+        assert result.execution_evidence is not None
+        assert result.execution_evidence.method == "verified_existing_after_launch_error"
+        assert result.execution_evidence.verification_state == "verified"
+        assert any("Error launching" in warning for warning in result.execution_evidence.warnings)
+
+    @pytest.mark.asyncio
     async def test_tool_error_string_becomes_failed_action(self) -> None:
         executor = get_deterministic_executor()
         ctx = ExecutionContext.create_root()
@@ -337,7 +419,12 @@ class TestDeterministicExecutorContracts:
         intent = IntentResult(
             intent="type",
             confidence=1.0,
-            params={"text": "secret text"},
+            params={
+                "text": "secret text",
+                "_require_focus": "notepad",
+                "_require_focus_process_name": "notepad.exe",
+                "_require_focus_keywords": ["Notepad"],
+            },
             risk=RiskLevel.MEDIUM,
             raw_input="type secret text",
         )
@@ -350,6 +437,11 @@ class TestDeterministicExecutorContracts:
         assert evidence["tool"] == "type"
         assert evidence["text_chars"] == len("secret text")
         assert evidence["text_sha256"] == hashlib.sha256("secret text".encode("utf-8")).hexdigest()
+        assert evidence["expected_focus"] == "notepad"
+        assert evidence["expected_focus_process_name"] == "notepad.exe"
+        assert evidence["expected_focus_keywords"] == ["Notepad"]
+        assert evidence["focus_verified_before"] is True
+        assert evidence["focus_verified_after"] is True
         assert evidence["target_before"]["hwnd"] == 5678
         assert evidence["target_after"]["pid"] == 1234
         assert "secret text" not in str(evidence)

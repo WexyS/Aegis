@@ -20,6 +20,7 @@ export interface RuntimeStoreState extends TelemetryData {
   lastMaintenanceScan: Record<string, unknown> | null;
   appRegistry: AppRegistrySnapshot | null;
   toolRegistry: ToolRegistrySnapshot | null;
+  visionFeedEnabled: boolean;
   currentState: RuntimeState;
   isExecuting: boolean;
   recoveryDepth: number;
@@ -35,6 +36,7 @@ export interface RuntimeStoreState extends TelemetryData {
   setMaintenanceScan: (report: Record<string, unknown> | null) => void;
   setAppRegistry: (registry: AppRegistrySnapshot | null) => void;
   setToolRegistry: (registry: ToolRegistrySnapshot | null) => void;
+  setVisionFeedEnabled: (enabled: boolean) => void;
   transitionTo: (newState: RuntimeState, payload?: any) => void;
   applyBackendTransition: (fromState: RuntimeState | undefined, newState: RuntimeState, payload?: any) => void;
   syncBackendSnapshot: (newState: RuntimeState, payload?: any) => void;
@@ -83,6 +85,7 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
   lastMaintenanceScan: null,
   appRegistry: null,
   toolRegistry: null,
+  visionFeedEnabled: true,
   currentState: RuntimeState.IDLE,
   isExecuting: false,
   recoveryDepth: 0,
@@ -205,6 +208,7 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
   setMaintenanceScan: (report) => set({ lastMaintenanceScan: report }),
   setAppRegistry: (registry) => set({ appRegistry: registry }),
   setToolRegistry: (registry) => set({ toolRegistry: registry }),
+  setVisionFeedEnabled: (enabled) => set({ visionFeedEnabled: enabled }),
 
   transitionTo: (newState, payload = {}) => {
     const { currentState } = get();
@@ -230,6 +234,7 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
         message: `Backend FSM breach: ${authoritativeFrom} -> ${newState}`,
         color: 'text-danger',
       });
+      return;
     } else if (currentState !== authoritativeFrom && currentState !== newState) {
       console.warn(`[FSM] Projection resync: local ${currentState}, backend ${authoritativeFrom} -> ${newState}`);
       get().addLog({

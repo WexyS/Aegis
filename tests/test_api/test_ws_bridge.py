@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from aegis.api import ws_bridge
-from aegis.core.protocol import ProtocolEventType
+from aegis.core.constants import RiskLevel
+from aegis.core.commands import get_approval_manager
+from aegis.core.protocol import ProtocolEventType, reset_sequence_for_testing
 from aegis.core.schemas import ExecutionEvidence
 
 
@@ -50,6 +54,71 @@ async def test_action_completed_event_carries_execution_evidence(monkeypatch) ->
     assert verification_payload["passed"] is True
     assert verification_payload["verification_state"] == "verified"
     assert verification_payload["execution_evidence"]["process_name"] == "steam.exe"
+
+
+@pytest.mark.asyncio
+async def test_emit_event_serializes_sequence_creation_with_journal_append(monkeypatch) -> None:
+    reset_sequence_for_testing()
+    appended = []
+
+    class FakeJournal:
+        def append(self, event):
+            appended.append(event.to_dict())
+            return event
+
+    async def fake_to_thread(fn, *args, **kwargs):
+        await asyncio.sleep(0)
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(ws_bridge, "get_runtime_journal", lambda: FakeJournal())
+    monkeypatch.setattr(ws_bridge.asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(ws_bridge, "_connected_clients", set())
+
+    await asyncio.gather(*[
+        ws_bridge.emit_event(
+            ProtocolEventType.TELEMETRY_UPDATE,
+            {"index": index},
+            source=ws_bridge.Component.SYSTEM,
+        )
+        for index in range(20)
+    ])
+
+    sequences = [event["sequence_num"] for event in appended]
+    assert sequences == sorted(sequences)
+    assert len(sequences) == len(set(sequences)) == 20
+
+
+@pytest.mark.asyncio
+async def test_approve_command_reports_queue_full_instead_of_silently_dropping(monkeypatch) -> None:
+    manager = get_approval_manager()
+    manager.reset_for_tests()
+    record = manager.create_received("open notepad", command_id="cmd-queue-full")
+    manager.register_pending(
+        command_id=record.command_id,
+        text=record.text,
+        trace_id="11111111-1111-4111-8111-111111111111",
+        risk_level=RiskLevel.MEDIUM,
+        reason="approval required",
+    )
+    queue: asyncio.Queue = asyncio.Queue(maxsize=1)
+    queue.put_nowait(ws_bridge.QueuedCommand("sid-existing", "busy", "auto", 0.0))
+    emitted = []
+
+    async def fake_emit_event(event_type, payload, **kwargs):
+        emitted.append((event_type, payload, kwargs))
+
+    monkeypatch.setattr(ws_bridge, "_command_queue", queue)
+    monkeypatch.setattr(ws_bridge, "_command_queue_capacity", 1)
+    monkeypatch.setattr(ws_bridge, "emit_event", fake_emit_event)
+
+    await ws_bridge.approve_command("sid-1", {"command_id": "cmd-queue-full"})
+
+    updated = manager.get("cmd-queue-full")
+    assert updated is not None
+    assert updated.status.value == "blocked"
+    assert any(event[0] == ProtocolEventType.COMMAND_BLOCKED for event in emitted)
+    assert any(event[0] == ProtocolEventType.DETERMINISM_BREACH for event in emitted)
+    assert queue.qsize() == 1
 
 
 @pytest.mark.asyncio

@@ -107,6 +107,41 @@ def _result_with_evidence(
     )
 
 
+def _standard_tool_evidence(
+    *,
+    action: str,
+    params: dict,
+    output: str,
+    status: ActionStatus,
+    started_at_ms: int,
+) -> ExecutionEvidence:
+    target = (
+        params.get("path")
+        or params.get("url")
+        or params.get("query")
+        or params.get("selector")
+        or params.get("command")
+        or action
+    )
+    read_only_actions = {"read_file", "list_directory", "search_files", "grep_in_files", "file_info", "read_page", "search_web"}
+    verification_state = "failed" if status == ActionStatus.FAILED else "verified" if action in read_only_actions else "unverified"
+    warnings = [] if verification_state == "verified" else ["Legacy executor output is not treated as verified side-effect proof."]
+    return ExecutionEvidence(
+        action=action,
+        target=str(target),
+        target_type="read_only" if action in read_only_actions else "tool",
+        method="legacy_tool_output",
+        verification_state=verification_state,
+        started_at_ms=started_at_ms,
+        completed_at_ms=_now_ms(),
+        warnings=warnings,
+        observed={
+            "output_bytes": len(output.encode("utf-8")),
+            "output_prefix": output[:120],
+        },
+    )
+
+
 class Executor:
     def __init__(self, safety, dry_run_default=None):
         from aegis.core.config import get_settings
@@ -137,7 +172,7 @@ class Executor:
         if tool_name in ["open_url", "click", "scroll", "read_page"]:
             context["page"] = await self._get_page()
 
-        print(f"[EXEC ACTION]: {tool_name} {params}")
+        logger.debug("[EXECUTOR] Action requested: %s %s", tool_name, params)
 
         # 0. SAFETY CHECK
         guard_result = self._safety.evaluate(intent)
@@ -184,11 +219,11 @@ class Executor:
                 
                 # A. Path Verification (Senior Model: Resolve Real Path)
                 is_valid, resolved_path = verify_path(path)
-                print(f"[DEBUG] verify_path result: {is_valid} | resolved: {resolved_path}")
+                logger.debug("[EXECUTOR] verify_path result: %s | resolved: %s", is_valid, resolved_path)
                 
                 if not is_valid:
                     if fallback:
-                        print(f"[FALLBACK] {resolved} -> {fallback}")
+                        logger.info("[EXECUTOR] Fallback: %s -> %s", resolved, fallback)
                         fallback_chain.append({
                             "from": resolved,
                             "to": fallback,
@@ -218,7 +253,7 @@ class Executor:
                 
                 if candidates:
                     best_win = candidates[0][1]
-                    print(f"[FOCUS] Ranking match: '{best_win.title}' (Score: {candidates[0][0]})")
+                    logger.debug("[EXECUTOR] Ranking match: %r (score=%s)", best_win.title, candidates[0][0])
                     
                     try:
                         if best_win.isMinimized: best_win.restore()
@@ -270,7 +305,7 @@ class Executor:
                 params["app"] = resolved 
                 
                 tool = TOOLS.get(tool_name)
-                print(f"[EXECUTOR] Calling tool: {tool_name}")
+                logger.debug("[EXECUTOR] Calling tool: %s", tool_name)
                 
                 # Use Self-Healing Engine to wrap the tool execution
                 from aegis.core.self_healing import get_self_healer
@@ -323,7 +358,7 @@ class Executor:
                     break
 
                 if is_failed and fallback:
-                    print(f"[RUNTIME FALLBACK] {resolved} -> {fallback}")
+                    logger.info("[EXECUTOR] Runtime fallback: %s -> %s", resolved, fallback)
                     fallback_chain.append({
                         "from": resolved,
                         "to": fallback,
@@ -376,14 +411,46 @@ class Executor:
 
         try:
             logger.info("[EXECUTOR] Running tool: %s", tool_name)
+            started_at_ms = _now_ms()
             output = await tool.run(**params, **context)
+            output_text = str(output)
             
-            status = ActionStatus.FAILED if output.upper().startswith("ERROR") else ActionStatus.EXECUTED
-            return [ActionResult(action=tool_name, params=params, status=status, success=status == ActionStatus.EXECUTED, output=output)]
+            status = ActionStatus.FAILED if output_text.strip().lower().startswith(("error", "failed", "read error", "write error")) else ActionStatus.EXECUTED
+            evidence = _standard_tool_evidence(
+                action=tool_name,
+                params=params,
+                output=output_text,
+                status=status,
+                started_at_ms=started_at_ms,
+            )
+            return [ActionResult(
+                action=tool_name,
+                params=params,
+                status=status,
+                success=status == ActionStatus.EXECUTED,
+                output=output_text,
+                proof={"execution_evidence": evidence.model_dump()},
+                execution_evidence=evidence,
+            )]
             
         except Exception as e:
             logger.error("[EXECUTOR] Fatal error in tool %s: %s", tool_name, e)
-            return [ActionResult(action=tool_name, params=params, status=ActionStatus.FAILED, success=False, output=str(e))]
+            evidence = _standard_tool_evidence(
+                action=tool_name,
+                params=params,
+                output=str(e),
+                status=ActionStatus.FAILED,
+                started_at_ms=_now_ms(),
+            )
+            return [ActionResult(
+                action=tool_name,
+                params=params,
+                status=ActionStatus.FAILED,
+                success=False,
+                output=str(e),
+                proof={"execution_evidence": evidence.model_dump()},
+                execution_evidence=evidence,
+            )]
 
     async def _get_page(self):
         if self._page: return self._page

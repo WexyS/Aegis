@@ -16,6 +16,7 @@ from typing import Any
 
 from aegis.core.constants import IntentSource, RiskLevel
 from aegis.core.schemas import IntentResult
+from aegis.core.app_map import resolve_app_name
 from aegis.intent.rules import RULES, KNOWN_SITES, APP_ALIASES, VERIFICATION_METADATA, IntentRule
 from aegis.tools.file_tools import _is_allowed_write_path, _is_forbidden_write_path, _resolve_write_path
 from aegis.tools.shell_tools import is_allowlisted_shell_command, is_destructive_shell_command
@@ -52,6 +53,10 @@ class IntentParser:
         text = text.replace("hesap makinesine", "hesap makinesi")
         text = text.replace("chrome'u", "chrome")
         text = text.replace("chrome'a", "chrome")
+        text = text.replace("brave'i", "brave")
+        text = text.replace("brave'ı", "brave")
+        text = text.replace("brave i", "brave")
+        text = text.replace("brave ı", "brave")
         text = text.replace("google'ı", "google")
         text = text.replace("premiere'i", "premiere")
         text = text.replace("premiere'ı", "premiere")
@@ -80,11 +85,16 @@ class IntentParser:
             from aegis.api.routes_command import clean_text
             text = clean_text(text)
             
-        print("[PARSER INPUT CLEAN]:", text)
         logger.info("[PARSER] Input: %r", text)
         
         # 1. Normalize
         normalized = self.normalize_text(text)
+        compound = self._parse_compound_app_search(text, normalized)
+        if compound:
+            for res in compound:
+                self._enrich_desktop_metadata(res)
+            logger.debug("[PARSER] Intents: %s", compound)
+            return compound
         logger.info("[PARSER] Normalized: %r", normalized)
 
         # 2. Split by connectors: "ve", "sonra", "ardından", "and", "then"
@@ -124,37 +134,91 @@ class IntentParser:
             is_unknown = (res.intent == "unknown")
             
             if is_empty_url or is_unknown:
-                for k in ["premiere", "photoshop", "notepad", "calc"]:
-                    if k in normalized:
-                        print(f"[FINAL SAFETY] Force override to open_app ({k})")
+                segment_text = self.normalize_text(str(res.raw_input or ""))
+                for k in ["premiere", "photoshop", "notepad", "calc", "brave"]:
+                    if k in segment_text:
+                        logger.warning("[PARSER] Final safety override to open_app (%s)", k)
                         res.intent = "open_app"
                         res.params = {"app": k}
                         break
 
         # Tier 4 Enrichment: Inject Verification Metadata for deterministic tracking
         for res in results:
-            if res.intent == "open_app":
-                app_id = res.params.get("app")
-                meta = VERIFICATION_METADATA.get(app_id)
-                if meta:
-                    res.params["_process_name"] = meta["process_name"]
-                    res.params["_keywords"] = meta["keywords"]
+            self._enrich_desktop_metadata(res)
+
+        # Keep mixed known/unknown plans intact. Dropping unknown segments would
+        # execute only part of a user request and hide a planning gap.
+        if any(r.intent == "unknown" for r in results) and any(r.intent != "unknown" for r in results):
+            logger.debug("[PARSER] Intents: %s", results)
+            return results
 
         # Filter out unknown segments if we have some known ones
         known_results = [r for r in results if r.intent != "unknown"]
         if known_results:
-            print("[INTENTS]:", known_results)
+            logger.debug("[PARSER] Intents: %s", known_results)
             return known_results
             
-        print("[INTENTS]:", results)
+        logger.debug("[PARSER] Intents: %s", results)
         return results
+
+    def _enrich_desktop_metadata(self, result: IntentResult) -> None:
+        if result.intent not in {"open_app", "focus_app", "close_app"}:
+            return
+        app_id = result.params.get("app")
+        if not app_id:
+            return
+        meta = VERIFICATION_METADATA.get(app_id)
+        if meta:
+            result.params["_process_name"] = meta["process_name"]
+            result.params["_keywords"] = meta["keywords"]
+
+    def _parse_compound_app_search(self, raw_text: str, normalized: str) -> list[IntentResult] | None:
+        """Split common browser-open-and-search commands without relying on an LLM."""
+        search_tail = r"(?:araması\s+yap|arama\s+yap|ara|search|bul|find|googlela|google['’]?la)"
+        patterns = [
+            rf"^(?P<app>[\w .&+\-]{{2,80}}?)(?:['’]?[ıiuüi])?\s+(?:açıp|acip|açip|aç|ac|open|launch|start)\s+(?P<query>.+?)\s+{search_tail}$",
+            rf"^(?:aç|ac|open|launch|start)\s+(?P<app>[\w .&+\-]{{2,80}}?)\s+(?:ve|sonra|and|then)\s+(?P<query>.+?)\s+{search_tail}$",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, normalized, flags=re.IGNORECASE | re.UNICODE)
+            if not match:
+                continue
+            app_raw = match.group("app").strip(" '’")
+            query = match.group("query").strip()
+            app_id = self.normalize_app_name(app_raw) or resolve_app_name(app_raw)
+            if not app_id or not query:
+                continue
+            timestamp = datetime.utcnow()
+            return [
+                IntentResult(
+                    intent="open_app",
+                    confidence=1.0,
+                    params={"app": app_id},
+                    risk=RiskLevel.MEDIUM,
+                    source=IntentSource.RULE,
+                    raw_input=raw_text,
+                    timestamp=timestamp,
+                    metadata={"decomposition": "compound_app_search", "segment": "open_app"},
+                ),
+                IntentResult(
+                    intent="search_web",
+                    confidence=1.0,
+                    params={"query": query, "browser": app_id},
+                    risk=RiskLevel.LOW,
+                    source=IntentSource.RULE,
+                    raw_input=raw_text,
+                    timestamp=timestamp,
+                    metadata={"decomposition": "compound_app_search", "segment": "search_web"},
+                ),
+            ]
+        return None
 
     def force_app_intent(self, text: str, intents: list[IntentResult]) -> list[IntentResult]:
         """Emergency override to prevent open_url logic for known apps."""
         APP_KEYWORDS = [
             "notepad", "calc", "hesap makinesi", "not defteri",
             "premiere", "photoshop", "adobe", "premier",
-            "chrome", "edge", "firefox"
+            "chrome", "brave", "edge", "firefox"
         ]
 
         norm_text = self.normalize_text(text)

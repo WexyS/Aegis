@@ -39,7 +39,7 @@ export const Header = () => {
         </div>
         <div className="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10px] font-mono">
           <Cpu size={13} className="text-accent" />
-          <span className="hidden sm:inline text-foreground/45">MODEL</span>
+          <span className="hidden sm:inline text-foreground/45">MODEL CONFIG</span>
           <span className="max-w-[180px] truncate font-bold text-foreground/80">{activeModel || 'Unavailable'}</span>
         </div>
         <div className="hidden lg:flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10px] font-mono text-foreground/60">

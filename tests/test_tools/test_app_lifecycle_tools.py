@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
-from aegis.tools.desktop_tools import CloseAppTool, FocusTool, OpenAppTool
+from aegis.tools.desktop_tools import CloseAppTool, FocusTool, OpenAppTool, TypeTool
 from aegis.tools.registry import get_tool, list_tools
 from aegis.orchestrator.orchestrator import VERIFIED_TOOLS
 
@@ -79,12 +81,49 @@ async def test_focus_app_can_filter_by_expected_pid(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_focus_app_filters_by_process_metadata_when_available(monkeypatch) -> None:
+    other = FakeWindow("Discord", visible=True)
+    other._hWnd = 1111
+    target = FakeWindow("Discord", visible=True)
+    target._hWnd = 2222
+    monkeypatch.setattr("aegis.tools.desktop_tools.gw.getAllWindows", lambda: [other, target])
+    monkeypatch.setattr("aegis.tools.desktop_tools.gw.getActiveWindow", lambda: target)
+    monkeypatch.setattr("aegis.tools.desktop_tools.get_running_pids", lambda process_name: [5150])
+    monkeypatch.setattr("aegis.tools.desktop_tools.get_window_pid", lambda hwnd: 5150 if hwnd == 2222 else 4242)
+    evidence: list[dict] = []
+
+    result = await FocusTool().run("discord", _keywords=["Discord"], _process_name="Discord.exe", _focus_evidence=evidence)
+
+    assert "Focused 'discord'" in result
+    assert target.activated is True
+    assert other.activated is False
+    assert evidence[0]["process_name"] == "Discord.exe"
+    assert evidence[0]["observed_pids"] == [5150]
+    assert evidence[0]["candidate_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_focus_app_reports_missing_window(monkeypatch) -> None:
     monkeypatch.setattr("aegis.tools.desktop_tools.gw.getAllWindows", lambda: [FakeWindow("Calculator")])
 
     result = await FocusTool().run("notepad")
 
     assert result == "Error: No visible window found for 'notepad'."
+
+
+@pytest.mark.asyncio
+async def test_type_requires_observed_focus_target_when_planner_supplies_metadata(monkeypatch) -> None:
+    monkeypatch.setattr("aegis.tools.desktop_tools.gw.getAllWindows", lambda: [FakeWindow("Calculator")])
+    monkeypatch.setattr("aegis.tools.desktop_tools.get_running_pids", lambda process_name: [4242])
+
+    result = await TypeTool().run(
+        "hello",
+        _require_focus="notepad",
+        _require_focus_process_name="notepad.exe",
+        _require_focus_keywords=["Notepad"],
+    )
+
+    assert result == "Error: Required focus target 'notepad' was not observed. Aborting type action for safety."
 
 
 @pytest.mark.asyncio
@@ -108,8 +147,31 @@ async def test_open_app_subprocess_fallback_does_not_use_shell(monkeypatch) -> N
 
     result = await OpenAppTool().run("notepad", _resolved_path="notepad.exe", _keywords=["Notepad"])
 
-    assert calls == [{"path": ["notepad.exe"], "shell": False}]
+    assert len(calls) == 1
+    assert calls[0]["path"][0].lower().endswith("notepad.exe")
+    assert calls[0]["shell"] is False
     assert "Successfully launched 'notepad'" in result
+
+
+@pytest.mark.asyncio
+async def test_open_app_suppresses_duplicate_launch_when_recent_process_exists(monkeypatch) -> None:
+    monkeypatch.setattr("aegis.tools.desktop_tools.gw.getAllWindows", lambda: [])
+    monkeypatch.setattr("aegis.tools.desktop_tools.get_running_pids", lambda process_name: [4242])
+    monkeypatch.setitem(
+        __import__("aegis.tools.desktop_tools", fromlist=["_last_launch_by_target"])._last_launch_by_target,
+        "notepad.exe",
+        asyncio.get_running_loop().time(),
+    )
+
+    result = await OpenAppTool().run(
+        "notepad",
+        _resolved_path="notepad.exe",
+        _keywords=["Notepad"],
+        _process_name="notepad.exe",
+    )
+
+    assert "launch suppressed by cooldown" in result
+    assert "4242" in result
 
 
 class FakeProcess:
@@ -187,6 +249,21 @@ async def test_close_app_can_limit_to_expected_pids(monkeypatch) -> None:
     assert result == "Closed 1 instance(s) of notepad."
     assert target.terminated is True
     assert other.terminated is False
+
+
+@pytest.mark.asyncio
+async def test_close_app_uses_verified_process_metadata(monkeypatch) -> None:
+    target = FakeProcess("Discord.exe", pid=4242)
+    near_miss = FakeProcess("discord-helper.exe", pid=5150)
+
+    monkeypatch.setattr("psutil.process_iter", lambda attrs: [target, near_miss])
+    monkeypatch.setattr("psutil.wait_procs", lambda procs, timeout: (procs, []))
+
+    result = await CloseAppTool().run("discord", _process_name="Discord.exe")
+
+    assert result == "Closed 1 instance(s) of discord."
+    assert target.terminated is True
+    assert near_miss.terminated is False
 
 
 def test_search_web_is_registered_because_parser_can_emit_it() -> None:

@@ -27,6 +27,8 @@ import threading
 
 PROTOCOL_VERSION = "1.1.0"
 SCHEMA_VERSION = "runtime-event/1.1"
+# Historical journals use this literal genesis marker. Do not change it without
+# a journal migration, or existing hash chains will appear broken.
 GENESIS_HASH = "genesis"
 
 # Monotonic sequence counter for event ordering
@@ -45,6 +47,13 @@ def ensure_sequence_at_least(sequence_num: int) -> None:
     global _sequence_counter
     with _sequence_lock:
         _sequence_counter = max(_sequence_counter, int(sequence_num))
+
+
+def reset_sequence_for_testing(sequence_num: int = 0) -> None:
+    """Reset the in-process event sequence counter for isolated tests only."""
+    global _sequence_counter
+    with _sequence_lock:
+        _sequence_counter = int(sequence_num)
 
 
 @unique
@@ -185,6 +194,29 @@ class RuntimeEvent:
         d = asdict(self)
         return {k: v for k, v in d.items() if v is not None}
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RuntimeEvent":
+        """Hydrate a persisted event without consuming a new sequence number."""
+        return cls(
+            event_id=str(data.get("event_id") or uuid4()),
+            type=str(data.get("type") or ""),
+            timestamp=int(data.get("timestamp") or 0),
+            trace_id=data.get("trace_id"),
+            causation_id=data.get("causation_id"),
+            span_id=data.get("span_id"),
+            session_id=data.get("session_id"),
+            source=data.get("source"),
+            severity=str(data.get("severity") or "info"),
+            sequence_num=int(data.get("sequence_num") or 0),
+            runtime_phase=data.get("runtime_phase"),
+            protocol_version=str(data.get("protocol_version") or PROTOCOL_VERSION),
+            schema_version=str(data.get("schema_version") or SCHEMA_VERSION),
+            deterministic_hash=data.get("deterministic_hash"),
+            previous_hash=data.get("previous_hash"),
+            event_hash=data.get("event_hash"),
+            payload=dict(data.get("payload") or {}),
+        )
+
 
 def _canonical_json(data: Dict[str, Any]) -> str:
     """Stable JSON encoding used for replay/hash validation."""
@@ -195,17 +227,24 @@ def compute_deterministic_hash(event: RuntimeEvent) -> str:
     """
     Hash the deterministic event content.
 
-    Excludes event_id, timestamp, previous_hash, and event_hash so replay can compare
-    semantic event equivalence separately from wall-clock and persistence chain data.
+    Excludes event_id, timestamp, sequence_num, previous_hash, and event_hash so
+    replay can compare semantic event equivalence separately from wall-clock,
+    emission order, and persistence chain data.
     """
     data = event.to_dict()
-    for key in ("event_id", "timestamp", "previous_hash", "event_hash", "deterministic_hash"):
+    for key in ("event_id", "timestamp", "sequence_num", "previous_hash", "event_hash", "deterministic_hash"):
         data.pop(key, None)
     return hashlib.sha256(_canonical_json(data).encode("utf-8")).hexdigest()
 
 
 def compute_event_hash(event: RuntimeEvent, previous_hash: str) -> str:
-    """Hash the persisted event plus its previous chain link."""
+    """Hash the persisted event plus its previous chain link.
+
+    Unlike deterministic_hash, this intentionally includes timestamp and
+    event_id. It answers "was this persisted journal event tampered with?",
+    while deterministic_hash answers "is this semantically equivalent under
+    replay?".
+    """
     data = event.to_dict()
     data["previous_hash"] = previous_hash
     data.pop("event_hash", None)

@@ -4,17 +4,14 @@ import { useRuntimeStore } from '@/store/useRuntimeStore';
 import { getVisionStreamUrl } from '@/lib/api';
 
 export const VisionLabPanel = () => {
-  const [isScanning, setIsScanning] = useState(true);
   const [feedFailed, setFeedFailed] = useState(false);
-  const { activeApp } = useRuntimeStore();
+  const { activeApp, visionFeedEnabled, setVisionFeedEnabled } = useRuntimeStore();
   const visionStreamUrl = getVisionStreamUrl();
 
   const toggleFeed = () => {
-    setIsScanning((value) => {
-      const next = !value;
-      if (next) setFeedFailed(false);
-      return next;
-    });
+    const next = !visionFeedEnabled;
+    if (next) setFeedFailed(false);
+    setVisionFeedEnabled(next);
   };
 
   return (
@@ -30,10 +27,10 @@ export const VisionLabPanel = () => {
         <div className="flex gap-2">
           <button 
             onClick={toggleFeed}
-            className={`p-2 rounded-md border flex items-center gap-2 transition-colors ${isScanning ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300' : 'bg-white/5 border-white/10 text-foreground/50 hover:bg-white/10'}`}
+            className={`p-2 rounded-md border flex items-center gap-2 transition-colors ${visionFeedEnabled ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300' : 'bg-white/5 border-white/10 text-foreground/50 hover:bg-white/10'}`}
           >
-            {isScanning ? <Square size={14} className="fill-current" /> : <Play size={14} className="fill-current" />}
-            <span className="text-[10px] font-bold uppercase tracking-widest">{isScanning ? 'Stop Feed' : 'Start Feed'}</span>
+            {visionFeedEnabled ? <Square size={14} className="fill-current" /> : <Play size={14} className="fill-current" />}
+            <span className="text-[10px] font-bold uppercase tracking-widest">{visionFeedEnabled ? 'Stop Feed' : 'Start Feed'}</span>
           </button>
         </div>
       </div>
@@ -44,16 +41,16 @@ export const VisionLabPanel = () => {
           <div className="p-4 border-b border-white/5 flex items-center justify-between bg-black/20">
             <div className="flex items-center gap-2 text-[10px] font-mono text-emerald-400">
               <span className="relative flex h-2 w-2">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 ${!isScanning && 'hidden'}`}></span>
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${isScanning ? 'bg-emerald-500' : 'bg-foreground/20'}`}></span>
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 ${!visionFeedEnabled && 'hidden'}`}></span>
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${visionFeedEnabled ? 'bg-emerald-500' : 'bg-foreground/20'}`}></span>
               </span>
-              {isScanning ? 'LIVE DESKTOP FEED' : 'FEED OFFLINE'}
+              {visionFeedEnabled ? 'LIVE DESKTOP FEED' : 'FEED OFFLINE'}
             </div>
             <Maximize size={14} className="text-foreground/40 hover:text-white cursor-pointer transition-colors" />
           </div>
           
           <div className="flex-1 bg-black/60 relative flex items-center justify-center overflow-hidden">
-            {isScanning && !feedFailed ? (
+            {visionFeedEnabled && !feedFailed ? (
               <>
                 <img 
                   src={visionStreamUrl}
@@ -63,7 +60,7 @@ export const VisionLabPanel = () => {
                 />
                 <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none mix-blend-overlay" />
               </>
-            ) : isScanning && feedFailed ? (
+            ) : visionFeedEnabled && feedFailed ? (
               <div className="flex flex-col items-center justify-center">
                 <Eye size={48} className="text-emerald-500/20 mb-4" />
                 <div className="text-foreground/40 text-xs font-mono uppercase tracking-widest">Feed Offline</div>

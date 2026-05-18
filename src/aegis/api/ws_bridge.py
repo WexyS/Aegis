@@ -71,6 +71,7 @@ _command_worker_task: Optional[asyncio.Task] = None
 _command_queue_capacity = 16
 _command_queue: asyncio.Queue["QueuedCommand"] = asyncio.Queue(maxsize=_command_queue_capacity)
 get_runtime_authority(_session_id, queue_capacity=_command_queue_capacity)
+_journal_emit_lock = asyncio.Lock()
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,44 @@ def maintenance_scan_context() -> dict[str, Any]:
         "queue_capacity": _command_queue_capacity,
     }
 
+
+async def _create_and_append_event(
+    event_type: ProtocolEventType,
+    payload: Dict[str, Any],
+    *,
+    trace_id: Optional[str] = None,
+    causation_id: Optional[str] = None,
+    span_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    runtime_phase: Optional[RuntimeState | str] = None,
+    source: Optional[Component] = None,
+    severity: Severity = Severity.INFO,
+    mutate_before_append=None,
+):
+    """Create and persist a RuntimeEvent under one async ordering lock.
+
+    RuntimeEvent.sequence_num is assigned at construction time, so creation and
+    journal append must be serialized together. Locking only the append would
+    still allow sequence numbers to be created in a different order than disk
+    persistence under concurrent websocket emissions.
+    """
+    async with _journal_emit_lock:
+        event = create_event(
+            event_type,
+            payload=payload,
+            trace_id=trace_id,
+            causation_id=causation_id,
+            span_id=span_id,
+            session_id=session_id,
+            runtime_phase=runtime_phase,
+            source=source,
+            severity=severity,
+        )
+        if mutate_before_append is not None:
+            mutate_before_append(event)
+        await asyncio.to_thread(get_runtime_journal().append, event)
+        return event
+
 # ─── LIFECYCLE ──────────────────────────────────────────────────────
 
 @sio.event
@@ -104,7 +143,7 @@ async def connect(sid: str, environ: dict):
     journal_snapshot, runtime_snapshot = _build_runtime_snapshot(journal)
 
     # Send handshake
-    handshake = create_event(
+    handshake = await _create_and_append_event(
         ProtocolEventType.SYSTEM_ONLINE,
         payload={
             "protocol_version": PROTOCOL_VERSION,
@@ -118,7 +157,6 @@ async def connect(sid: str, environ: dict):
         runtime_phase=runtime_snapshot["fsm_state"],
         source=Component.SYSTEM,
     )
-    await asyncio.to_thread(get_runtime_journal().append, handshake)
     await sio.emit("SYSTEM_ONLINE", handshake.to_dict(), to=sid)
     await _emit_snapshot(to=sid, last_sequence_num=handshake.sequence_num)
 
@@ -188,7 +226,39 @@ async def approve_command(sid: str, data: dict):
             command_id=record.command_id,
             approval_granted=True,
         )
-        _command_queue.put_nowait(command)
+        try:
+            _command_queue.put_nowait(command)
+        except asyncio.QueueFull:
+            reason = "Approved command queue full; command was not enqueued"
+            blocked = get_approval_manager().mark_blocked(
+                record.command_id,
+                trace_id=record.trace_id or "",
+                risk_level=record.risk_level,
+                reason=reason,
+                verification_state="unverified",
+            )
+            await emit_command_status(
+                command_id=blocked.command_id,
+                status=CommandStatus.BLOCKED,
+                trace_id=blocked.trace_id,
+                risk_level=blocked.risk_level,
+                reason=reason,
+                verification_state=blocked.verification_state,
+            )
+            await emit_event(
+                ProtocolEventType.DETERMINISM_BREACH,
+                {
+                    "reason": reason,
+                    "command_id": record.command_id,
+                    "queue_depth": _command_queue.qsize(),
+                    "queue_capacity": _command_queue_capacity,
+                },
+                trace_id=record.trace_id,
+                source=Component.SYSTEM,
+                severity=Severity.WARNING,
+                runtime_phase=get_runtime_authority(_session_id).current_state(),
+            )
+            return
         get_runtime_authority(_session_id, queue_capacity=_command_queue_capacity).set_queue(
             depth=_command_queue.qsize(),
             capacity=_command_queue_capacity,
@@ -547,7 +617,7 @@ async def emit_event(
     elif event_type == ProtocolEventType.TASK_FINISHED:
         authority.finish_command(trace_id=trace_id)
 
-    event = create_event(
+    event = await _create_and_append_event(
         event_type,
         payload=payload,
         trace_id=trace_id,
@@ -558,8 +628,6 @@ async def emit_event(
         source=source,
         severity=severity,
     )
-
-    await asyncio.to_thread(get_runtime_journal().append, event)
 
     if _connected_clients:
         await sio.emit(event_type.value, event.to_dict())
@@ -614,7 +682,17 @@ async def _emit_snapshot(to: str, last_sequence_num: int = 0):
     journal = get_runtime_journal()
     journal_snapshot, runtime_snapshot = _build_runtime_snapshot(journal)
     missed_events = journal.events_after(last_sequence_num) if last_sequence_num > 0 else []
-    snapshot = create_event(
+    def add_truth_sync(snapshot) -> None:
+        snapshot.payload["truth_sync"] = {
+            "source_of_truth": "backend_snapshot_protocol_event_journal",
+            "snapshot_sequence_num": snapshot.sequence_num,
+            "journal_tail_sequence_num": int(journal_snapshot.get("last_sequence_num", 0) or 0),
+            "client_last_sequence_num": int(last_sequence_num or 0),
+            "missed_event_count": len(missed_events),
+            "replay_required": bool(missed_events),
+        }
+
+    snapshot = await _create_and_append_event(
         ProtocolEventType.SNAPSHOT_CREATED,
         payload={
             "session_id": _session_id,
@@ -628,16 +706,8 @@ async def _emit_snapshot(to: str, last_sequence_num: int = 0):
         session_id=_session_id,
         runtime_phase=runtime_snapshot["fsm_state"],
         source=Component.SYSTEM,
+        mutate_before_append=add_truth_sync,
     )
-    snapshot.payload["truth_sync"] = {
-        "source_of_truth": "backend_snapshot_protocol_event_journal",
-        "snapshot_sequence_num": snapshot.sequence_num,
-        "journal_tail_sequence_num": int(journal_snapshot.get("last_sequence_num", 0) or 0),
-        "client_last_sequence_num": int(last_sequence_num or 0),
-        "missed_event_count": len(missed_events),
-        "replay_required": bool(missed_events),
-    }
-    await asyncio.to_thread(journal.append, snapshot)
     await sio.emit(ProtocolEventType.SNAPSHOT_CREATED.value, snapshot.to_dict(), to=to)
 
 
@@ -857,7 +927,7 @@ async def emit_state_change(
     to_state: str,
     reason: Optional[str] = None,
     trace_id: Optional[str] = None,
-):
+) -> bool:
     authority = get_runtime_authority(_session_id, queue_capacity=_command_queue_capacity)
     effective_from, effective_to, legal = authority.transition(
         to_state,
@@ -878,7 +948,7 @@ async def emit_state_change(
             source=Component.ORCHESTRATOR,
             severity=Severity.ERROR,
         )
-        return
+        return False
 
     await emit_event(
         ProtocolEventType.STATE_CHANGE,
@@ -891,6 +961,7 @@ async def emit_state_change(
         runtime_phase=effective_to,
         source=Component.ORCHESTRATOR,
     )
+    return True
 
 
 async def emit_task_finished(trace_id: str, final_state: str = "COMPLETED"):

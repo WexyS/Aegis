@@ -23,6 +23,18 @@ def _event_sort_key(event: Mapping[str, Any]) -> tuple[int, int]:
     return sequence_num, timestamp_num
 
 
+def _mapped_value(mapping: Mapping[str, Any], key: str) -> Any:
+    return mapping[key] if key in mapping else None
+
+
+def _tool_name(payload: Mapping[str, Any], evidence: Mapping[str, Any], fallback: Any = "executor") -> str:
+    for mapping, key in ((payload, "tool"), (evidence, "action")):
+        value = _mapped_value(mapping, key)
+        if value is not None:
+            return str(value)
+    return str(fallback)
+
+
 def project_action_timeline(
     events: Iterable[Mapping[str, Any]],
     *,
@@ -62,7 +74,7 @@ def project_action_timeline(
         if record is None:
             record = {
                 "action_id": action_key,
-                "tool": str(payload.get("tool") or evidence_map.get("action") or "executor"),
+                "tool": _tool_name(payload, evidence_map),
                 "status": "active",
                 "target": payload.get("target") or evidence_map.get("target"),
                 "started_at": event_time,
@@ -78,7 +90,7 @@ def project_action_timeline(
         record["trace_id"] = event.get("trace_id") or record.get("trace_id")
 
         if event_type == ProtocolEventType.ACTION_STARTED.value:
-            record["tool"] = str(payload.get("tool") or record.get("tool") or "executor")
+            record["tool"] = _tool_name(payload, {}, record.get("tool") if record.get("tool") is not None else "executor")
             record["target"] = payload.get("target") or record.get("target")
             record["started_at"] = event_time or record.get("started_at")
             record["status"] = "active"
@@ -88,14 +100,14 @@ def project_action_timeline(
             record["latency_ms"] = payload.get("latency_ms")
             if isinstance(evidence, Mapping):
                 record["execution_evidence"] = dict(evidence)
-                record["tool"] = str(evidence.get("action") or record.get("tool") or "executor")
+                record["tool"] = _tool_name({}, evidence, record.get("tool") if record.get("tool") is not None else "executor")
         elif event_type in {
             ProtocolEventType.VERIFICATION_PASSED.value,
             ProtocolEventType.VERIFICATION_FAILED.value,
         }:
             if isinstance(evidence, Mapping):
                 record["execution_evidence"] = dict(evidence)
-                record["tool"] = str(evidence.get("action") or record.get("tool") or "executor")
+                record["tool"] = _tool_name({}, evidence, record.get("tool") if record.get("tool") is not None else "executor")
                 record["target"] = record.get("target") or evidence.get("target")
             if event_type == ProtocolEventType.VERIFICATION_FAILED.value:
                 record["status"] = "error"
@@ -110,7 +122,10 @@ def project_action_timeline(
             record["target"] = record.get("target") or payload.get("error") or evidence_map.get("target")
             if isinstance(evidence, Mapping):
                 record["execution_evidence"] = dict(evidence)
-                record["tool"] = str(evidence.get("action") or record.get("tool") or "executor")
+                record["tool"] = _tool_name({}, evidence, record.get("tool") if record.get("tool") is not None else "executor")
 
-    bounded = list(records.values())[-max(int(limit), 0):]
+    bounded_limit = max(int(limit), 0)
+    if bounded_limit == 0:
+        return []
+    bounded = list(records.values())[-bounded_limit:]
     return bounded

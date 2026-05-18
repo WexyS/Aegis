@@ -31,6 +31,7 @@ export default function AegisDashboard() {
     runtimeIntegrity = 'unverified',
     lastSequenceNum,
     currentState,
+    visionFeedEnabled,
   } = useRuntimeStore();
   const memoryPressureLabel = memoryPercent === undefined ? 'Unavailable' : `${memoryPercent.toFixed(1)}%`;
   const memoryPressureWidth = memoryPercent === undefined ? 0 : Math.min(memoryPercent, 100);
@@ -115,20 +116,22 @@ export default function AegisDashboard() {
               <Eye size={12} /> Vision Context
             </h3>
             <div className="aspect-video rounded-lg bg-black/30 border border-white/10 flex flex-col items-center justify-center overflow-hidden relative group">
-              <img 
-                src={visionStreamUrl}
-                alt="Live Vision Feed" 
-                className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500 mix-blend-screen"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                  const fallback = e.currentTarget.parentElement?.querySelector('.fallback');
-                  if (fallback) fallback.classList.remove('hidden');
-                }}
-              />
-              <div className="fallback hidden flex-col items-center justify-center z-10">
+              {visionFeedEnabled && (
+                <img
+                  src={visionStreamUrl}
+                  alt="Live Vision Feed"
+                  className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500 mix-blend-screen"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    const fallback = e.currentTarget.parentElement?.querySelector('.fallback');
+                    if (fallback) fallback.classList.remove('hidden');
+                  }}
+                />
+              )}
+              <div className={`fallback ${visionFeedEnabled ? 'hidden' : 'flex'} flex-col items-center justify-center z-10`}>
                 <Eye className="text-foreground/15" size={24} />
                 <div className="mt-3 text-[9px] font-mono text-foreground/30 uppercase tracking-widest">
-                  Feed Offline
+                  {visionFeedEnabled ? 'Feed Offline' : 'No Signal'}
                 </div>
               </div>
             </div>

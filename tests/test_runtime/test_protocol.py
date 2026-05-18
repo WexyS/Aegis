@@ -13,6 +13,8 @@ from aegis.core.protocol import (
     create_event,
     ensure_sequence_at_least,
     finalize_event,
+    reset_sequence_for_testing,
+    RuntimeEvent,
 )
 
 
@@ -85,6 +87,32 @@ def test_sequence_counter_can_hydrate_from_journal_tail() -> None:
     event = create_event(ProtocolEventType.SYSTEM_ONLINE, {})
 
     assert event.sequence_num >= 1001
+
+
+def test_sequence_counter_can_reset_for_isolated_tests() -> None:
+    reset_sequence_for_testing()
+
+    event = create_event(ProtocolEventType.SYSTEM_ONLINE, {})
+
+    assert event.sequence_num == 1
+
+
+def test_deterministic_hash_excludes_sequence_and_wall_clock_fields() -> None:
+    first = create_event(ProtocolEventType.COMMAND_RECEIVED, {"text": "same"})
+    second = create_event(ProtocolEventType.COMMAND_RECEIVED, {"text": "same"})
+
+    assert first.sequence_num != second.sequence_num
+    assert compute_deterministic_hash(first) == compute_deterministic_hash(second)
+
+
+def test_runtime_event_from_dict_does_not_consume_sequence_number() -> None:
+    reset_sequence_for_testing()
+    event = create_event(ProtocolEventType.SYSTEM_ONLINE, {})
+    hydrated = RuntimeEvent.from_dict(event.to_dict())
+    next_event = create_event(ProtocolEventType.SYSTEM_ONLINE, {})
+
+    assert hydrated.sequence_num == event.sequence_num
+    assert next_event.sequence_num == event.sequence_num + 1
 
 
 def test_frontend_protocol_event_enum_matches_backend() -> None:
@@ -209,6 +237,18 @@ def test_frontend_live_events_upsert_missing_timeline_steps_from_backend_payload
     assert "evidence?.verification_state === 'verified'" in socket_source
 
 
+def test_frontend_backend_fsm_breach_does_not_apply_illegal_projection() -> None:
+    store_source = FRONTEND_RUNTIME_STORE.read_text(encoding="utf-8")
+
+    illegal_branch = re.search(
+        r"if \(!isLegalTransition\(authoritativeFrom, newState\)\) \{(?P<body>.*?)\n    \} else if",
+        store_source,
+        re.DOTALL,
+    )
+    assert illegal_branch, "applyBackendTransition illegal-transition branch not found"
+    assert "return;" in illegal_branch.group("body")
+
+
 def test_frontend_rejects_non_protocol_events_without_runtime_projection() -> None:
     socket_source = FRONTEND_SOCKET.read_text(encoding="utf-8")
 
@@ -257,6 +297,9 @@ def test_frontend_vision_stream_uses_configured_backend_url() -> None:
     assert "http://127.0.0.1:8400/vision/stream" not in vision_source
     assert "src={visionStreamUrl}" in dashboard_source
     assert "src={visionStreamUrl}" in vision_source
+    assert "visionFeedEnabled" in dashboard_source
+    assert "visionFeedEnabled" in vision_source
+    assert "setVisionFeedEnabled" in vision_source
 
 
 def test_frontend_maintenance_actions_are_backend_proposal_driven() -> None:

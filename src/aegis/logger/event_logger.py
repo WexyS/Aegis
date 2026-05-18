@@ -30,10 +30,9 @@ class EventLogger:
         # Backpressure: Bound the queue to prevent RAM exhaustion
         self.queue = queue.Queue(maxsize=max_queue_size)
         self.stop_event = threading.Event()
+        self._console_logger = logging.getLogger("aegis")
         self.worker_thread = threading.Thread(target=self._worker, daemon=True)
         self.worker_thread.start()
-        
-        self._console_logger = logging.getLogger("aegis")
 
     def _worker(self):
         """Persistent background worker for efficient disk I/O."""
@@ -46,7 +45,7 @@ class EventLogger:
             except queue.Empty:
                 continue
             except Exception as e:
-                print(f"[CRITICAL] Logger worker failure: {e}")
+                self._console_logger.critical("Logger worker failure: %s", e)
 
     def log(self, 
             event_type: EventType, 
@@ -90,7 +89,8 @@ class EventLogger:
                 try:
                     with open(self.log_file, "a", encoding="utf-8") as f:
                         f.write(json.dumps(entry) + "\n")
-                except: pass
+                except Exception as exc:
+                    self._console_logger.critical("Direct critical log write failed: %s", exc)
         
         # Console mirror
         msg = f"[{event_type.value}] {data.get('message', data)}"

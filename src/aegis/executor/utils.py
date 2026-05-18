@@ -4,7 +4,11 @@ import os
 import shutil
 import difflib
 import ctypes
+import logging
+from pathlib import Path
 from aegis.core.app_map import all_app_configs
+
+logger = logging.getLogger(__name__)
 
 def verify_path(path: str) -> tuple[bool, str | None]:
     """
@@ -30,6 +34,10 @@ def verify_path(path: str) -> tuple[bool, str | None]:
     system32 = os.path.join(system_root, "System32")
     syswow64 = os.path.join(system_root, "SysWOW64")
     
+    local_app_data = os.environ.get("LOCALAPPDATA", "")
+    program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+    program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+
     # Common system binary overrides
     hardened_bins = {
         "cmd": os.path.join(system32, "cmd.exe"),
@@ -37,6 +45,7 @@ def verify_path(path: str) -> tuple[bool, str | None]:
         "timeout": os.path.join(system32, "timeout.exe"),
         "explorer": os.path.join(system_root, "explorer.exe"),
         "notepad": os.path.join(system32, "notepad.exe"),
+        "calc": os.path.join(system32, "calc.exe"),
         "powershell": os.path.join(system32, "WindowsPowerShell\\v1.0\\powershell.exe"),
     }
     
@@ -45,6 +54,22 @@ def verify_path(path: str) -> tuple[bool, str | None]:
         bin_path = hardened_bins[clean_name]
         if os.path.exists(bin_path):
             return True, bin_path
+
+    browser_candidates = {
+        "chrome": [
+            Path(program_files) / "Google" / "Chrome" / "Application" / "chrome.exe",
+            Path(program_files_x86) / "Google" / "Chrome" / "Application" / "chrome.exe",
+            Path(local_app_data) / "Google" / "Chrome" / "Application" / "chrome.exe",
+        ],
+        "brave": [
+            Path(program_files) / "BraveSoftware" / "Brave-Browser" / "Application" / "brave.exe",
+            Path(program_files_x86) / "BraveSoftware" / "Brave-Browser" / "Application" / "brave.exe",
+            Path(local_app_data) / "BraveSoftware" / "Brave-Browser" / "Application" / "brave.exe",
+        ],
+    }
+    for candidate in browser_candidates.get(clean_name, []):
+        if candidate.exists():
+            return True, str(candidate)
 
     # 3. SHUTIL.WHICH (PATH resolution as a fallback)
     resolved = shutil.which(path)
@@ -74,7 +99,7 @@ def smart_match_app(name: str, cutoff: float = 0.65) -> str | None:
     if matches:
         matched = matches[0]
         resolved = candidates[matched]
-        print(f"[SMART MATCH] {name} -> {resolved}")
+        logger.debug("[SMART MATCH] %s -> %s", name, resolved)
         return resolved
 
     return None

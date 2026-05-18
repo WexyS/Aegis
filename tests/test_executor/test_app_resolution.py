@@ -320,3 +320,30 @@ async def test_open_app_launch_without_process_or_window_evidence_is_unverified(
     assert evidence["process_alive"] is None
     assert evidence["window"] is None
     assert any("No process_name configured" in warning for warning in evidence["warnings"])
+
+
+async def test_legacy_executor_standard_tool_returns_unverified_side_effect_evidence(monkeypatch) -> None:
+    class FakeTypeTool:
+        async def run(self, **kwargs) -> str:
+            return "Typed: hello"
+
+    monkeypatch.setitem(executor_module.TOOLS, "type", FakeTypeTool())
+
+    result = await Executor(AllowingSafety(), dry_run_default=False).execute(
+        IntentResult(
+            intent="type",
+            confidence=1.0,
+            params={"text": "hello"},
+            risk=RiskLevel.LOW,
+            source=IntentSource.RULE,
+            raw_input="type hello",
+        ),
+        ExecutionMode.LIVE,
+    )
+
+    action = result[0]
+    assert action.success is True
+    assert action.execution_evidence is not None
+    assert action.execution_evidence.action == "type"
+    assert action.execution_evidence.verification_state == "unverified"
+    assert action.proof["execution_evidence"]["verification_state"] == "unverified"

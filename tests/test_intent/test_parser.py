@@ -131,6 +131,24 @@ class TestMultiStep:
         assert r[0].intent == "open_app"
         assert r[1].intent == "type"
 
+    async def test_compound_browser_search_decomposes_app_and_query(self) -> None:
+        r = await self.parser.parse("brave i açıp python nedir araması yap")
+
+        assert len(r) == 2
+        assert r[0].intent == "open_app"
+        assert r[0].params["app"] == "brave"
+        assert r[0].params["_process_name"] == "brave.exe"
+        assert r[1].intent == "search_web"
+        assert r[1].params["query"] == "python nedir"
+        assert r[1].params["browser"] == "brave"
+
+    async def test_mixed_known_and_unknown_segments_are_not_silently_dropped(self) -> None:
+        r = await self.parser.parse("notepad aç sonra xyzzy foobar baz")
+
+        assert len(r) == 2
+        assert r[0].intent == "open_app"
+        assert r[1].intent == "unknown"
+
 
 @pytest.mark.asyncio
 class TestOther:
@@ -165,12 +183,22 @@ class TestAppLifecycle:
         assert r[0].intent == "focus_app"
         assert r[0].risk == RiskLevel.MEDIUM
         assert r[0].params["app"] == "notepad"
+        assert r[0].params["_process_name"] == "notepad.exe"
+        assert "Notepad" in r[0].params["_keywords"]
 
     async def test_close_notepad(self) -> None:
         r = await self.parser.parse("notepad kapat")
         assert r[0].intent == "close_app"
         assert r[0].risk == RiskLevel.MEDIUM
         assert r[0].params["app"] == "notepad"
+        assert r[0].params["_process_name"] == "notepad.exe"
+
+    async def test_generic_close_app_name_is_preserved_for_registry_resolution(self) -> None:
+        r = await self.parser.parse("discord u kapat")
+
+        assert r[0].intent == "close_app"
+        assert r[0].risk == RiskLevel.MEDIUM
+        assert r[0].params["app"] == "discord"
 
     async def test_generic_open_app_name_is_preserved_for_registry_resolution(self) -> None:
         r = await self.parser.parse("open steam")

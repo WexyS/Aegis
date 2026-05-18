@@ -201,3 +201,26 @@ def test_action_timeline_is_bounded_to_latest_actions() -> None:
     timeline = project_action_timeline(events, limit=2, session_id="session-one")
 
     assert [item["action_id"] for item in timeline] == ["action-3", "action-4"]
+
+
+def test_action_timeline_zero_or_negative_limit_returns_empty_projection() -> None:
+    event = create_event(
+        ProtocolEventType.ACTION_STARTED,
+        {"action_id": "action-1", "tool": "open_app", "target": "notepad"},
+        session_id="session-one",
+    ).to_dict()
+
+    assert project_action_timeline([event], limit=0, session_id="session-one") == []
+    assert project_action_timeline([event], limit=-1, session_id="session-one") == []
+
+
+def test_action_timeline_preserves_explicit_empty_tool_name() -> None:
+    started = create_event(
+        ProtocolEventType.ACTION_STARTED,
+        {"action_id": "action-empty-tool", "tool": "", "target": "notepad"},
+        session_id="session-one",
+    ).to_dict()
+
+    timeline = project_action_timeline([started], session_id="session-one")
+
+    assert timeline[0]["tool"] == ""

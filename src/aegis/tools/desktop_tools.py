@@ -2,12 +2,19 @@
 
 import subprocess
 import asyncio
+import logging
 import os
 import pygetwindow as gw
 from aegis.core.app_map import get_app_config, resolve_app_name
 from aegis.executor.utils import get_running_pids
 from aegis.executor.utils import get_window_pid
+from aegis.executor.utils import verify_path
 from aegis.tools.base import BaseTool
+
+
+logger = logging.getLogger(__name__)
+_LAUNCH_COOLDOWN_SECONDS = 5.0
+_last_launch_by_target: dict[str, float] = {}
 
 
 def _app_config(app: str) -> tuple[str, dict | None]:
@@ -81,8 +88,14 @@ class OpenAppTool(BaseTool):
         path = kwargs.get("_resolved_path", app)
         keywords = kwargs.get("_keywords", [app])
         process_name = kwargs.get("_process_name")
+        app_key = str(process_name or app).lower()
 
         try:
+            if isinstance(path, str) and path and not path.startswith(("steam://", "com.epicgames.launcher://")):
+                path_ok, resolved_path = verify_path(path)
+                if path_ok and resolved_path:
+                    path = resolved_path
+
             # 0. IDEMPOTENCY CHECK (Elite Hardening)
             # If the app is already open and responsive, we don't need to launch a new one.
             if process_name:
@@ -100,18 +113,31 @@ class OpenAppTool(BaseTool):
                                     w.activate()
                                     return f"App '{app}' is already running and verified (PID: {pid.value})."
 
-            print(f"[LAUNCH] {app} -> {path}")
+            now = asyncio.get_running_loop().time()
+            last_launch = _last_launch_by_target.get(app_key)
+            if last_launch is not None and now - last_launch < _LAUNCH_COOLDOWN_SECONDS:
+                pids = get_running_pids(process_name) if process_name else []
+                if pids:
+                    return (
+                        f"App '{app}' launch suppressed by cooldown; "
+                        f"existing process observed (PIDs: {', '.join(map(str, pids))})."
+                    )
+
+            logger.info("[LAUNCH] %s -> %s", app, path)
 
             # 1. ATOMIC LAUNCH (os.startfile)
             proc = None
             try:
                 os.startfile(path)
             except Exception as e:
-                print(f"[LAUNCH] os.startfile failed: {e}. Falling back to subprocess.")
+                logger.info("[LAUNCH] os.startfile failed: %s. Falling back to subprocess.", e)
                 proc = subprocess.Popen([path], shell=False)
+            _last_launch_by_target[app_key] = asyncio.get_running_loop().time()
 
             # 2. DEEP VERIFICATION LOOP (UI + Process Survival)
-            for i in range(100):  # ~10 seconds total
+            launch_timeout = float(kwargs.get("_launch_timeout", 4.0))
+            max_attempts = max(1, int(launch_timeout / 0.1))
+            for i in range(max_attempts):
                 await asyncio.sleep(0.1)
 
                 # A. Process Survival Check (Essential for Elite stability)
@@ -162,12 +188,31 @@ class TypeTool(BaseTool):
             # Planner'ın enjekte ettiği focus gereksinimini karşıla
             required_app = kwargs.get("_require_focus")
             if required_app:
+                keywords = [
+                    str(keyword).lower()
+                    for keyword in (kwargs.get("_require_focus_keywords") or [required_app])
+                    if str(keyword).strip()
+                ]
+                process_name = kwargs.get("_require_focus_process_name")
+                valid_pids = set(get_running_pids(process_name)) if process_name else set()
+                matched_required_window = False
                 for w in gw.getAllWindows():
-                    if required_app.lower() in (w.title or "").lower():
-                        if w.isMinimized: w.restore()
-                        w.activate()
-                        await asyncio.sleep(0.3)
-                        break
+                    title = (w.title or "").lower()
+                    if not any(keyword in title for keyword in keywords):
+                        continue
+                    if valid_pids:
+                        try:
+                            if get_window_pid(w._hWnd) not in valid_pids:
+                                continue
+                        except Exception:
+                            continue
+                    if w.isMinimized: w.restore()
+                    w.activate()
+                    await asyncio.sleep(0.3)
+                    matched_required_window = True
+                    break
+                if not matched_required_window:
+                    return f"Error: Required focus target '{required_app}' was not observed. Aborting type action for safety."
 
             # TRIPLE-PULSE FOCUS VERIFICATION (Elite Stability)
             # Ensure focus isn't fluttering before sending keystrokes
@@ -193,7 +238,7 @@ class CloseAppTool(BaseTool):
 
     async def run(self, app: str, **kwargs) -> str:
         import psutil
-        target_process = _process_name(app).lower()
+        target_process = str(kwargs.get("_process_name") or _process_name(app)).lower()
         timeout = float(kwargs.get("timeout", 3.0))
         evidence_sink = kwargs.get("_close_evidence")
         expected_pids = _expected_pid_set(kwargs.get("_expected_pids"))
@@ -267,10 +312,15 @@ class FocusTool(BaseTool):
     async def run(self, app: str, **kwargs) -> str:
         keywords = [str(k).lower() for k in (kwargs.get("_keywords") or _window_keywords(app))]
         expected_pids = _expected_pid_set(kwargs.get("_expected_pids"))
+        process_name = kwargs.get("_process_name") or _process_name(app)
+        observed_pids = set(get_running_pids(process_name)) if process_name else set()
+        target_pids = expected_pids or observed_pids
         evidence_sink = kwargs.get("_focus_evidence")
         focus_attempt = {
             "action": "focus_app",
             "app": app,
+            "process_name": process_name,
+            "observed_pids": sorted(observed_pids),
             "keywords": list(keywords),
             "candidate_count": 0,
             "candidates": [],
@@ -287,7 +337,7 @@ class FocusTool(BaseTool):
             title = (getattr(window, "title", "") or "").lower()
             if any(keyword in title for keyword in keywords):
                 snapshot = _window_snapshot(window)
-                if expected_pids and snapshot.get("pid") not in expected_pids:
+                if target_pids and snapshot.get("pid") not in target_pids:
                     continue
                 candidates.append(window)
                 focus_attempt["candidates"].append(snapshot)

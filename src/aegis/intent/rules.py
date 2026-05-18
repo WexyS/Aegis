@@ -53,6 +53,26 @@ RULES: list[IntentRule] = [
         description="Close a running application",
     ),
 
+    # --- Registry-backed generic focus/close ---
+    IntentRule(
+        intent="focus_app",
+        patterns=[
+            r"(?P<app>(?!https?://)[\w .&+\-]{2,80}?)(?:['’]?[ea]|\s+[ea])?\s+(?:odaklan|focus|Ã¶ne al|one al)$",
+            r"(?:odaklan|focus|Ã¶ne al|one al)\s+(?P<app>(?!https?://)[\w .&+\-]{2,80})$",
+        ],
+        risk=RiskLevel.MEDIUM,
+        description="Focus a registry-backed or inferred application window",
+    ),
+    IntentRule(
+        intent="close_app",
+        patterns=[
+            r"(?P<app>(?!https?://)[\w .&+\-]{2,80}?)(?:['’]?[ıiuü]|\s+[ıiuü])?\s+(?:kapat|close|quit|exit)$",
+            r"(?:kapat|close|quit|exit)\s+(?P<app>(?!https?://)[\w .&+\-]{2,80})$",
+        ],
+        risk=RiskLevel.MEDIUM,
+        description="Close a registry-backed or inferred running application",
+    ),
+
     # --- URL opening ---
     IntentRule(
         intent="open_url",
@@ -217,9 +237,10 @@ RULES: list[IntentRule] = [
     IntentRule(
         intent="search_web",
         patterns=[
-            r"(?:ara|search|bul|find|google['']?la)\s+(?P<query>.+)",
-            r"(?P<query>.+)\s+(?:ara|search|bul|buluver|google['']?la)",
-            r"(?:web|internet)\s*(?:de|da|te|ta)?\s*(?:ara|search)\s+(?P<query>.+)",
+            r"(?P<query>.+)\s+(?:araması|arama)\s+yap\b",
+            r"(?:ara|search|bul|find|google['']?la)\b\s+(?P<query>.+)",
+            r"(?P<query>.+)\s+(?:ara|search|bul|buluver|google['']?la)\b",
+            r"(?:web|internet)\s*(?:de|da|te|ta)?\s*(?:ara|search)\b\s+(?P<query>.+)",
         ],
         risk=RiskLevel.LOW,
         description="Search the web for information",
@@ -310,6 +331,8 @@ APP_ALIASES: dict[str, str] = {
     "calc": "calc",
     "chrome": "chrome",
     "google chrome": "chrome",
+    "brave": "brave",
+    "brave browser": "brave",
     "browser": "chrome",
     "tarayıcı": "chrome",
     "spotify": "spotify",
@@ -331,6 +354,7 @@ VERIFICATION_METADATA: dict[str, dict[str, Any]] = {
     "notepad": {"process_name": "notepad.exe", "keywords": ["Notepad", "Not Defteri"]},
     "calc": {"process_name": "CalculatorApp.exe", "keywords": ["Calculator", "Hesap Makinesi"]},
     "chrome": {"process_name": "chrome.exe", "keywords": ["Google Chrome"]},
+    "brave": {"process_name": "brave.exe", "keywords": ["Brave", "New Tab"]},
     "cmd": {"process_name": "cmd.exe", "keywords": ["Command Prompt", "Komut İstemi"]},
     "powershell": {"process_name": "powershell.exe", "keywords": ["PowerShell"]},
     "spotify": {"process_name": "Spotify.exe", "keywords": ["Spotify"]},

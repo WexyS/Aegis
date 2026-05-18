@@ -38,6 +38,9 @@ class SemanticVerifier:
         # 1. Logic: If tool failed, semantic score is 0
         if not action.success:
             return 0.0
+
+        if action.action in {"open_app", "focus_app", "close_app"} and action.execution_evidence:
+            return 1.0 if action.execution_evidence.verification_state == "verified" else 0.0
             
         # 2. Window-specific semantic checks
         if action.action == "open_app":

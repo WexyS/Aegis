@@ -93,7 +93,7 @@ class ReplayEngine:
         trace_id = uuid4()
         replay_ctx = ExecutionContext(trace_id=trace_id, span_id=uuid4())
         
-        print(f"[REPLAY] {mode.value.upper()} Mode | Trace: {trace_id} | Steps: {len(plan)}")
+        logger.info("[REPLAY] %s Mode | Trace: %s | Steps: %d", mode.value.upper(), trace_id, len(plan))
         
         results = []
         overall_feasible = True
@@ -117,7 +117,7 @@ class ReplayEngine:
             if sb_diff:
                 mismatches.extend([{"field": k, "type": "pre_execution", **v} for k, v in sb_diff.items()])
                 if strict:
-                    print(f"[REPLAY] CRITICAL: Pre-execution state mismatch at step {i}")
+                    logger.error("[REPLAY] CRITICAL: Pre-execution state mismatch at step %d", i)
                     overall_feasible = False
                     if strict: break
 

@@ -224,13 +224,21 @@ def _type_evidence(
     if intent != "type":
         return None
     text = str(params.get("text", ""))
+    expected_focus = params.get("_require_focus")
+    before = _target_snapshot(before_state)
+    after = _target_snapshot(after_state)
     return {
         "tool": intent,
         "text_chars": len(text),
         "text_bytes": len(text.encode("utf-8")),
         "text_sha256": _sha256_text(text),
-        "target_before": _target_snapshot(before_state),
-        "target_after": _target_snapshot(after_state),
+        "expected_focus": expected_focus,
+        "expected_focus_process_name": params.get("_require_focus_process_name"),
+        "expected_focus_keywords": list(params.get("_require_focus_keywords") or []),
+        "target_before": before,
+        "target_after": after,
+        "focus_verified_before": bool(before.get("hwnd") and before.get("focus_stable")),
+        "focus_verified_after": bool(after.get("hwnd") and after.get("focus_stable")),
         "output_sha256": _sha256_text(output_text),
     }
 
@@ -718,6 +726,47 @@ class DeterministicExecutor:
                 output_text = str(output)
                 click_after = await _capture_click_context(intent, params, page)
                 if output_text.lower().startswith(("error", "failed", "read error", "write error")):
+                    if intent == "open_app":
+                        verifier_result = await Verifier.verify(intent, params, ctx)
+                        verified_existing_evidence = _desktop_evidence_from_verification(
+                            intent,
+                            params,
+                            desktop_started_at_ms,
+                            verifier_result,
+                            close_attempts=close_attempts,
+                            focus_attempts=focus_attempts,
+                        )
+                        if verifier_result.verified and verified_existing_evidence is not None:
+                            verified_existing_evidence = verified_existing_evidence.model_copy(update={
+                                "method": "verified_existing_after_launch_error",
+                                "warnings": [
+                                    *verified_existing_evidence.warnings,
+                                    output_text,
+                                ],
+                            })
+                            return ActionResult(
+                                action=intent,
+                                params=params,
+                                status=ActionStatus.EXECUTED,
+                                success=True,
+                                output=(
+                                    "Tool reported a launch error, but the desktop verifier "
+                                    f"observed the target window/process: {verifier_result.details}"
+                                ),
+                                recovery_hint=output_text,
+                                proof={
+                                    "execution_evidence": verified_existing_evidence.model_dump(),
+                                    "tool_output_warning": output_text,
+                                },
+                                execution_evidence=verified_existing_evidence,
+                                focus_verified=True,
+                                metrics=ReliabilityMetrics(
+                                    execution_time_ms=(time.perf_counter() - step_start) * 1000,
+                                    retries=attempt,
+                                    determinism_score=0.85,
+                                    recovery_triggered=True,
+                                ),
+                            )
                     failure_evidence = _desktop_failure_evidence(
                         intent,
                         params,

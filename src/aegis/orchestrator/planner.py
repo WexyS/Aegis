@@ -23,6 +23,8 @@ class Planner:
         plan: list[IntentResult] = []
         
         last_app = None
+        last_focus_keywords = None
+        last_focus_process_name = None
         
         for i, intent in enumerate(intents):
             # 1. Focus Logic
@@ -33,24 +35,36 @@ class Planner:
                     # We could inject a special 'focus' intent here, 
                     # but for now we'll just tag the 'type' intent with metadata
                     intent.params["_require_focus"] = last_app
+                    if last_focus_keywords:
+                        intent.params["_require_focus_keywords"] = last_focus_keywords
+                    if last_focus_process_name:
+                        intent.params["_require_focus_process_name"] = last_focus_process_name
             
             # 2. Dependency Tracking & Metadata Enrichment
-            if intent.intent == "open_app":
+            if intent.intent in {"open_app", "focus_app", "close_app"}:
                 app_query = intent.params.get("app")
-                last_app = app_query
                 
                 # Enrich with Metadata for Tier 4 Determinism
                 resolved = resolve_app_name(app_query) or smart_match_app(app_query)
                 if resolved:
                     config = get_app_config(resolved)
                     intent.params["app"] = resolved
-                    intent.params["_resolved_path"] = config.get("path")
+                    if intent.intent == "open_app":
+                        intent.params["_resolved_path"] = config.get("path")
                     intent.params["_process_name"] = config.get("process_name")
                     intent.params["_keywords"] = config.get("window_keywords")
+                    last_app = resolved
+                    last_focus_keywords = config.get("window_keywords")
+                    last_focus_process_name = config.get("process_name")
+                elif app_query:
+                    last_app = app_query
+                    last_focus_keywords = [str(app_query)]
+                    last_focus_process_name = f"{app_query}.exe" if not str(app_query).lower().endswith(".exe") else str(app_query)
                 
                 # Apps need time to launch, but we optimize for chaining
-                is_chaining_type = (i + 1 < len(intents) and intents[i+1].intent == "type")
-                intent.params["_wait_after"] = 0.5 if is_chaining_type else 2.0
+                if intent.intent == "open_app":
+                    is_chaining_type = (i + 1 < len(intents) and intents[i+1].intent == "type")
+                    intent.params["_wait_after"] = 0.5 if is_chaining_type else 2.0
             
             plan.append(intent)
             

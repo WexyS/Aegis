@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -28,6 +29,50 @@ def test_runtime_event_journal_events_after_and_duplicate_suppression(tmp_path, 
     assert snapshot["last_event_hash"] == second.event_hash
     assert snapshot["integrity_status"] == "hash-chain"
     assert snapshot["integrity_checked_events"] == 2
+
+
+def test_runtime_event_journal_append_fsyncs_before_commit(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "aegis.core.event_journal.get_settings",
+        lambda: SimpleNamespace(logging=SimpleNamespace(directory=str(tmp_path))),
+    )
+    fsync_calls: list[int] = []
+    monkeypatch.setattr("aegis.core.event_journal.os.fsync", lambda fileno: fsync_calls.append(fileno))
+    journal = RuntimeEventJournal(max_memory_events=10)
+
+    journal.append(create_event(ProtocolEventType.COMMAND_RECEIVED, {"text": "durable"}))
+
+    assert len(fsync_calls) == 1
+
+
+def test_runtime_event_journal_events_after_reads_disk_when_memory_tail_is_bounded(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "aegis.core.event_journal.get_settings",
+        lambda: SimpleNamespace(logging=SimpleNamespace(directory=str(tmp_path))),
+    )
+    journal = RuntimeEventJournal(max_memory_events=2)
+    events = [
+        journal.append(create_event(ProtocolEventType.COMMAND_RECEIVED, {"text": f"event-{index}"}))
+        for index in range(5)
+    ]
+
+    after_first = journal.events_after(events[0].sequence_num)
+
+    assert [event["event_id"] for event in after_first] == [event.event_id for event in events[1:]]
+
+
+def test_runtime_event_journal_reload_failure_is_logged(tmp_path, monkeypatch, caplog) -> None:
+    monkeypatch.setattr(
+        "aegis.core.event_journal.get_settings",
+        lambda: SimpleNamespace(logging=SimpleNamespace(directory=str(tmp_path))),
+    )
+    (tmp_path / "runtime_events.jsonl").write_text("{not-json}\n", encoding="utf-8")
+
+    with caplog.at_level(logging.ERROR, logger="aegis.core.event_journal"):
+        journal = RuntimeEventJournal(max_memory_events=10)
+
+    assert journal.snapshot()["event_count"] == 0
+    assert "Failed to reload runtime event journal from disk" in caplog.text
 
 
 def test_runtime_event_journal_integrity_allows_session_genesis_reset(tmp_path, monkeypatch) -> None:

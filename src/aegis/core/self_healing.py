@@ -24,13 +24,18 @@ class SelfHealing:
         Handles both string outputs and list[ActionResult] outputs.
         """
         last_result: Any = None
+        cancellation_token = kwargs.get("cancellation_token")
         
         for attempt in range(self.max_retries + 1):
+            if cancellation_token is not None and getattr(cancellation_token, "cancelled", False):
+                return f"Error: {getattr(cancellation_token, 'cancelled_reason', None) or 'Command cancelled'}"
             if attempt > 0:
                 delay = self.base_delay * attempt
                 logger.info("[SELF-HEALING] Retry attempt %d/%d (Waiting %.1fs)", 
                             attempt, self.max_retries, delay)
                 await asyncio.sleep(delay)
+                if cancellation_token is not None and getattr(cancellation_token, "cancelled", False):
+                    return f"Error: {getattr(cancellation_token, 'cancelled_reason', None) or 'Command cancelled'}"
             
             try:
                 # Execute the wrapped action
@@ -39,7 +44,8 @@ class SelfHealing:
                 
                 # Adaptive failure detection
                 if isinstance(result, str):
-                    is_failed = "error" in result.lower() or "failed" in result.lower()
+                    normalized = result.strip().lower()
+                    is_failed = normalized.startswith(("error", "failed", "read error", "write error"))
                 elif isinstance(result, list):
                     is_failed = any(r.status == ActionStatus.FAILED for r in result)
                 else:
@@ -56,5 +62,11 @@ class SelfHealing:
 
         return last_result
 
+_self_healer: SelfHealing | None = None
+
+
 def get_self_healer() -> SelfHealing:
-    return SelfHealing()
+    global _self_healer
+    if _self_healer is None:
+        _self_healer = SelfHealing()
+    return _self_healer

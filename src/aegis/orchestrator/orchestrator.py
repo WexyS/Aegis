@@ -93,11 +93,18 @@ def _unverified_side_effects(plan: list[IntentResult]) -> list[str]:
     return unverified
 
 
-def _action_audit_event(action: ActionResult, action_id: str) -> dict[str, Any]:
+def _action_audit_event(action: ActionResult, action_id: str, *, sequence_num: int = 1) -> dict[str, Any]:
+    """Build an in-memory completion event for the pre-emit evidence gate.
+
+    This is not a journal event. It exists so the same evidence-audit logic can
+    gate an ActionResult before the journal-backed ACTION_COMPLETED/ACTION_FAILED
+    event is emitted.
+    """
     payload: dict[str, Any] = {
         "action_id": action_id,
         "success": action.success,
         "latency_ms": action.metrics.execution_time_ms,
+        "audit_source": "in_memory_completion_gate",
     }
     if action.success:
         event_type = ws_bridge.ProtocolEventType.ACTION_COMPLETED.value
@@ -109,8 +116,8 @@ def _action_audit_event(action: ActionResult, action_id: str) -> dict[str, Any]:
     return {
         "type": event_type,
         "payload": payload,
-        "timestamp": 0,
-        "sequence_num": 0,
+        "timestamp": int(time.time() * 1000),
+        "sequence_num": sequence_num,
         "trace_id": "",
         "session_id": "",
     }
@@ -118,7 +125,7 @@ def _action_audit_event(action: ActionResult, action_id: str) -> dict[str, Any]:
 
 def _audit_process_window_actions(actions: list[ActionResult]) -> dict[str, Any] | None:
     events = [
-        _action_audit_event(action, f"completion-{index}")
+        _action_audit_event(action, f"completion-{index}", sequence_num=index + 1)
         for index, action in enumerate(actions)
         if action.action in PROCESS_WINDOW_EVIDENCE_TOOLS
     ]
@@ -130,7 +137,7 @@ def _audit_process_window_actions(actions: list[ActionResult]) -> dict[str, Any]
 def _audit_process_window_action(action: ActionResult, action_id: str) -> dict[str, Any] | None:
     if action.action not in PROCESS_WINDOW_EVIDENCE_TOOLS:
         return None
-    return audit_action_evidence([_action_audit_event(action, action_id)], limit=1)
+    return audit_action_evidence([_action_audit_event(action, action_id, sequence_num=1)], limit=1)
 
 
 def _evidence_gate_reason(report: dict[str, Any]) -> str:
@@ -266,13 +273,16 @@ class Orchestrator:
             nonlocal fsm_state
             if fsm_state == to_state:
                 return
-            await ws_bridge.emit_state_change(
+            changed = await ws_bridge.emit_state_change(
                 fsm_state,
                 to_state,
                 reason=reason,
                 trace_id=str(ctx.trace_id),
             )
-            fsm_state = to_state
+            if changed:
+                fsm_state = to_state
+            else:
+                fsm_state = ws_bridge.get_runtime_authority(ws_bridge._session_id).current_state().value
         
         # 1. CAPABILITY ROUTING (9B Decision)
         routing = await self.router.route(request)
@@ -631,8 +641,7 @@ class Orchestrator:
                         trace_id=str(ctx.trace_id),
                         source=ws_bridge.Component.RECOVERY,
                     )
-                    await ws_bridge.emit_state_change("EXECUTING", "RECOVERING", reason=action_result.recovery_hint, trace_id=str(ctx.trace_id))
-                    fsm_state = "RECOVERING"
+                    await transition("RECOVERING", reason=action_result.recovery_hint)
 
                     # Escalation Logic
                     if action_result.metrics.determinism_score < 0.4 and vision_attempts < settings.models.max_vision_attempts:

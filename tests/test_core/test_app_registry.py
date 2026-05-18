@@ -88,3 +88,11 @@ def test_refresh_registry_makes_discovered_apps_resolvable(tmp_path) -> None:
 
     assert resolve_app_name("steam") == "steam"
     assert get_app_config("steam")["path"].endswith("Steam.lnk")
+
+
+def test_brave_is_configured_as_a_verified_browser_target() -> None:
+    assert resolve_app_name("brave") == "brave"
+    config = get_app_config("brave")
+    assert config["process_name"] == "brave.exe"
+    assert "Brave" in config["window_keywords"]
+    assert config["fallback"] == "chrome"
