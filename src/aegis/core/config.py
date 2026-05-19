@@ -58,6 +58,13 @@ def load_yaml(path: Path) -> dict[str, Any]:
         raise ConfigurationError(f"Invalid YAML in {path}: {e}")
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 # ---------------------------------------------------------------------------
 # Typed settings models
 # ---------------------------------------------------------------------------
@@ -113,6 +120,7 @@ class FeatureFlags(BaseModel):
     multimodal: bool = False
     speech_io: bool = False
     agent_loop: bool = False
+    deterministic_decomposition: bool = False
     replay_enabled: bool = True
 
 
@@ -153,6 +161,10 @@ class EnvOverrides(BaseSettings):
     aegis_code_model: str = "qwen2.5-coder:14b"
     aegis_embed_model: str = "nomic-embed-text"
     aegis_cloud_enabled: bool = False
+    enable_deterministic_decomposition: bool = Field(
+        False,
+        validation_alias="ENABLE_DETERMINISTIC_DECOMPOSITION",
+    )
     
     # Recovery Budget
     aegis_max_recovery_depth: int = 3
@@ -217,6 +229,10 @@ def load_settings(force_reload: bool = False) -> AegisSettings:
     # Features
     if env_overrides.aegis_cloud_enabled:
         _settings.features.cloud_fallback = True
+    _settings.features.deterministic_decomposition = _env_bool(
+        "ENABLE_DETERMINISTIC_DECOMPOSITION",
+        env_overrides.enable_deterministic_decomposition,
+    )
 
     return _settings
 

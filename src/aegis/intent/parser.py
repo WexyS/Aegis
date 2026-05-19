@@ -17,6 +17,13 @@ from typing import Any
 from aegis.core.constants import IntentSource, RiskLevel
 from aegis.core.schemas import IntentResult
 from aegis.core.app_map import resolve_app_name
+from aegis.core.config import get_settings
+from aegis.intent.decomposition import (
+    NormalizedPlan,
+    PlanStatus,
+    decompose_command,
+    normalized_plan_to_intents,
+)
 from aegis.intent.rules import RULES, KNOWN_SITES, APP_ALIASES, VERIFICATION_METADATA, IntentRule
 from aegis.tools.file_tools import _is_allowed_write_path, _is_forbidden_write_path, _resolve_write_path
 from aegis.tools.shell_tools import is_allowlisted_shell_command, is_destructive_shell_command
@@ -86,6 +93,12 @@ class IntentParser:
             text = clean_text(text)
             
         logger.info("[PARSER] Input: %r", text)
+
+        if get_settings().features.deterministic_decomposition:
+            deterministic = self._parse_deterministic_decomposition(text)
+            if deterministic is not None:
+                logger.debug("[PARSER] Deterministic decomposition intents: %s", deterministic)
+                return deterministic
         
         # 1. Normalize
         normalized = self.normalize_text(text)
@@ -114,8 +127,6 @@ class IntentParser:
 
         # 4. AI Fallback: ONLY if the entire command is unrecognized
         if all(r.intent == "unknown" for r in results):
-            from aegis.core.config import get_settings
-
             if get_settings().features.agent_loop:
                 logger.info("[PARSER] Rule-based system could not identify ANY segment. Falling back to AI as last resort...")
                 from aegis.intent.ai_parser import get_ai_parser
@@ -160,6 +171,53 @@ class IntentParser:
             
         logger.debug("[PARSER] Intents: %s", results)
         return results
+
+    def _parse_deterministic_decomposition(self, text: str) -> list[IntentResult] | None:
+        plan = decompose_command(text)
+        if plan is None:
+            return None
+
+        if plan.status != PlanStatus.READY.value:
+            return [self._non_executable_decomposition_result(text, plan)]
+
+        try:
+            intents = normalized_plan_to_intents(plan, raw_text=text)
+        except ValueError as exc:
+            blocked = NormalizedPlan(
+                plan_kind=plan.plan_kind,
+                language=plan.language,
+                source_text=plan.source_text,
+                status=PlanStatus.BLOCKED.value,
+                risk=plan.risk,
+                steps=[],
+                ambiguities=[],
+                guard_notes=[str(exc)],
+            )
+            return [self._non_executable_decomposition_result(text, blocked)]
+
+        for result in intents:
+            self._enrich_desktop_metadata(result)
+        return intents
+
+    def _non_executable_decomposition_result(self, text: str, plan: NormalizedPlan) -> IntentResult:
+        risk = RiskLevel.CRITICAL if plan.status == PlanStatus.APPROVAL_REQUIRED.value else RiskLevel.NONE
+        return IntentResult(
+            intent="unknown",
+            confidence=0.0,
+            params={},
+            risk=risk,
+            source=IntentSource.RULE,
+            raw_input=text,
+            timestamp=datetime.now(timezone.utc),
+            metadata={
+                "decomposition": "deterministic",
+                "plan_kind": plan.plan_kind,
+                "plan_status": plan.status,
+                "plan_risk": plan.risk,
+                "ambiguities": list(plan.ambiguities),
+                "guard_notes": list(plan.guard_notes),
+            },
+        )
 
     def _enrich_desktop_metadata(self, result: IntentResult) -> None:
         if result.intent not in {"open_app", "focus_app", "close_app"}:

@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
 
+from aegis.core.constants import IntentSource, RiskLevel
+from aegis.core.schemas import IntentResult
 from aegis.intent.rules import APP_ALIASES
 
 
@@ -25,6 +27,14 @@ RiskName = Literal["none", "low", "medium", "high", "critical"]
 
 
 VALID_RISKS = {"none", "low", "medium", "high", "critical"}
+
+RISK_LEVEL_BY_NAME: dict[str, RiskLevel] = {
+    "none": RiskLevel.NONE,
+    "low": RiskLevel.LOW,
+    "medium": RiskLevel.MEDIUM,
+    "high": RiskLevel.HIGH,
+    "critical": RiskLevel.CRITICAL,
+}
 
 ALLOWED_EXECUTABLE_INTENTS = {
     "open_app",
@@ -389,6 +399,12 @@ def decompose_open_search(text: str) -> NormalizedPlan | None:
 def decompose_command(text: str) -> NormalizedPlan | None:
     """Try deterministic decomposers in a stable safe order."""
 
+    lowered = text.strip().lower()
+    click_tokens = ("click", "tıkla", "tikla", "tÄ±kla")
+    unresolved_targets = ("that", "button", "buton", "ilk", "sonuca", "bu ", "şu ", "su ")
+    if any(token in lowered for token in click_tokens) and any(target in lowered for target in unresolved_targets):
+        return _clarification_plan(text, "unknown", "click target resolution is not implemented")
+
     for decomposer in (decompose_open_type, decompose_open_search):
         plan = decomposer(text)
         if plan is None:
@@ -410,3 +426,45 @@ def decompose_command(text: str) -> NormalizedPlan | None:
         )
 
     return None
+
+
+def normalized_plan_to_intents(plan: NormalizedPlan, *, raw_text: str) -> list[IntentResult]:
+    """Adapt a validated ready normalized plan to existing parser output."""
+
+    validation = validate_normalized_plan(plan)
+    if not validation.valid:
+        raise ValueError(f"invalid normalized plan: {'; '.join(validation.errors)}")
+
+    if validation.status != PlanStatus.READY:
+        raise ValueError(f"cannot adapt non-ready normalized plan: {plan.status}")
+
+    intents: list[IntentResult] = []
+    step_count = len(plan.steps)
+    for index, step in enumerate(plan.steps):
+        risk = RISK_LEVEL_BY_NAME.get(step.risk)
+        if risk is None:
+            raise ValueError(f"invalid normalized plan risk: {step.risk}")
+
+        intents.append(
+            IntentResult(
+                intent=step.intent,
+                confidence=1.0,
+                params=dict(step.params),
+                risk=risk,
+                source=IntentSource.RULE,
+                raw_input=raw_text,
+                metadata={
+                    "decomposition": "deterministic",
+                    "plan_kind": plan.plan_kind,
+                    "plan_status": plan.status,
+                    "plan_risk": plan.risk,
+                    "step_index": index,
+                    "step_count": step_count,
+                    "source_span": step.source_span,
+                    "guard_notes": list(plan.guard_notes),
+                    "ambiguities": list(plan.ambiguities),
+                },
+            )
+        )
+
+    return intents

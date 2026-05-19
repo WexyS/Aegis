@@ -6,7 +6,13 @@ from __future__ import annotations
 
 import pytest
 from aegis.core.constants import RiskLevel, IntentSource
+from aegis.core.config import load_settings
 from aegis.intent.parser import IntentParser
+
+
+def _set_deterministic_decomposition(monkeypatch: pytest.MonkeyPatch, enabled: bool) -> None:
+    monkeypatch.setenv("ENABLE_DETERMINISTIC_DECOMPOSITION", "true" if enabled else "false")
+    load_settings(force_reload=True)
 
 
 @pytest.mark.asyncio
@@ -206,3 +212,117 @@ class TestAppLifecycle:
         assert r[0].intent == "open_app"
         assert r[0].risk == RiskLevel.MEDIUM
         assert r[0].params["app"] == "steam"
+
+
+@pytest.mark.asyncio
+class TestDeterministicDecompositionWiring:
+    def setup_method(self) -> None:
+        self.parser = IntentParser()
+
+    async def test_feature_flag_off_keeps_open_type_legacy_behavior(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_deterministic_decomposition(monkeypatch, False)
+
+        r = await self.parser.parse("notepad açıp merhaba yaz")
+
+        assert [item.intent for item in r] == ["open_app"]
+        assert all(item.metadata.get("decomposition") != "deterministic" for item in r)
+
+    async def test_feature_flag_off_keeps_open_search_legacy_behavior(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_deterministic_decomposition(monkeypatch, False)
+
+        r = await self.parser.parse("brave açıp python nedir ara")
+
+        assert [item.intent for item in r] == ["open_app", "search_web"]
+        assert all(item.metadata.get("decomposition") != "deterministic" for item in r)
+
+    async def test_feature_flag_on_routes_open_type_through_deterministic_decomposition(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _set_deterministic_decomposition(monkeypatch, True)
+
+        r = await self.parser.parse("notepad açıp merhaba yaz")
+
+        assert [item.intent for item in r] == ["open_app", "type"]
+        assert r[1].params["_require_focus"] == "notepad"
+        assert r[0].metadata["decomposition"] == "deterministic"
+        assert r[0].metadata["step_index"] == 0
+        assert r[0].metadata["step_count"] == 2
+        assert r[0].metadata["source_span"] == "notepad"
+
+    async def test_feature_flag_on_routes_open_search_through_deterministic_decomposition(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _set_deterministic_decomposition(monkeypatch, True)
+
+        r = await self.parser.parse("brave açıp python nedir ara")
+
+        assert [item.intent for item in r] == ["open_app", "search_web"]
+        assert r[1].params["browser"] == "brave"
+        assert r[1].metadata["decomposition"] == "deterministic"
+        assert r[1].metadata["step_index"] == 1
+
+    async def test_feature_flag_on_unrelated_text_falls_back_to_existing_parser(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _set_deterministic_decomposition(monkeypatch, True)
+
+        r = await self.parser.parse("merhaba")
+
+        assert r[0].intent == "general_chat"
+        assert r[0].metadata.get("decomposition") != "deterministic"
+
+    async def test_feature_flag_on_unknown_open_type_returns_non_executable_unknown(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _set_deterministic_decomposition(monkeypatch, True)
+
+        r = await self.parser.parse("unknownapp aç ve merhaba yaz")
+
+        assert len(r) == 1
+        assert r[0].intent == "unknown"
+        assert r[0].metadata["decomposition"] == "deterministic"
+        assert r[0].metadata["plan_status"] == "clarification_required"
+        assert r[0].metadata["ambiguities"] == ["unknown app for open+type: unknownapp"]
+
+    async def test_feature_flag_on_unknown_open_search_returns_non_executable_unknown(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _set_deterministic_decomposition(monkeypatch, True)
+
+        r = await self.parser.parse("unknownapp aç ve python ara")
+
+        assert len(r) == 1
+        assert r[0].intent == "unknown"
+        assert r[0].metadata["decomposition"] == "deterministic"
+        assert r[0].metadata["plan_status"] == "clarification_required"
+        assert r[0].metadata["ambiguities"] == ["unknown app for open+search: unknownapp"]
+
+    async def test_feature_flag_on_ambiguous_click_does_not_execute_or_fall_back(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _set_deterministic_decomposition(monkeypatch, True)
+
+        r = await self.parser.parse("brave aç ve ilk sonuca tıkla")
+
+        assert len(r) == 1
+        assert r[0].intent == "unknown"
+        assert r[0].metadata["decomposition"] == "deterministic"
+        assert r[0].metadata["plan_status"] == "clarification_required"
+
+    async def test_feature_flag_on_adapter_failure_returns_blocked_unknown(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _set_deterministic_decomposition(monkeypatch, True)
+
+        def boom(*args, **kwargs):
+            raise ValueError("adapter exploded")
+
+        monkeypatch.setattr("aegis.intent.parser.normalized_plan_to_intents", boom)
+
+        r = await self.parser.parse("notepad açıp merhaba yaz")
+
+        assert len(r) == 1
+        assert r[0].intent == "unknown"
+        assert r[0].metadata["decomposition"] == "deterministic"
+        assert r[0].metadata["plan_status"] == "blocked"
+        assert "adapter exploded" in r[0].metadata["guard_notes"]
