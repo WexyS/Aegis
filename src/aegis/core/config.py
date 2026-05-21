@@ -161,8 +161,8 @@ class EnvOverrides(BaseSettings):
     aegis_code_model: str = "qwen2.5-coder:14b"
     aegis_embed_model: str = "nomic-embed-text"
     aegis_cloud_enabled: bool = False
-    enable_deterministic_decomposition: bool = Field(
-        False,
+    enable_deterministic_decomposition: bool | None = Field(
+        None,
         validation_alias="ENABLE_DETERMINISTIC_DECOMPOSITION",
     )
     
@@ -229,10 +229,8 @@ def load_settings(force_reload: bool = False) -> AegisSettings:
     # Features
     if env_overrides.aegis_cloud_enabled:
         _settings.features.cloud_fallback = True
-    _settings.features.deterministic_decomposition = _env_bool(
-        "ENABLE_DETERMINISTIC_DECOMPOSITION",
-        env_overrides.enable_deterministic_decomposition,
-    )
+    if env_overrides.enable_deterministic_decomposition is not None:
+        _settings.features.deterministic_decomposition = env_overrides.enable_deterministic_decomposition
 
     return _settings
 

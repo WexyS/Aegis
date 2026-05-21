@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from aegis.core.constants import IntentSource, RiskLevel
 from aegis.core.schemas import IntentResult
-from aegis.intent.rules import APP_ALIASES
+from aegis.intent.rules import APP_ALIASES, KNOWN_SITES
 
 
 class PlanStatus(str, Enum):
@@ -201,6 +201,10 @@ def _canonical_app(value: str) -> str | None:
     return APP_ALIASES.get(_normalize_app_alias(value))
 
 
+def _is_known_site(value: str) -> bool:
+    return _normalize_app_alias(value) in KNOWN_SITES
+
+
 def _clarification_plan(source_text: str, language: str, ambiguity: str) -> NormalizedPlan:
     return NormalizedPlan(
         plan_kind="deterministic_decomposition",
@@ -317,6 +321,8 @@ def decompose_open_type(text: str) -> NormalizedPlan | None:
         app_span = match.group("app").strip()
         typed_text = match.group("text").strip()
         app = _canonical_app(app_span)
+        if not app and _is_known_site(app_span):
+            return None
         if not app:
             return _clarification_plan(source_text, "tr", f"unknown app for open+type: {app_span}")
         if not typed_text:
@@ -336,6 +342,8 @@ def decompose_open_type(text: str) -> NormalizedPlan | None:
         app_span = match.group("app").strip()
         typed_text = match.group("text").strip()
         app = _canonical_app(app_span)
+        if not app and _is_known_site(app_span):
+            return None
         if not app:
             return _clarification_plan(source_text, "en", f"unknown app for open+type: {app_span}")
         if not typed_text:
@@ -362,6 +370,8 @@ def decompose_open_search(text: str) -> NormalizedPlan | None:
         app_span = match.group("app").strip()
         query = match.group("query").strip()
         app = _canonical_app(app_span)
+        if not app and _is_known_site(app_span):
+            return None
         if not app:
             return _clarification_plan(source_text, "tr", f"unknown app for open+search: {app_span}")
         if not query:
@@ -381,6 +391,8 @@ def decompose_open_search(text: str) -> NormalizedPlan | None:
         app_span = match.group("app").strip()
         query = match.group("query").strip()
         app = _canonical_app(app_span)
+        if not app and _is_known_site(app_span):
+            return None
         if not app:
             return _clarification_plan(source_text, "en", f"unknown app for open+search: {app_span}")
         if not query:

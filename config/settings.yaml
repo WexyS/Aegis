@@ -34,5 +34,5 @@ features:
   multimodal: false
   speech_io: false
   agent_loop: false
-  deterministic_decomposition: false
+  deterministic_decomposition: true
   replay_enabled: true

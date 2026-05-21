@@ -2,13 +2,53 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
+from aegis.core import app_map
 from aegis.core.app_map import (
     AppDiscoveryRoots,
+    APP_REGISTRY,
     discover_installed_apps,
     get_app_config,
     refresh_installed_app_registry,
     resolve_app_name,
 )
+
+
+@pytest.fixture(autouse=True)
+def clear_discovered_registry():
+    app_map._discovered_registry.clear()
+    yield
+    app_map._discovered_registry.clear()
+
+
+@pytest.mark.parametrize(
+    ("alias", "app_id"),
+    [
+        ("brave", "brave"),
+        ("brave browser", "brave"),
+        ("brave tarayıcı", "brave"),
+        ("google chrome", "chrome"),
+        ("tarayıcı", "chrome"),
+        ("not defteri", "notepad"),
+        ("hesap makinesi", "calc"),
+    ],
+)
+def test_configured_turkish_and_browser_aliases_resolve(alias: str, app_id: str) -> None:
+    assert resolve_app_name(alias) == app_id
+    assert get_app_config(alias) is APP_REGISTRY[app_id]
+
+
+def test_brave_registry_uses_canonical_turkish_browser_alias() -> None:
+    aliases = APP_REGISTRY["brave"]["aliases"]
+
+    assert "brave tarayıcı" in aliases
+    assert "brave tarayÄ±cÄ±" not in aliases
+
+
+def test_discovered_registry_mutation_does_not_leak_between_tests() -> None:
+    assert resolve_app_name("steam") is None
+    assert get_app_config("steam") is None
 
 
 def test_discovers_start_menu_shortcuts_as_launch_targets(tmp_path) -> None:

@@ -48,7 +48,7 @@ APP_REGISTRY: dict[str, dict] = {
     "brave": {
         "path": "brave.exe",
         "process_name": "brave.exe",
-        "aliases": ["brave", "brave browser", "brave tarayÄ±cÄ±"],
+        "aliases": ["brave", "brave browser", "brave tarayıcı"],
         "fallback": "chrome",
         "window_keywords": ["Brave", "New Tab"]
     }

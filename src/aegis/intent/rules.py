@@ -35,8 +35,8 @@ RULES: list[IntentRule] = [
     IntentRule(
         intent="focus_app",
         patterns=[
-            r"(?P<app>not defteri|notepad|hesap makinesi|calc|premiere|adobe premiere|photoshop|adobe photoshop|explorer|cmd|powershell|chrome|spotify|browser|tarayÄ±cÄ±)(?:['']?e|['']?a|ye|ya)?\s+(?:odaklan|focus|öne al|one al)",
-            r"(?:odaklan|focus|öne al|one al)\s+(?P<app>not defteri|notepad|hesap makinesi|calc|premiere|adobe premiere|photoshop|adobe photoshop|explorer|cmd|powershell|chrome|spotify|browser|tarayÄ±cÄ±)",
+            r"(?P<app>not defteri|notepad|hesap makinesi|calc|premiere|adobe premiere|photoshop|adobe photoshop|explorer|cmd|powershell|chrome|spotify|browser|tarayıcı)(?:['']?e|['']?a|ye|ya)?\s+(?:odaklan|focus|öne al|one al)",
+            r"(?:odaklan|focus|öne al|one al)\s+(?P<app>not defteri|notepad|hesap makinesi|calc|premiere|adobe premiere|photoshop|adobe photoshop|explorer|cmd|powershell|chrome|spotify|browser|tarayıcı)",
         ],
         risk=RiskLevel.MEDIUM,
         description="Focus an existing application window",
@@ -46,8 +46,8 @@ RULES: list[IntentRule] = [
     IntentRule(
         intent="close_app",
         patterns=[
-            r"(?P<app>not defteri|notepad|hesap makinesi|calc|premiere|adobe premiere|photoshop|adobe photoshop|explorer|cmd|powershell|chrome|spotify|browser|tarayÄ±cÄ±)\s+(?:kapat|close|quit|exit)",
-            r"(?:kapat|close|quit|exit)\s+(?P<app>not defteri|notepad|hesap makinesi|calc|premiere|adobe premiere|photoshop|adobe photoshop|explorer|cmd|powershell|chrome|spotify|browser|tarayÄ±cÄ±)",
+            r"(?P<app>not defteri|notepad|hesap makinesi|calc|premiere|adobe premiere|photoshop|adobe photoshop|explorer|cmd|powershell|chrome|spotify|browser|tarayıcı)\s+(?:kapat|close|quit|exit)",
+            r"(?:kapat|close|quit|exit)\s+(?P<app>not defteri|notepad|hesap makinesi|calc|premiere|adobe premiere|photoshop|adobe photoshop|explorer|cmd|powershell|chrome|spotify|browser|tarayıcı)",
         ],
         risk=RiskLevel.MEDIUM,
         description="Close a running application",
@@ -57,8 +57,8 @@ RULES: list[IntentRule] = [
     IntentRule(
         intent="focus_app",
         patterns=[
-            r"(?P<app>(?!https?://)[\w .&+\-]{2,80}?)(?:['’]?[ea]|\s+[ea])?\s+(?:odaklan|focus|Ã¶ne al|one al)$",
-            r"(?:odaklan|focus|Ã¶ne al|one al)\s+(?P<app>(?!https?://)[\w .&+\-]{2,80})$",
+            r"(?P<app>(?!https?://)[\w .&+\-]{2,80}?)(?:['’]?[ea]|\s+[ea])?\s+(?:odaklan|focus|öne al|one al)$",
+            r"(?:odaklan|focus|öne al|one al)\s+(?P<app>(?!https?://)[\w .&+\-]{2,80})$",
         ],
         risk=RiskLevel.MEDIUM,
         description="Focus a registry-backed or inferred application window",
@@ -169,7 +169,7 @@ RULES: list[IntentRule] = [
         intent="list_directory",
         patterns=[
             r"^(?:list|ls|dir|listele)(?:\s+(?P<path>\S+))?$",
-            r"^(?:klas[Ã¶o]r|directory)\s+(?:listele|list)(?:\s+(?P<path>\S+))?$",
+            r"^(?:klas[öo]r|directory)\s+(?:listele|list)(?:\s+(?P<path>\S+))?$",
         ],
         risk=RiskLevel.LOW,
         description="List a directory without mutating files",
@@ -177,7 +177,7 @@ RULES: list[IntentRule] = [
     IntentRule(
         intent="search_files",
         patterns=[
-            r"^(?:search files|find files|dosya ara)\s+(?P<query>.+?)(?:\s+(?:in|i[Ã§c]inde)\s+(?P<path>\S+))?$",
+            r"^(?:search files|find files|dosya ara)\s+(?P<query>.+?)(?:\s+(?:in|i[çc]inde)\s+(?P<path>\S+))?$",
         ],
         risk=RiskLevel.LOW,
         description="Search file names without mutating files",
@@ -185,7 +185,7 @@ RULES: list[IntentRule] = [
     IntentRule(
         intent="grep_in_files",
         patterns=[
-            r"^(?:grep|search in files|i[Ã§c]erikte ara)\s+(?P<query>.+?)(?:\s+(?:in|i[Ã§c]inde)\s+(?P<path>\S+))?$",
+            r"^(?:grep|search in files|i[çc]erikte ara)\s+(?P<query>.+?)(?:\s+(?:in|i[çc]inde)\s+(?P<path>\S+))?$",
         ],
         risk=RiskLevel.LOW,
         description="Search file contents without mutating files",
@@ -203,7 +203,7 @@ RULES: list[IntentRule] = [
     IntentRule(
         intent="create_file",
         patterns=[
-            r"^(?:create file|dosya oluÅŸtur|dosya olustur)\s+(?P<path>\S+)(?:\s+(?:with|i[Ã§c]erik)\s+(?P<content>.+))?$",
+            r"^(?:create file|dosya oluştur|dosya olustur)\s+(?P<path>\S+)(?:\s+(?:with|i[çc]erik)\s+(?P<content>.+))?$",
         ],
         risk=RiskLevel.MEDIUM,
         description="Create a file inside the workspace boundary",
@@ -211,7 +211,7 @@ RULES: list[IntentRule] = [
     IntentRule(
         intent="edit_file",
         patterns=[
-            r"^(?:edit file|dosya d[Ã¼u]zenle)\s+(?P<path>\S+)\s+(?:replace|de[ÄŸg]iÅŸtir|degistir)\s+(?P<target>.+?)\s+(?:with|ile)\s+(?P<replacement>.+)$",
+            r"^(?:edit file|dosya d[üu]zenle)\s+(?P<path>\S+)\s+(?:replace|de[ğg]iştir|degistir)\s+(?P<target>.+?)\s+(?:with|ile)\s+(?P<replacement>.+)$",
         ],
         risk=RiskLevel.MEDIUM,
         description="Edit a file inside the workspace boundary",
@@ -227,7 +227,7 @@ RULES: list[IntentRule] = [
     IntentRule(
         intent="move_file",
         patterns=[
-            r"^(?:move file|move|taÅŸÄ±|tasi)\s+(?P<path>\S+)\s+(?:to|->|hedefine)\s+(?P<destination>\S+)$",
+            r"^(?:move file|move|taşı|tasi)\s+(?P<path>\S+)\s+(?:to|->|hedefine)\s+(?P<destination>\S+)$",
         ],
         risk=RiskLevel.CRITICAL,
         description="Blocked critical file move",
@@ -293,7 +293,7 @@ RULES: list[IntentRule] = [
     IntentRule(
         intent="run_command",
         patterns=[
-            r"^(?:run command|shell|komut Ã§alÄ±ÅŸtÄ±r|komut calistir)\s+(?P<command>.+)$",
+            r"^(?:run command|shell|komut çalıştır|komut calistir)\s+(?P<command>.+)$",
         ],
         risk=RiskLevel.LOW,
         description="Run allowlisted read-only shell introspection",
@@ -333,6 +333,7 @@ APP_ALIASES: dict[str, str] = {
     "google chrome": "chrome",
     "brave": "brave",
     "brave browser": "brave",
+    "brave tarayıcı": "brave",
     "browser": "chrome",
     "tarayıcı": "chrome",
     "spotify": "spotify",

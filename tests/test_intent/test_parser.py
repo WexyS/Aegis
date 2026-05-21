@@ -215,6 +215,34 @@ class TestAppLifecycle:
 
 
 @pytest.mark.asyncio
+class TestTurkishAliasEncoding:
+    def setup_method(self) -> None:
+        self.parser = IntentParser()
+
+    @pytest.mark.parametrize(
+        ("text", "app", "process_name"),
+        [
+            ("tarayıcı aç", "chrome", "chrome.exe"),
+            ("brave tarayıcı aç", "brave", "brave.exe"),
+            ("google chrome aç", "chrome", "chrome.exe"),
+            ("not defteri aç", "notepad", "notepad.exe"),
+            ("hesap makinesi aç", "calc", "CalculatorApp.exe"),
+        ],
+    )
+    async def test_turkish_and_browser_aliases_open_expected_app(
+        self,
+        text: str,
+        app: str,
+        process_name: str,
+    ) -> None:
+        r = await self.parser.parse(text)
+
+        assert [item.intent for item in r] == ["open_app"]
+        assert r[0].params["app"] == app
+        assert r[0].params["_process_name"] == process_name
+
+
+@pytest.mark.asyncio
 class TestDeterministicDecompositionWiring:
     def setup_method(self) -> None:
         self.parser = IntentParser()
