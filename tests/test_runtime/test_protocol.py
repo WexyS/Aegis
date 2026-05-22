@@ -29,6 +29,28 @@ FRONTEND_API = ROOT / "frontend" / "src" / "lib" / "api.ts"
 FRONTEND_VISION = ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "VisionLabPanel.tsx"
 FRONTEND_TIMELINE = ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "ScientificTimeline.tsx"
 
+NON_EXECUTABLE_PROTOCOL_EVENTS = {
+    "COMMAND_CLASSIFIED",
+    "APPROVAL_REQUESTED",
+    "CLARIFICATION_REQUESTED",
+    "ACTION_BLOCKED_BY_POLICY",
+    "COMMAND_WAITING_FOR_APPROVAL",
+    "COMMAND_WAITING_FOR_CLARIFICATION",
+    "COMMAND_BLOCKED",
+    "APPROVAL_RESOLVED",
+    "APPROVAL_EXPIRED",
+    "CLARIFICATION_RESOLVED",
+}
+
+EXECUTION_LIFECYCLE_EVENTS = {
+    "ACTION_STARTED",
+    "ACTION_COMPLETED",
+    "ACTION_FAILED",
+    "ACTION_RETRY",
+    "VERIFICATION_PASSED",
+    "VERIFICATION_FAILED",
+}
+
 
 def _z_enum_values(source: str, const_name: str) -> set[str]:
     match = re.search(rf"{const_name}\s*=\s*z\.enum\(\[(.*?)\]\)", source, re.DOTALL)
@@ -134,9 +156,18 @@ def test_frontend_payload_registry_covers_authoritative_runtime_events() -> None
         "COMMAND_RECEIVED",
         "INTENT_PARSED",
         "PLAN_CREATED",
+        "COMMAND_CLASSIFIED",
         "GUARD_EVALUATED",
+        "ACTION_BLOCKED_BY_POLICY",
         "APPROVAL_REQUIRED",
+        "APPROVAL_REQUESTED",
+        "APPROVAL_RESOLVED",
+        "APPROVAL_EXPIRED",
+        "CLARIFICATION_REQUESTED",
+        "CLARIFICATION_RESOLVED",
         "COMMAND_STATUS_CHANGED",
+        "COMMAND_WAITING_FOR_APPROVAL",
+        "COMMAND_WAITING_FOR_CLARIFICATION",
         "COMMAND_APPROVED",
         "COMMAND_REJECTED",
         "COMMAND_CANCELLED",
@@ -154,6 +185,66 @@ def test_frontend_payload_registry_covers_authoritative_runtime_events() -> None
     }
 
     assert required.issubset(registry)
+
+
+def test_non_executable_protocol_events_are_canonical_and_not_execution_lifecycle() -> None:
+    backend_values = {event.value for event in ProtocolEventType}
+    frontend_source = FRONTEND_PROTOCOL.read_text(encoding="utf-8")
+    runtime_types_source = FRONTEND_RUNTIME_TYPES.read_text(encoding="utf-8")
+
+    assert NON_EXECUTABLE_PROTOCOL_EVENTS.issubset(backend_values)
+    assert NON_EXECUTABLE_PROTOCOL_EVENTS.issubset(_z_enum_values(frontend_source, "EventTypeEnum"))
+    assert NON_EXECUTABLE_PROTOCOL_EVENTS.issubset(_runtime_enum_values(runtime_types_source, "WebSocketEvent"))
+    assert NON_EXECUTABLE_PROTOCOL_EVENTS.isdisjoint(EXECUTION_LIFECYCLE_EVENTS)
+    assert {
+        "ACTION_STARTED",
+        "ACTION_COMPLETED",
+        "ACTION_FAILED",
+    }.issubset(EXECUTION_LIFECYCLE_EVENTS)
+
+
+def test_non_executable_payload_schemas_are_strict_and_do_not_require_execution_evidence() -> None:
+    protocol_source = FRONTEND_PROTOCOL.read_text(encoding="utf-8")
+    schema_names = [
+        "CommandClassifiedPayload",
+        "ApprovalRequestedPayload",
+        "ClarificationRequestedPayload",
+        "ActionBlockedByPolicyPayload",
+        "CommandWaitingForApprovalPayload",
+        "CommandWaitingForClarificationPayload",
+        "ApprovalResolvedPayload",
+        "ApprovalExpiredPayload",
+        "ClarificationResolvedPayload",
+    ]
+
+    for schema_name in schema_names:
+        pattern = schema_name + r"\s*=\s*z\.object\(\{(?P<body>.*?)\n\}\)\.strict\(\);"
+        match = re.search(pattern, protocol_source, re.DOTALL)
+        assert match, f"{schema_name} strict schema not found"
+        body = match.group("body")
+        assert "not_executed: z.literal(true)" in body
+        assert "execution_evidence" not in body
+        assert "verified:" not in body
+        assert "success:" not in body
+        assert "action_started:" not in body
+
+
+def test_non_executable_payload_registry_uses_new_explicit_schemas() -> None:
+    protocol_source = FRONTEND_PROTOCOL.read_text(encoding="utf-8")
+    expected_mappings = {
+        "COMMAND_CLASSIFIED": "CommandClassifiedPayload",
+        "APPROVAL_REQUESTED": "ApprovalRequestedPayload",
+        "CLARIFICATION_REQUESTED": "ClarificationRequestedPayload",
+        "ACTION_BLOCKED_BY_POLICY": "ActionBlockedByPolicyPayload",
+        "COMMAND_WAITING_FOR_APPROVAL": "CommandWaitingForApprovalPayload",
+        "COMMAND_WAITING_FOR_CLARIFICATION": "CommandWaitingForClarificationPayload",
+        "APPROVAL_RESOLVED": "ApprovalResolvedPayload",
+        "APPROVAL_EXPIRED": "ApprovalExpiredPayload",
+        "CLARIFICATION_RESOLVED": "ClarificationResolvedPayload",
+    }
+
+    for event_name, schema_name in expected_mappings.items():
+        assert f"{event_name}: {schema_name}" in protocol_source
 
 
 def test_frontend_action_completed_payload_carries_execution_evidence_to_timeline() -> None:

@@ -7,7 +7,15 @@ import pytest
 from aegis.api import ws_bridge
 from aegis.core.constants import RiskLevel
 from aegis.core.commands import get_approval_manager
-from aegis.core.protocol import ProtocolEventType, reset_sequence_for_testing
+from aegis.core.action_timeline import project_action_timeline
+from aegis.core.guard_policy import GuardDecision, classify_intent_risk
+from aegis.core.non_executable_runtime_adapter import (
+    build_non_executable_event_batch,
+    project_non_executable_events_to_snapshot,
+    runtime_events_to_journal_entries,
+)
+from aegis.core.approval_semantics import DecisionStatus
+from aegis.core.protocol import ProtocolEventType, RuntimeEvent, create_event, reset_sequence_for_testing
 from aegis.core.schemas import ExecutionEvidence
 
 
@@ -54,6 +62,284 @@ async def test_action_completed_event_carries_execution_evidence(monkeypatch) ->
     assert verification_payload["passed"] is True
     assert verification_payload["verification_state"] == "verified"
     assert verification_payload["execution_evidence"]["process_name"] == "steam.exe"
+
+
+class NonExecutableMemoryJournal:
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+
+    def append(self, event: RuntimeEvent) -> RuntimeEvent:
+        self.events.append(event.to_dict())
+        return event
+
+    def snapshot(self) -> dict:
+        last = self.events[-1] if self.events else {}
+        return {
+            "event_count": len(self.events),
+            "last_sequence_num": last.get("sequence_num", 0),
+            "last_event_hash": last.get("event_hash"),
+            "integrity_status": "in-memory",
+        }
+
+    def recent_events(self, limit: int | None = None) -> list[dict]:
+        if limit is None:
+            return list(self.events)
+        return list(self.events)[-limit:]
+
+    def events_after(self, sequence_num: int) -> list[dict]:
+        return [event for event in self.events if int(event.get("sequence_num", 0)) > sequence_num]
+
+
+def _approval_batch(starting_sequence_num: int = 100):
+    return build_non_executable_event_batch(
+        classify_intent_risk(
+            "write_file",
+            {"path": "scratch/ws-bridge.txt", "content": "hello"},
+            {"command_id": "cmd-approval", "trace_id": "trace-approval"},
+        ),
+        command_id="cmd-approval",
+        trace_id="trace-approval",
+        causation_id="plan-event",
+        starting_sequence_num=starting_sequence_num,
+        timestamp_ms=1000,
+    )
+
+
+def _clarification_batch(starting_sequence_num: int = 200):
+    return build_non_executable_event_batch(
+        classify_intent_risk(
+            "click",
+            {},
+            {"command_id": "cmd-click", "trace_id": "trace-click", "raw_input": "click that button"},
+        ),
+        command_id="cmd-click",
+        trace_id="trace-click",
+        causation_id="plan-event",
+        starting_sequence_num=starting_sequence_num,
+        timestamp_ms=2000,
+    )
+
+
+def _blocked_batch(starting_sequence_num: int = 300):
+    return build_non_executable_event_batch(
+        classify_intent_risk(
+            "run_command",
+            {"command": "rm -rf /"},
+            {"command_id": "cmd-blocked", "trace_id": "trace-blocked"},
+        ),
+        command_id="cmd-blocked",
+        trace_id="trace-blocked",
+        causation_id="plan-event",
+        starting_sequence_num=starting_sequence_num,
+        timestamp_ms=3000,
+    )
+
+
+def _assert_no_execution_shape(value) -> None:
+    if isinstance(value, dict):
+        assert "execution_evidence" not in value
+        assert value.get("success") is not True
+        assert value.get("verified") is not True
+        assert value.get("action_started") is not True
+        assert value.get("type") not in {
+            ProtocolEventType.ACTION_STARTED.value,
+            ProtocolEventType.ACTION_COMPLETED.value,
+            ProtocolEventType.ACTION_FAILED.value,
+            "ACTION_CANCELLED",
+        }
+        for nested in value.values():
+            _assert_no_execution_shape(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            _assert_no_execution_shape(nested)
+
+
+@pytest.mark.asyncio
+async def test_non_executable_batch_append_preserves_order_and_projection(monkeypatch) -> None:
+    journal = NonExecutableMemoryJournal()
+    batch = _approval_batch()
+
+    monkeypatch.setattr(ws_bridge, "get_runtime_journal", lambda: (_ for _ in ()).throw(AssertionError("global journal used")))
+    monkeypatch.setattr(ws_bridge, "get_runtime_authority", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("runtime authority mutated")))
+    appended = await ws_bridge.append_non_executable_event_batch(
+        batch.events,
+        journal=journal,
+        session_id="session-non-executable",
+    )
+
+    assert appended == batch.events
+    assert [event["type"] for event in journal.events] == [
+        ProtocolEventType.COMMAND_CLASSIFIED.value,
+        ProtocolEventType.APPROVAL_REQUESTED.value,
+        ProtocolEventType.COMMAND_WAITING_FOR_APPROVAL.value,
+    ]
+    assert [event["sequence_num"] for event in journal.events] == [100, 101, 102]
+    assert len({event["sequence_num"] for event in journal.events}) == 3
+    assert {event["causation_id"] for event in journal.events} == {"plan-event"}
+    assert all(event["session_id"] == "session-non-executable" for event in journal.events)
+    assert all(event["payload"]["command_id"] == "cmd-approval" for event in journal.events)
+    assert all(event["payload"]["trace_id"] == "trace-approval" for event in journal.events)
+    assert all(event["payload"]["not_executed"] is True for event in journal.events)
+    _assert_no_execution_shape(journal.events)
+
+    snapshot_patch = project_non_executable_events_to_snapshot(journal.recent_events())
+    timeline = project_action_timeline(journal.recent_events(), session_id="session-non-executable")
+
+    assert snapshot_patch["pending_approval"]["approval_id"] == "approval-policy"
+    assert snapshot_patch["command_status"] == "waiting_for_approval"
+    assert timeline[0]["kind"] == "approval_requested"
+    assert timeline[0]["status"] == "approval_required"
+    assert "execution_evidence" not in timeline[0]
+
+
+@pytest.mark.asyncio
+async def test_non_executable_batch_fanout_uses_canonical_order_and_payloads() -> None:
+    journal = NonExecutableMemoryJournal()
+    batch = _clarification_batch()
+    emitted: list[dict] = []
+
+    async def fanout(event: RuntimeEvent) -> None:
+        emitted.append(event.to_dict())
+
+    await ws_bridge.append_non_executable_event_batch(
+        batch.events,
+        journal=journal,
+        session_id="session-non-executable",
+        fanout=fanout,
+    )
+
+    assert [event["type"] for event in emitted] == [
+        ProtocolEventType.COMMAND_CLASSIFIED.value,
+        ProtocolEventType.CLARIFICATION_REQUESTED.value,
+        ProtocolEventType.COMMAND_WAITING_FOR_CLARIFICATION.value,
+    ]
+    assert emitted == journal.events
+    assert all(ProtocolEventType(event["type"]).value == event["type"] for event in emitted)
+    assert all(event["payload"]["not_executed"] is True for event in emitted)
+    assert "generic click quarantine" in emitted[0]["payload"]["reason"]
+    assert "target resolution" in emitted[0]["payload"]["reason"]
+    _assert_no_execution_shape(emitted)
+
+
+@pytest.mark.asyncio
+async def test_non_executable_blocked_batch_preserves_policy_vs_command_lifecycle_events() -> None:
+    journal = NonExecutableMemoryJournal()
+    batch = _blocked_batch()
+
+    await ws_bridge.append_non_executable_event_batch(batch.events, journal=journal)
+
+    policy_block = journal.events[1]
+    command_block = journal.events[2]
+    assert policy_block["type"] == ProtocolEventType.ACTION_BLOCKED_BY_POLICY.value
+    assert policy_block["payload"]["blocked_id"] == "blocked-policy"
+    assert policy_block["payload"]["terminal_non_executed"] is True
+    assert command_block["type"] == ProtocolEventType.COMMAND_BLOCKED.value
+    assert command_block["payload"]["command_status"] == "blocked"
+    assert command_block["payload"]["terminal_non_executed"] is True
+
+
+def test_non_executable_replay_uses_sequence_order_not_timestamp_order() -> None:
+    batch = _blocked_batch(starting_sequence_num=500)
+    events = [event.to_dict() for event in batch.events]
+    events[0]["timestamp"] = 3000
+    events[1]["timestamp"] = 1000
+    events[2]["timestamp"] = 2000
+    shuffled = [events[2], events[0], events[1]]
+
+    entries = runtime_events_to_journal_entries(shuffled)
+    timeline = project_action_timeline(shuffled)
+    snapshot_patch = project_non_executable_events_to_snapshot(shuffled)
+
+    assert [entry["event_type"] for entry in sorted(entries, key=lambda item: item["sequence_num"])] == [
+        ProtocolEventType.COMMAND_CLASSIFIED.value,
+        ProtocolEventType.ACTION_BLOCKED_BY_POLICY.value,
+        ProtocolEventType.COMMAND_BLOCKED.value,
+    ]
+    assert timeline[0]["kind"] == "blocked_by_policy"
+    assert timeline[0]["sequence_num"] == 501
+    assert snapshot_patch["command_status"] == "blocked"
+    assert snapshot_patch["terminal_non_executed"] is True
+
+
+@pytest.mark.asyncio
+async def test_non_executable_batch_rejects_execution_and_legacy_approval_events() -> None:
+    journal = NonExecutableMemoryJournal()
+    batch = _approval_batch()
+
+    action_started = create_event(
+        ProtocolEventType.ACTION_STARTED,
+        {
+            "command_id": "cmd-approval",
+            "trace_id": "trace-approval",
+            "decision_status": "approval_required",
+            "risk_level": "medium",
+            "policy_rule": "bad.action_started",
+            "reason": "bad",
+            "not_executed": True,
+        },
+        trace_id="trace-approval",
+        causation_id="plan-event",
+    )
+    legacy_approval = create_event(
+        ProtocolEventType.APPROVAL_REQUIRED,
+        {
+            "command_id": "cmd-approval",
+            "trace_id": "trace-approval",
+            "decision_status": "approval_required",
+            "risk_level": "medium",
+            "policy_rule": "legacy.approval_required",
+            "reason": "bad",
+            "not_executed": True,
+        },
+        trace_id="trace-approval",
+        causation_id="plan-event",
+    )
+    with_evidence = RuntimeEvent.from_dict(batch.events[0].to_dict())
+    with_evidence.payload = dict(with_evidence.payload)
+    with_evidence.payload["execution_evidence"] = {"fake": True}
+
+    with pytest.raises(ValueError, match="ACTION_STARTED"):
+        await ws_bridge.append_non_executable_event_batch([action_started], journal=journal)
+    with pytest.raises(ValueError, match="APPROVAL_REQUIRED"):
+        await ws_bridge.append_non_executable_event_batch([legacy_approval], journal=journal)
+    with pytest.raises(ValueError, match="execution_evidence"):
+        await ws_bridge.append_non_executable_event_batch([with_evidence], journal=journal)
+
+    assert journal.events == []
+
+
+@pytest.mark.parametrize(
+    "decision",
+    [
+        classify_intent_risk("open_app", {"app": "notepad"}),
+        GuardDecision(
+            decision_status=DecisionStatus.UNVERIFIED,
+            risk_level=RiskLevel.MEDIUM,
+            reason="unverified belongs to execution",
+            policy_rule="unverified.executed",
+        ),
+        GuardDecision(
+            decision_status=DecisionStatus.FAILED,
+            risk_level=RiskLevel.MEDIUM,
+            reason="failed belongs to execution",
+            policy_rule="failed.executed",
+        ),
+        GuardDecision(
+            decision_status=DecisionStatus.CANCELLED,
+            risk_level=RiskLevel.LOW,
+            reason="cancelled has separate lifecycle semantics",
+            policy_rule="cancelled.out_of_scope",
+        ),
+    ],
+)
+def test_non_executable_adapter_rejects_unsupported_decisions_before_ws_bridge(decision) -> None:
+    with pytest.raises(ValueError, match=decision.decision_status.value):
+        build_non_executable_event_batch(
+            decision,
+            command_id="cmd-negative",
+            trace_id="trace-negative",
+            causation_id="plan-event",
+        )
 
 
 @pytest.mark.asyncio

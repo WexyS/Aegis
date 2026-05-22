@@ -24,7 +24,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Set
+from typing import Any, Awaitable, Callable, Dict, Iterable, Optional, Set
 from uuid import uuid4
 
 import socketio
@@ -32,6 +32,7 @@ import socketio
 from aegis.core.protocol import (
     PROTOCOL_VERSION,
     ProtocolEventType,
+    RuntimeEvent,
     RuntimeState,
     Component,
     Severity,
@@ -72,6 +73,16 @@ _command_queue_capacity = 16
 _command_queue: asyncio.Queue["QueuedCommand"] = asyncio.Queue(maxsize=_command_queue_capacity)
 get_runtime_authority(_session_id, queue_capacity=_command_queue_capacity)
 _journal_emit_lock = asyncio.Lock()
+
+_NON_EXECUTABLE_BATCH_FORBIDDEN_EVENT_TYPES = {
+    ProtocolEventType.ACTION_STARTED.value,
+    ProtocolEventType.ACTION_COMPLETED.value,
+    ProtocolEventType.ACTION_FAILED.value,
+    "ACTION_CANCELLED",
+    ProtocolEventType.APPROVAL_REQUIRED.value,
+}
+_NON_EXECUTABLE_BATCH_FORBIDDEN_PAYLOAD_KEYS = {"execution_evidence"}
+_NON_EXECUTABLE_BATCH_FORBIDDEN_TRUTHY_KEYS = {"success", "verified", "action_started"}
 
 
 @dataclass(frozen=True)
@@ -132,6 +143,89 @@ async def _create_and_append_event(
             mutate_before_append(event)
         await asyncio.to_thread(get_runtime_journal().append, event)
         return event
+
+
+async def append_non_executable_event_batch(
+    events: Iterable[RuntimeEvent],
+    *,
+    journal,
+    session_id: str | None = None,
+    fanout: Callable[[RuntimeEvent], Awaitable[None] | None] | None = None,
+) -> list[RuntimeEvent]:
+    """Append a prebuilt non-executable RuntimeEvent batch under ws_bridge.
+
+    This readiness helper is intentionally isolated: callers must inject the
+    journal-like sink and optional fan-out callable. It does not call
+    get_runtime_journal(), mutate RuntimeAuthority, create events, allocate
+    sequence numbers, or touch the orchestrator/executor/tool layers.
+    """
+
+    event_batch = list(events)
+    if session_id is not None:
+        for event in event_batch:
+            if event.session_id is None:
+                event.session_id = session_id
+    _validate_non_executable_event_batch(event_batch)
+
+    appended: list[RuntimeEvent] = []
+    async with _journal_emit_lock:
+        for event in event_batch:
+            persisted = await asyncio.to_thread(journal.append, event)
+            appended.append(persisted)
+
+    if fanout is not None:
+        for event in appended:
+            maybe_awaitable = fanout(event)
+            if maybe_awaitable is not None:
+                await maybe_awaitable
+
+    return appended
+
+
+def _validate_non_executable_event_batch(events: list[RuntimeEvent]) -> None:
+    if not events:
+        raise ValueError("non-executable event batch cannot be empty")
+
+    seen_sequences: set[int] = set()
+    previous_sequence: int | None = None
+    for event in events:
+        if not isinstance(event, RuntimeEvent):
+            raise TypeError("non-executable event batch accepts RuntimeEvent objects only")
+        if event.type in _NON_EXECUTABLE_BATCH_FORBIDDEN_EVENT_TYPES:
+            raise ValueError(f"non-executable event batch cannot append {event.type}")
+        if event.type != ProtocolEventType(event.type).value:
+            raise ValueError(f"non-canonical protocol event type: {event.type}")
+        if event.sequence_num in seen_sequences:
+            raise ValueError(f"duplicate sequence_num in non-executable event batch: {event.sequence_num}")
+        if previous_sequence is not None and event.sequence_num <= previous_sequence:
+            raise ValueError("non-executable event batch must be strictly sequence ordered")
+        seen_sequences.add(event.sequence_num)
+        previous_sequence = event.sequence_num
+
+        payload = event.payload
+        if payload.get("not_executed") is not True:
+            raise ValueError("non-executable event payload must set not_executed=true")
+        for required in ("command_id", "trace_id", "decision_status", "risk_level", "policy_rule", "reason"):
+            if not payload.get(required):
+                raise ValueError(f"non-executable event payload missing {required}")
+        if event.causation_id is None:
+            raise ValueError("non-executable event must preserve causation_id")
+        _assert_non_executable_payload_shape(payload)
+
+
+def _assert_non_executable_payload_shape(value: Any) -> None:
+    if isinstance(value, dict):
+        for key in _NON_EXECUTABLE_BATCH_FORBIDDEN_PAYLOAD_KEYS:
+            if key in value and value[key] is not None:
+                raise ValueError(f"non-executable payload cannot include {key}")
+        for key in _NON_EXECUTABLE_BATCH_FORBIDDEN_TRUTHY_KEYS:
+            if value.get(key) is True:
+                raise ValueError(f"non-executable payload cannot set {key}=true")
+        for nested in value.values():
+            _assert_non_executable_payload_shape(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            _assert_non_executable_payload_shape(nested)
 
 # ─── LIFECYCLE ──────────────────────────────────────────────────────
 

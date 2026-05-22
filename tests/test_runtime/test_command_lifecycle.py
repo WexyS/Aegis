@@ -8,8 +8,21 @@ import pytest
 from aegis.core.commands import ApprovalManager, get_approval_manager, restore_approval_manager_from_journal
 from aegis.core.constants import ActionStatus, CommandStatus, IntentSource, RiskLevel
 from aegis.core.context import ExecutionContext
+from aegis.core.guard_policy import classify_intent_risk as real_classify_intent_risk
+from aegis.core.non_executable_runtime_adapter import (
+    project_non_executable_events_to_action_timeline,
+    project_non_executable_events_to_snapshot,
+)
+from aegis.core.protocol import ProtocolEventType, RuntimeEvent
 from aegis.core.runtime_authority import get_runtime_authority
-from aegis.core.schemas import ActionResult, CommandRequest, ExecutionEvidence, IntentResult, ReliabilityMetrics
+from aegis.core.schemas import (
+    ActionResult,
+    CommandRequest,
+    ExecutionEvidence,
+    GuardResult,
+    IntentResult,
+    ReliabilityMetrics,
+)
 from aegis.orchestrator import orchestrator as orchestrator_module
 from aegis.orchestrator.orchestrator import Orchestrator
 
@@ -52,6 +65,47 @@ class SuccessfulExecutor:
             output="ok",
             metrics=ReliabilityMetrics(determinism_score=1.0),
         )
+
+
+class SpyExecutor:
+    def __init__(self) -> None:
+        self.calls: list[tuple[IntentResult, ExecutionContext]] = []
+
+    async def execute(
+        self,
+        intent_result: IntentResult,
+        ctx: ExecutionContext,
+        cancellation_token=None,
+    ) -> ActionResult:
+        self.calls.append((intent_result, ctx))
+        return ActionResult(
+            action=intent_result.intent,
+            params=intent_result.params,
+            status=ActionStatus.EXECUTED,
+            success=True,
+            output="ok",
+            metrics=ReliabilityMetrics(determinism_score=1.0),
+        )
+
+
+class AllowGuard:
+    def evaluate(self, intent: IntentResult) -> GuardResult:
+        return GuardResult(
+            allowed=True,
+            reason="test allows legacy guard so boundary classifier is isolated",
+            risk=intent.risk,
+            requires_approval=False,
+            warnings=[],
+        )
+
+
+class NonExecutableBoundaryJournal:
+    def __init__(self) -> None:
+        self.events: list[RuntimeEvent] = []
+
+    def append(self, event: RuntimeEvent) -> RuntimeEvent:
+        self.events.append(event)
+        return event
 
 
 class WaitingExecutor:
@@ -437,6 +491,204 @@ def test_restores_approval_manager_from_command_events_when_snapshot_missing() -
 @pytest.fixture(autouse=True)
 def reset_approval_manager() -> None:
     get_approval_manager().reset_for_tests()
+
+
+def _boundary_context(journal: NonExecutableBoundaryJournal, *, start: int = 100) -> dict:
+    return {
+        "enable_non_executable_guard_boundary": True,
+        "non_executable_journal": journal,
+        "non_executable_starting_sequence_num": start,
+    }
+
+
+def _event_types(events: list[RuntimeEvent]) -> list[str]:
+    return [event.type for event in events]
+
+
+def _assert_non_executable_event_shape(events: list[RuntimeEvent]) -> None:
+    assert events
+    sequences = [event.sequence_num for event in events]
+    assert sequences == sorted(sequences)
+    assert len(sequences) == len(set(sequences))
+
+    forbidden_event_types = {
+        ProtocolEventType.ACTION_STARTED.value,
+        ProtocolEventType.ACTION_COMPLETED.value,
+        ProtocolEventType.ACTION_FAILED.value,
+        ProtocolEventType.APPROVAL_REQUIRED.value,
+    }
+    assert not forbidden_event_types.intersection(_event_types(events))
+    for event in events:
+        assert event.causation_id
+        payload = event.payload
+        assert payload["not_executed"] is True
+        assert payload["command_id"]
+        assert payload["trace_id"]
+        assert payload["decision_status"]
+        assert payload["risk_level"]
+        assert payload["policy_rule"]
+        assert payload["reason"]
+        assert "execution_evidence" not in payload
+        assert payload.get("success") is not True
+        assert payload.get("verified") is not True
+        assert payload.get("action_started") is not True
+
+
+def _force_guard_decision(monkeypatch: pytest.MonkeyPatch, intent: str, params: dict) -> None:
+    def fake_classify_intent_risk(
+        _intent: str,
+        _params: dict | None,
+        context: dict | None = None,
+    ):
+        return real_classify_intent_risk(intent, params, context)
+
+    monkeypatch.setattr(
+        orchestrator_module,
+        "classify_intent_risk",
+        fake_classify_intent_risk,
+        raising=False,
+    )
+
+
+def _spy_action_started(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
+    calls: list[dict] = []
+
+    async def fake_emit_action_started(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(orchestrator_module.ws_bridge, "emit_action_started", fake_emit_action_started)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_non_executable_boundary_ready_intent_still_reaches_executor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor = SpyExecutor()
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+    orchestrator = build_orchestrator(
+        intent_result("read_file", RiskLevel.LOW, {"path": "README.md"}),
+        executor=executor,
+    )
+    orchestrator.guard = AllowGuard()
+
+    response = await orchestrator.process(
+        CommandRequest(text="read README.md", context=_boundary_context(journal))
+    )
+
+    assert response.status == CommandStatus.EXECUTED
+    assert len(executor.calls) == 1
+    assert len(action_started_calls) == 1
+    assert journal.events == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("forced_intent", "forced_params", "expected_status", "expected_events", "projection_key"),
+    [
+        (
+            "write_file",
+            {"path": "scratch/out.txt", "content": "unsafe write"},
+            CommandStatus.PENDING_APPROVAL,
+            [
+                ProtocolEventType.COMMAND_CLASSIFIED.value,
+                ProtocolEventType.APPROVAL_REQUESTED.value,
+                ProtocolEventType.COMMAND_WAITING_FOR_APPROVAL.value,
+            ],
+            "pending_approval",
+        ),
+        (
+            "read_file",
+            {},
+            CommandStatus.UNKNOWN,
+            [
+                ProtocolEventType.COMMAND_CLASSIFIED.value,
+                ProtocolEventType.CLARIFICATION_REQUESTED.value,
+                ProtocolEventType.COMMAND_WAITING_FOR_CLARIFICATION.value,
+            ],
+            "pending_clarification",
+        ),
+        (
+            "run_command",
+            {"command": "rm -rf /"},
+            CommandStatus.BLOCKED,
+            [
+                ProtocolEventType.COMMAND_CLASSIFIED.value,
+                ProtocolEventType.ACTION_BLOCKED_BY_POLICY.value,
+                ProtocolEventType.COMMAND_BLOCKED.value,
+            ],
+            "last_blocked_action",
+        ),
+    ],
+)
+async def test_non_executable_boundary_prevents_executor_and_action_started(
+    monkeypatch: pytest.MonkeyPatch,
+    forced_intent: str,
+    forced_params: dict,
+    expected_status: CommandStatus,
+    expected_events: list[str],
+    projection_key: str,
+) -> None:
+    executor = SpyExecutor()
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+    _force_guard_decision(monkeypatch, forced_intent, forced_params)
+    orchestrator = build_orchestrator(
+        intent_result("read_file", RiskLevel.LOW, {"path": "README.md"}),
+        executor=executor,
+    )
+    orchestrator.guard = AllowGuard()
+
+    response = await orchestrator.process(
+        CommandRequest(text="read README.md", context=_boundary_context(journal))
+    )
+
+    assert response.status == expected_status
+    assert executor.calls == []
+    assert action_started_calls == []
+    assert _event_types(journal.events) == expected_events
+    _assert_non_executable_event_shape(journal.events)
+    snapshot_patch = project_non_executable_events_to_snapshot(journal.events)
+    assert snapshot_patch[projection_key] is not None
+    assert "execution_evidence" not in snapshot_patch
+    timeline_entries = project_non_executable_events_to_action_timeline(journal.events)
+    assert timeline_entries
+    assert all("execution_evidence" not in entry for entry in timeline_entries)
+
+
+@pytest.mark.asyncio
+async def test_generic_click_boundary_quarantines_before_executor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor = SpyExecutor()
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+    orchestrator = build_orchestrator(intent_result("click", RiskLevel.LOW, {}), executor=executor)
+    orchestrator.guard = AllowGuard()
+
+    response = await orchestrator.process(
+        CommandRequest(text="click", context=_boundary_context(journal, start=200))
+    )
+
+    assert response.status == CommandStatus.UNKNOWN
+    assert executor.calls == []
+    assert action_started_calls == []
+    assert _event_types(journal.events) == [
+        ProtocolEventType.COMMAND_CLASSIFIED.value,
+        ProtocolEventType.CLARIFICATION_REQUESTED.value,
+        ProtocolEventType.COMMAND_WAITING_FOR_CLARIFICATION.value,
+    ]
+    _assert_non_executable_event_shape(journal.events)
+    assert all(event.type != ProtocolEventType.APPROVAL_REQUIRED.value for event in journal.events)
+    reasons = " ".join(str(event.payload.get("reason", "")) for event in journal.events)
+    policy_rules = " ".join(str(event.payload.get("policy_rule", "")) for event in journal.events)
+    assert "generic click quarantine" in reasons
+    assert "target resolution" in reasons
+    assert "generic_click.quarantined" in policy_rules
+    timeline_entries = project_non_executable_events_to_action_timeline(journal.events)
+    assert [entry["kind"] for entry in timeline_entries] == ["clarification_requested"]
+    assert all("execution_evidence" not in entry for entry in timeline_entries)
 
 
 @pytest.mark.asyncio

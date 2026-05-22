@@ -49,6 +49,7 @@ export const EventTypeEnum = z.enum([
   'COMMAND_RECEIVED',
   'INTENT_PARSED',
   'PLAN_CREATED',
+  'COMMAND_CLASSIFIED',
 
   // Action Lifecycle
   'ACTION_STARTED',
@@ -58,10 +59,18 @@ export const EventTypeEnum = z.enum([
 
   // Guard
   'GUARD_EVALUATED',
+  'ACTION_BLOCKED_BY_POLICY',
 
   // Command Governance
   'COMMAND_STATUS_CHANGED',
   'APPROVAL_REQUIRED',
+  'APPROVAL_REQUESTED',
+  'APPROVAL_RESOLVED',
+  'APPROVAL_EXPIRED',
+  'CLARIFICATION_REQUESTED',
+  'CLARIFICATION_RESOLVED',
+  'COMMAND_WAITING_FOR_APPROVAL',
+  'COMMAND_WAITING_FOR_CLARIFICATION',
   'COMMAND_APPROVED',
   'COMMAND_REJECTED',
   'COMMAND_CANCELLED',
@@ -350,6 +359,118 @@ export const GuardPayload = z.object({
   warnings: z.array(z.string()).optional(),
 });
 
+const RiskLevelPayload = z.enum(['none', 'low', 'medium', 'high', 'critical']);
+const DecisionStatusPayload = z.enum([
+  'ready',
+  'clarification_required',
+  'approval_required',
+  'blocked',
+  'unverified',
+  'failed',
+  'cancelled',
+]);
+
+export const CommandClassifiedPayload = z.object({
+  command_id: z.string(),
+  trace_id: z.string(),
+  decision_status: DecisionStatusPayload,
+  risk_level: RiskLevelPayload,
+  policy_rule: z.string(),
+  reason: z.string(),
+  not_executed: z.literal(true),
+}).strict();
+
+export const ApprovalRequestedPayload = z.object({
+  approval_id: z.string(),
+  command_id: z.string(),
+  trace_id: z.string(),
+  proposed_action: z.record(z.string(), z.unknown()),
+  normalized_params: z.record(z.string(), z.unknown()),
+  risk_level: RiskLevelPayload,
+  reason: z.string(),
+  required_confirmation_mode: z.enum(['ui', 'voice', 'typed_phrase', 'both']),
+  approval_scope: z.enum(['single_action', 'command_step', 'full_plan']),
+  approval_status: z.literal('pending'),
+  expected_effect: z.string().optional(),
+  possible_side_effects: z.array(z.string()).default([]),
+  rollback_note: z.string().optional(),
+  evidence_refs: z.array(z.record(z.string(), z.unknown())).default([]),
+  expires_at: z.string().nullable().optional(),
+  not_executed: z.literal(true),
+}).strict();
+
+export const ClarificationRequestedPayload = z.object({
+  clarification_id: z.string(),
+  command_id: z.string(),
+  trace_id: z.string(),
+  original_user_text: z.string(),
+  ambiguity_type: z.string(),
+  question: z.string(),
+  options: z.array(z.record(z.string(), z.unknown())).default([]),
+  recommended_default: z.record(z.string(), z.unknown()).nullable().optional(),
+  blocked_until_answer: z.literal(true),
+  not_executed: z.literal(true),
+}).strict();
+
+export const ActionBlockedByPolicyPayload = z.object({
+  blocked_id: z.string(),
+  command_id: z.string(),
+  trace_id: z.string(),
+  source_intent: z.record(z.string(), z.unknown()),
+  policy_rule: z.string(),
+  risk_level: RiskLevelPayload,
+  reason: z.string(),
+  user_message: z.string(),
+  retry_allowed: z.boolean(),
+  safe_alternatives: z.array(z.record(z.string(), z.unknown())).default([]),
+  terminal_non_executed: z.literal(true),
+  not_executed: z.literal(true),
+}).strict();
+
+export const CommandWaitingForApprovalPayload = z.object({
+  command_id: z.string(),
+  trace_id: z.string(),
+  approval_id: z.string(),
+  command_status: z.literal('waiting_for_approval'),
+  not_executed: z.literal(true),
+}).strict();
+
+export const CommandWaitingForClarificationPayload = z.object({
+  command_id: z.string(),
+  trace_id: z.string(),
+  clarification_id: z.string(),
+  command_status: z.literal('waiting_for_clarification'),
+  not_executed: z.literal(true),
+}).strict();
+
+export const ApprovalResolvedPayload = z.object({
+  approval_id: z.string(),
+  command_id: z.string(),
+  trace_id: z.string(),
+  approval_status: z.enum(['approved', 'denied', 'expired', 'cancelled']),
+  resolver: z.string(),
+  resolved_at: z.union([z.string(), z.number()]),
+  not_executed: z.literal(true),
+}).strict();
+
+export const ApprovalExpiredPayload = z.object({
+  approval_id: z.string(),
+  command_id: z.string(),
+  trace_id: z.string(),
+  approval_status: z.literal('expired'),
+  terminal_non_executed: z.literal(true),
+  not_executed: z.literal(true),
+}).strict();
+
+export const ClarificationResolvedPayload = z.object({
+  clarification_id: z.string(),
+  command_id: z.string(),
+  trace_id: z.string(),
+  response: z.unknown(),
+  resolved_at: z.union([z.string(), z.number()]),
+  not_executed: z.literal(true),
+}).strict();
+
 export const CommandRecordPayload = z.object({
   command_id: z.string(),
   text: z.string(),
@@ -446,6 +567,7 @@ export const HandshakePayload = z.object({
 export const PayloadRegistry: Partial<Record<EventTypeValue, z.ZodTypeAny>> = {
   COMMAND_RECEIVED: CommandReceivedPayload,
   INTENT_PARSED: IntentParsedPayload,
+  COMMAND_CLASSIFIED: CommandClassifiedPayload,
   ACTION_STARTED: ActionStartedPayload,
   ACTION_COMPLETED: ActionCompletedPayload,
   ACTION_FAILED: ActionFailedPayload,
@@ -459,12 +581,20 @@ export const PayloadRegistry: Partial<Record<EventTypeValue, z.ZodTypeAny>> = {
   VERIFICATION_FAILED: VerificationPayload,
   RECOVERY_TRIGGERED: RecoveryPayload,
   GUARD_EVALUATED: GuardPayload,
+  ACTION_BLOCKED_BY_POLICY: ActionBlockedByPolicyPayload,
   COMMAND_STATUS_CHANGED: CommandStatusPayload,
   COMMAND_BLOCKED: CommandStatusPayload,
   COMMAND_CANCELLED: CommandStatusPayload,
+  COMMAND_WAITING_FOR_APPROVAL: CommandWaitingForApprovalPayload,
+  COMMAND_WAITING_FOR_CLARIFICATION: CommandWaitingForClarificationPayload,
   COMMAND_APPROVED: ApprovalRequiredPayload,
   COMMAND_REJECTED: ApprovalRequiredPayload,
   APPROVAL_REQUIRED: ApprovalRequiredPayload,
+  APPROVAL_REQUESTED: ApprovalRequestedPayload,
+  APPROVAL_RESOLVED: ApprovalResolvedPayload,
+  APPROVAL_EXPIRED: ApprovalExpiredPayload,
+  CLARIFICATION_REQUESTED: ClarificationRequestedPayload,
+  CLARIFICATION_RESOLVED: ClarificationResolvedPayload,
   MAINTENANCE_SCAN_STARTED: MaintenanceScanPayload,
   MAINTENANCE_SCAN_COMPLETED: MaintenanceScanPayload,
   PLAN_CREATED: PlanPayload,

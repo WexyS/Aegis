@@ -196,6 +196,30 @@ async def test_default_on_generic_click_that_button_is_non_executable(monkeypatc
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
+        "click that button",
+        "\u015funa t\u0131kla",
+        "buna t\u0131kla",
+        "brave a\u00e7 ve ilk sonuca t\u0131kla",
+        "chrome a\u00e7 ve ilk sonuca t\u0131kla",
+    ],
+)
+async def test_default_on_unresolved_click_examples_never_emit_executable_click_or_partial_open(
+    monkeypatch: pytest.MonkeyPatch,
+    text: str,
+) -> None:
+    _reload_default(monkeypatch)
+
+    results = await _parse(text)
+
+    _assert_non_executable_unknown(results)
+    if results[0].metadata.get("decomposition") == "deterministic":
+        _assert_non_ready_metadata(results[0], plan_status="clarification_required")
+
+
+@pytest.mark.asyncio
 async def test_default_on_unrelated_text_falls_back_to_legacy_parser(monkeypatch: pytest.MonkeyPatch) -> None:
     _reload_default(monkeypatch)
 

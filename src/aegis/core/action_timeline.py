@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Any, Iterable, Mapping
 
+from aegis.core.non_executable_runtime_adapter import project_non_executable_events_to_action_timeline
 from aegis.core.protocol import ProtocolEventType
 
 
@@ -50,11 +51,15 @@ def project_action_timeline(
 ) -> list[dict[str, Any]]:
     """Build a bounded action lifecycle projection from journal events."""
     records: OrderedDict[str, dict[str, Any]] = OrderedDict()
+    event_list = list(events)
 
-    for event in sorted(events, key=_event_sort_key):
-        if session_id and event.get("session_id") != session_id:
-            continue
+    scoped_events = [
+        event
+        for event in event_list
+        if not session_id or event.get("session_id") == session_id
+    ]
 
+    for event in sorted(scoped_events, key=_event_sort_key):
         event_type = str(event.get("type") or "")
         if event_type not in {
             ProtocolEventType.ACTION_STARTED.value,
@@ -134,5 +139,6 @@ def project_action_timeline(
     bounded_limit = max(int(limit), 0)
     if bounded_limit == 0:
         return []
-    bounded = list(records.values())[-bounded_limit:]
+    combined = list(records.values()) + project_non_executable_events_to_action_timeline(scoped_events)
+    bounded = sorted(combined, key=_event_sort_key)[-bounded_limit:]
     return bounded

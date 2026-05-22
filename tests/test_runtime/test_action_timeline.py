@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from aegis.core.action_timeline import project_action_timeline
+from aegis.core.guard_policy import classify_intent_risk
+from aegis.core.non_executable_runtime_adapter import build_non_executable_event_batch
 from aegis.core.protocol import ProtocolEventType, create_event
 
 
@@ -269,3 +271,90 @@ def test_action_timeline_preserves_explicit_empty_tool_name() -> None:
     timeline = project_action_timeline([started], session_id="session-one")
 
     assert timeline[0]["tool"] == ""
+
+
+def test_action_timeline_projects_non_executable_guard_entries() -> None:
+    approval = build_non_executable_event_batch(
+        classify_intent_risk(
+            "write_file",
+            {"path": "scratch/timeline.txt", "content": "hello"},
+            {"command_id": "cmd-approval", "trace_id": "trace-approval"},
+        ),
+        command_id="cmd-approval",
+        trace_id="trace-approval",
+        causation_id="plan-event",
+        starting_sequence_num=100,
+        timestamp_ms=1000,
+    )
+    clarification = build_non_executable_event_batch(
+        classify_intent_risk(
+            "click",
+            {},
+            {"command_id": "cmd-click", "trace_id": "trace-click", "raw_input": "click that button"},
+        ),
+        command_id="cmd-click",
+        trace_id="trace-click",
+        causation_id="plan-event",
+        starting_sequence_num=200,
+        timestamp_ms=2000,
+    )
+    blocked = build_non_executable_event_batch(
+        classify_intent_risk(
+            "run_command",
+            {"command": "rm -rf /"},
+            {"command_id": "cmd-blocked", "trace_id": "trace-blocked"},
+        ),
+        command_id="cmd-blocked",
+        trace_id="trace-blocked",
+        causation_id="plan-event",
+        starting_sequence_num=300,
+        timestamp_ms=3000,
+    )
+
+    events = [
+        *[event.to_dict() | {"session_id": "session-one"} for event in approval.events],
+        *[event.to_dict() | {"session_id": "session-one"} for event in clarification.events],
+        *[event.to_dict() | {"session_id": "session-one"} for event in blocked.events],
+    ]
+
+    timeline = project_action_timeline(events, session_id="session-one")
+
+    assert [entry["kind"] for entry in timeline] == [
+        "approval_requested",
+        "clarification_requested",
+        "blocked_by_policy",
+    ]
+    assert [entry["status"] for entry in timeline] == [
+        "approval_required",
+        "clarification_required",
+        "blocked",
+    ]
+    assert all(entry["not_executed"] is True for entry in timeline)
+    assert all("execution_evidence" not in entry for entry in timeline)
+    assert timeline[2]["terminal"] is True
+    assert timeline[2]["terminal_non_executed"] is True
+
+
+def test_action_timeline_keeps_non_executable_replay_sequence_order() -> None:
+    batch = build_non_executable_event_batch(
+        classify_intent_risk(
+            "click",
+            {},
+            {"command_id": "cmd-click", "trace_id": "trace-click", "raw_input": "click that button"},
+        ),
+        command_id="cmd-click",
+        trace_id="trace-click",
+        causation_id="plan-event",
+        starting_sequence_num=400,
+        timestamp_ms=1000,
+    )
+    events = [event.to_dict() | {"session_id": "session-one"} for event in batch.events]
+    events[0]["timestamp"] = 3000
+    events[1]["timestamp"] = 1000
+    events[2]["timestamp"] = 2000
+
+    timeline = project_action_timeline([events[2], events[0], events[1]], session_id="session-one")
+
+    assert [entry["kind"] for entry in timeline] == ["clarification_requested"]
+    assert timeline[0]["sequence_num"] == 401
+    assert timeline[0]["status"] == "clarification_required"
