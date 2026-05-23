@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import hashlib
 import json
+from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 from typing import Any
 
 
 CONTROL_PLANE_EVENT_TYPES = {"SNAPSHOT_CREATED", "SYSTEM_ONLINE"}
+MANIFEST_SCHEMA_VERSION = "runtime-journal-archive-compaction-manifest/1"
+SUPPORTED_MANIFEST_PLAN_MODES = {"dry_run", "archive_plan", "compact_plan"}
+EXECUTED_MANIFEST_MODES = {"executed_archive", "executed_compaction"}
 
 
 def scan_runtime_journal_snapshot_bloat(journal_path: str | Path) -> dict[str, Any]:
@@ -133,6 +139,128 @@ def scan_runtime_journal_snapshot_bloat(journal_path: str | Path) -> dict[str, A
     return report
 
 
+def build_runtime_journal_compaction_manifest(
+    journal_path: str | Path,
+    *,
+    mode: str = "dry_run",
+    operation_id: str | None = None,
+    created_at: str | None = None,
+    archive_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Build a dry-run archive/compaction manifest without mutating the journal.
+
+    The manifest is a planning contract only. It records the current journal
+    fingerprint, detected control-plane bloat, and the safety requirements a
+    future explicit archive/compaction operation must satisfy.
+    """
+
+    if mode in EXECUTED_MANIFEST_MODES:
+        raise ValueError(f"{mode} manifests require an executed operation and are not supported by dry-run planning")
+    if mode not in SUPPORTED_MANIFEST_PLAN_MODES:
+        raise ValueError(f"unsupported journal cleanup manifest mode: {mode}")
+
+    path = Path(journal_path)
+    scan = scan_runtime_journal_snapshot_bloat(path)
+    op_id = operation_id or f"journal-cleanup-{uuid4().hex}"
+    timestamp = created_at or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    archive_root = Path(archive_dir) if archive_dir is not None else path.parent / "archive"
+
+    exists = bool(scan["exists"])
+    has_control_plane_bloat = bool(scan["control_plane"]["event_count"])
+    has_parse_errors = bool(scan["parse_error_count"])
+    original_file_size = path.stat().st_size if exists else None
+    original_sha256 = _sha256_file(path) if exists else None
+
+    candidate_archive_path = None
+    candidate_compacted_journal_path = None
+    backup_path = None
+    excluded_categories: list[str] = []
+    retained_categories = ["runtime_event_journal_events"]
+    warnings: list[str] = []
+    blockers: list[str] = []
+
+    if not exists:
+        blockers.append("journal_missing")
+        recommended_operation = "no_op"
+        hash_chain_strategy = "not_applicable"
+        sequence_strategy = "not_applicable"
+    elif not has_control_plane_bloat:
+        recommended_operation = "no_op"
+        hash_chain_strategy = "preserved"
+        sequence_strategy = "preserved"
+        warnings.append("No historical control-plane bloat detected; compaction is not needed.")
+    else:
+        recommended_operation = "archive_or_compact_with_manifest"
+        hash_chain_strategy = "explicit_boundary"
+        sequence_strategy = "compacted_with_boundary"
+        excluded_categories = sorted(CONTROL_PLANE_EVENT_TYPES)
+        candidate_archive_path = str(archive_root / f"{path.stem}_{op_id}_original{path.suffix}")
+        backup_path = str(archive_root / f"{path.stem}_{op_id}_backup{path.suffix}")
+        candidate_compacted_journal_path = str(path.with_name(f"{path.stem}_{op_id}_compacted{path.suffix}"))
+        warnings.extend(scan["safety_notes"])
+        warnings.append("In-place compaction is forbidden; future execution must write a separate compacted file.")
+
+    if has_parse_errors:
+        blockers.append("journal_parse_errors")
+        warnings.append("Journal parse errors must be resolved before archive or compaction execution.")
+
+    if mode == "compact_plan" and not has_control_plane_bloat:
+        blockers.append("nothing_to_compact")
+    if mode in {"archive_plan", "compact_plan"} and not exists:
+        blockers.append("cannot_plan_missing_journal")
+
+    return {
+        "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
+        "operation_id": op_id,
+        "created_at": timestamp,
+        "mode": mode,
+        "original_journal_path": str(path),
+        "original_file_size": original_file_size,
+        "original_sha256": original_sha256,
+        "total_event_count": scan["event_count"],
+        "first_sequence": scan["first_sequence_num"],
+        "last_sequence": scan["last_sequence_num"],
+        "detected_control_plane_event_counts": {
+            "SNAPSHOT_CREATED": scan["control_plane"]["snapshot_created_count"],
+            "SYSTEM_ONLINE": scan["control_plane"]["system_online_count"],
+            "total": scan["control_plane"]["event_count"],
+        },
+        "detected_control_plane_byte_impact": {
+            "SNAPSHOT_CREATED": scan["control_plane"]["snapshot_created_bytes"],
+            "SYSTEM_ONLINE": scan["control_plane"]["system_online_bytes"],
+            "total": scan["control_plane"]["total_bytes"],
+            "largest_snapshot_bytes": scan["control_plane"]["largest_snapshot_bytes"],
+            "recursive_snapshot_risk_count": scan["control_plane"]["recursive_snapshot_risk_count"],
+        },
+        "candidate_archive_path": candidate_archive_path,
+        "candidate_compacted_journal_path": candidate_compacted_journal_path,
+        "backup_path": backup_path,
+        "removed_or_excluded_event_categories": excluded_categories,
+        "retained_event_categories": retained_categories,
+        "hash_chain_handling_strategy": hash_chain_strategy,
+        "sequence_handling_strategy": sequence_strategy,
+        "replay_validation_requirements": [
+            "verify original journal hash before execution",
+            "verify compacted journal hash after execution if compaction is implemented",
+            "verify replay preserves executable, verification, and evidence events",
+            "verify sequence ordering is explicit across any compaction boundary",
+            "verify historical control-plane events remain excluded from live missed_events replay",
+        ],
+        "evidence_audit_preservation_statement": (
+            "Cleanup planning must not remove, rewrite, downgrade, or hide ACTION_FAILED, "
+            "VERIFICATION_FAILED, execution_evidence, success, or verified fields."
+        ),
+        "destructive_default": False,
+        "requires_explicit_operator_confirmation": True,
+        "in_place_compaction_allowed": False,
+        "blocked_operations": ["in_place_removal", "in_place_compaction"],
+        "recommended_operation": recommended_operation,
+        "warnings": warnings,
+        "blockers": blockers,
+        "scan": scan,
+    }
+
+
 def _coerce_sequence(value: Any) -> int | None:
     try:
         return int(value)
@@ -175,3 +303,11 @@ def _contains_control_plane_event(value: Any) -> bool:
     if isinstance(value, list):
         return any(_contains_control_plane_event(item) for item in value)
     return False
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()

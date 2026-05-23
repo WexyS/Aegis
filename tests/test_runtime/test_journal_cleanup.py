@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
-from aegis.core.journal_cleanup import scan_runtime_journal_snapshot_bloat
+import pytest
+
+from aegis.core.journal_cleanup import (
+    MANIFEST_SCHEMA_VERSION,
+    build_runtime_journal_compaction_manifest,
+    scan_runtime_journal_snapshot_bloat,
+)
 
 
 def _write_jsonl(path: Path, events: list[dict]) -> None:
@@ -186,3 +193,175 @@ def test_snapshot_bloat_scan_reports_clean_journal_without_cleanup_recommendatio
     assert report["hash_chain"]["removal_would_break_hash_chain"] is False
     assert report["recommended_strategy"] == "no_control_plane_bloat_detected"
     assert report["manifest_template"] is None
+
+
+def test_compaction_manifest_dry_run_includes_required_safety_contract(tmp_path) -> None:
+    journal_path = tmp_path / "runtime_events.jsonl"
+    events = [
+        {
+            "type": "COMMAND_RECEIVED",
+            "sequence_num": 1,
+            "event_hash": "hash-1",
+            "previous_hash": "genesis",
+            "payload": {"text": "open notepad"},
+        },
+        {
+            "type": "SYSTEM_ONLINE",
+            "sequence_num": 2,
+            "event_hash": "hash-2",
+            "previous_hash": "hash-1",
+            "payload": {"session_id": "session-old"},
+        },
+        {
+            "type": "SNAPSHOT_CREATED",
+            "sequence_num": 3,
+            "event_hash": "hash-3",
+            "previous_hash": "hash-2",
+            "payload": {
+                "missed_events": [{"type": "SYSTEM_ONLINE", "sequence_num": 2}],
+                "runtime": {"snapshot": True},
+            },
+        },
+        {
+            "type": "ACTION_FAILED",
+            "sequence_num": 4,
+            "event_hash": "hash-4",
+            "previous_hash": "hash-3",
+            "payload": {
+                "action_id": "action-1",
+                "success": False,
+                "verified": False,
+                "execution_evidence": {"verification_state": "failed"},
+            },
+        },
+    ]
+    _write_jsonl(journal_path, events)
+    before = journal_path.read_bytes()
+
+    manifest = build_runtime_journal_compaction_manifest(
+        journal_path,
+        operation_id="op-test",
+        created_at="2026-05-24T00:00:00Z",
+        archive_dir=tmp_path / "archive",
+    )
+
+    assert journal_path.read_bytes() == before
+    assert manifest["manifest_schema_version"] == MANIFEST_SCHEMA_VERSION
+    assert manifest["operation_id"] == "op-test"
+    assert manifest["created_at"] == "2026-05-24T00:00:00Z"
+    assert manifest["mode"] == "dry_run"
+    assert manifest["original_journal_path"] == str(journal_path)
+    assert manifest["original_file_size"] == len(before)
+    assert manifest["original_sha256"] == hashlib.sha256(before).hexdigest()
+    assert manifest["total_event_count"] == 4
+    assert manifest["first_sequence"] == 1
+    assert manifest["last_sequence"] == 4
+    assert manifest["detected_control_plane_event_counts"] == {
+        "SNAPSHOT_CREATED": 1,
+        "SYSTEM_ONLINE": 1,
+        "total": 2,
+    }
+    assert manifest["detected_control_plane_byte_impact"]["total"] > 0
+    assert manifest["detected_control_plane_byte_impact"]["recursive_snapshot_risk_count"] == 1
+    assert manifest["candidate_archive_path"] == str(tmp_path / "archive" / "runtime_events_op-test_original.jsonl")
+    assert manifest["backup_path"] == str(tmp_path / "archive" / "runtime_events_op-test_backup.jsonl")
+    assert manifest["candidate_compacted_journal_path"] == str(tmp_path / "runtime_events_op-test_compacted.jsonl")
+    assert manifest["removed_or_excluded_event_categories"] == ["SNAPSHOT_CREATED", "SYSTEM_ONLINE"]
+    assert manifest["hash_chain_handling_strategy"] == "explicit_boundary"
+    assert manifest["sequence_handling_strategy"] == "compacted_with_boundary"
+    assert manifest["destructive_default"] is False
+    assert manifest["requires_explicit_operator_confirmation"] is True
+    assert manifest["in_place_compaction_allowed"] is False
+    assert "in_place_compaction" in manifest["blocked_operations"]
+    assert "execution_evidence" in manifest["evidence_audit_preservation_statement"]
+    assert "verify replay preserves executable, verification, and evidence events" in (
+        manifest["replay_validation_requirements"]
+    )
+
+
+def test_compaction_manifest_clean_journal_is_no_op_plan(tmp_path) -> None:
+    journal_path = tmp_path / "runtime_events.jsonl"
+    _write_jsonl(
+        journal_path,
+        [
+            {
+                "type": "COMMAND_RECEIVED",
+                "sequence_num": 10,
+                "event_hash": "hash-10",
+                "previous_hash": "genesis",
+                "payload": {"text": "read README.md"},
+            },
+            {
+                "type": "ACTION_COMPLETED",
+                "sequence_num": 11,
+                "event_hash": "hash-11",
+                "previous_hash": "hash-10",
+                "payload": {"action_id": "action-1", "success": True},
+            },
+        ],
+    )
+
+    manifest = build_runtime_journal_compaction_manifest(
+        journal_path,
+        operation_id="op-clean",
+        created_at="2026-05-24T00:00:00Z",
+    )
+
+    assert manifest["recommended_operation"] == "no_op"
+    assert manifest["candidate_archive_path"] is None
+    assert manifest["candidate_compacted_journal_path"] is None
+    assert manifest["backup_path"] is None
+    assert manifest["removed_or_excluded_event_categories"] == []
+    assert manifest["hash_chain_handling_strategy"] == "preserved"
+    assert manifest["sequence_handling_strategy"] == "preserved"
+    assert manifest["destructive_default"] is False
+    assert manifest["requires_explicit_operator_confirmation"] is True
+    assert manifest["blockers"] == []
+
+
+def test_compaction_manifest_missing_journal_fails_safely(tmp_path) -> None:
+    journal_path = tmp_path / "missing_runtime_events.jsonl"
+
+    manifest = build_runtime_journal_compaction_manifest(
+        journal_path,
+        mode="compact_plan",
+        operation_id="op-missing",
+        created_at="2026-05-24T00:00:00Z",
+    )
+
+    assert manifest["original_file_size"] is None
+    assert manifest["original_sha256"] is None
+    assert manifest["recommended_operation"] == "no_op"
+    assert manifest["hash_chain_handling_strategy"] == "not_applicable"
+    assert manifest["sequence_handling_strategy"] == "not_applicable"
+    assert "journal_missing" in manifest["blockers"]
+    assert "cannot_plan_missing_journal" in manifest["blockers"]
+    assert manifest["destructive_default"] is False
+    assert manifest["in_place_compaction_allowed"] is False
+
+
+def test_compaction_manifest_malformed_journal_blocks_future_execution(tmp_path) -> None:
+    journal_path = tmp_path / "runtime_events.jsonl"
+    journal_path.write_text(
+        json.dumps({"type": "COMMAND_RECEIVED", "sequence_num": 1, "payload": {}}) + "\n{not-json}\n",
+        encoding="utf-8",
+    )
+
+    manifest = build_runtime_journal_compaction_manifest(
+        journal_path,
+        operation_id="op-malformed",
+        created_at="2026-05-24T00:00:00Z",
+    )
+
+    assert manifest["scan"]["parse_error_count"] == 1
+    assert "journal_parse_errors" in manifest["blockers"]
+    assert any("parse errors" in warning for warning in manifest["warnings"])
+    assert manifest["destructive_default"] is False
+
+
+def test_compaction_manifest_rejects_executed_modes_in_dry_run_planner(tmp_path) -> None:
+    journal_path = tmp_path / "runtime_events.jsonl"
+    _write_jsonl(journal_path, [])
+
+    with pytest.raises(ValueError, match="require an executed operation"):
+        build_runtime_journal_compaction_manifest(journal_path, mode="executed_compaction")
