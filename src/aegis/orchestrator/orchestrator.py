@@ -12,7 +12,6 @@ from aegis.core.commands import CancellationToken, get_approval_manager
 from aegis.core.constants import ActionStatus, CommandStatus, EventType, ExecutionMode, RiskLevel
 from aegis.core.evidence_audit import audit_action_evidence
 from aegis.core.guard_policy import classify_intent_risk
-from aegis.core.non_executable_runtime_adapter import build_non_executable_event_batch
 from aegis.core.schemas import (
     ActionResult,
     CommandRequest,
@@ -69,6 +68,20 @@ SIDE_EFFECT_PROOF_KEYS = {
     "type_evidence",
     "write_evidence",
 }
+
+
+def _is_generic_click_intent(intent: IntentResult) -> bool:
+    return intent.intent == "click"
+
+
+def _non_executable_command_status(decision_status: DecisionStatus) -> CommandStatus:
+    if decision_status == DecisionStatus.APPROVAL_REQUIRED:
+        return CommandStatus.PENDING_APPROVAL
+    if decision_status == DecisionStatus.CLARIFICATION_REQUIRED:
+        return CommandStatus.WAITING_FOR_CLARIFICATION
+    if decision_status == DecisionStatus.BLOCKED:
+        return CommandStatus.BLOCKED
+    return CommandStatus.UNKNOWN
 
 
 def _highest_risk_from_guards(guard_events: list[Dict[str, Any]]) -> RiskLevel:
@@ -286,6 +299,90 @@ class Orchestrator:
                 fsm_state = to_state
             else:
                 fsm_state = ws_bridge.get_runtime_authority(ws_bridge._session_id).current_state().value
+
+        async def quarantine_non_executable_intent(
+            intent: IntentResult,
+            step_ctx: ExecutionContext,
+        ) -> CommandResponse | None:
+            action_id = str(step_ctx.span_id)
+            guard_decision = classify_intent_risk(
+                intent.intent,
+                intent.params,
+                {
+                    "command_id": command_id,
+                    "trace_id": str(ctx.trace_id),
+                    "span_id": str(step_ctx.span_id),
+                    "action_id": action_id,
+                    "original_user_text": current_goal,
+                    "approval_granted": approval_granted,
+                },
+            )
+            if guard_decision.decision_status == DecisionStatus.READY:
+                return None
+
+            non_executable_guard_event = {
+                "allowed": False,
+                "reason": guard_decision.reason,
+                "risk": guard_decision.risk_level.value,
+                "requires_approval": guard_decision.requires_approval,
+                "requires_clarification": guard_decision.requires_clarification,
+                "blocked": guard_decision.blocked,
+                "decision_status": guard_decision.decision_status.value,
+                "policy_rule": guard_decision.policy_rule,
+            }
+            guard_events.append(non_executable_guard_event)
+            non_executable_journal = request.context.get("non_executable_journal")
+            await ws_bridge.append_non_executable_decision(
+                guard_decision,
+                command_id=command_id,
+                trace_id=str(ctx.trace_id),
+                causation_id=str(step_ctx.span_id),
+                span_id=str(step_ctx.span_id),
+                action_id=action_id,
+                journal=non_executable_journal,
+                session_id=str(request.session_id) if request.session_id else None,
+                fanout=request.context.get("non_executable_fanout"),
+            )
+
+            response_status = _non_executable_command_status(guard_decision.decision_status)
+            if guard_decision.decision_status == DecisionStatus.BLOCKED:
+                all_actions.append(ActionResult(
+                    action=intent.intent,
+                    params=intent.params,
+                    status=ActionStatus.BLOCKED,
+                    success=False,
+                    output=guard_decision.reason,
+                    metadata={
+                        "not_executed": True,
+                        "decision_status": guard_decision.decision_status.value,
+                        "policy_rule": guard_decision.policy_rule,
+                    },
+                ))
+                await transition("FAILED", reason=guard_decision.reason)
+            else:
+                await transition(
+                    "IDLE",
+                    reason=f"Command {guard_decision.decision_status.value}",
+                )
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            return CommandResponse(
+                trace_id=str(ctx.trace_id),
+                status=response_status,
+                intent=primary_intent,
+                message=guard_decision.reason,
+                actions=all_actions if response_status == CommandStatus.BLOCKED else [],
+                guard={
+                    "allowed": False,
+                    "reason": guard_decision.reason,
+                    "risk": guard_decision.risk_level.value,
+                    "warnings": all_warnings,
+                    "evaluations": guard_events,
+                },
+                warnings=all_warnings,
+                timestamp=datetime.now(timezone.utc).isoformat() + "Z",
+                duration_ms=duration_ms,
+            )
         
         # 1. CAPABILITY ROUTING (9B Decision)
         routing = await self.router.route(request)
@@ -370,6 +467,19 @@ class Orchestrator:
                 ))
                 await transition("FAILED", reason="Command cancelled before execution")
                 plan = []
+
+            generic_click_index = next(
+                (i for i, intent in enumerate(plan) if _is_generic_click_intent(intent)),
+                None,
+            )
+            if generic_click_index is not None:
+                click_step_ctx = ctx.create_child(step_index=generic_click_index)
+                response = await quarantine_non_executable_intent(
+                    plan[generic_click_index],
+                    click_step_ctx,
+                )
+                if response is not None:
+                    return response
 
             if plan:
                 preflight_block: str | None = None
@@ -561,93 +671,9 @@ class Orchestrator:
 
                 action_id = str(step_ctx.span_id)
                 if request.context.get("enable_non_executable_guard_boundary"):
-                    guard_decision = classify_intent_risk(
-                        intent.intent,
-                        intent.params,
-                        {
-                            "command_id": command_id,
-                            "trace_id": str(ctx.trace_id),
-                            "span_id": str(step_ctx.span_id),
-                            "action_id": action_id,
-                            "original_user_text": current_goal,
-                            "approval_granted": approval_granted,
-                        },
-                    )
-                    if guard_decision.decision_status != DecisionStatus.READY:
-                        non_executable_guard_event = {
-                            "allowed": False,
-                            "reason": guard_decision.reason,
-                            "risk": guard_decision.risk_level.value,
-                            "requires_approval": guard_decision.requires_approval,
-                            "requires_clarification": guard_decision.requires_clarification,
-                            "blocked": guard_decision.blocked,
-                            "decision_status": guard_decision.decision_status.value,
-                            "policy_rule": guard_decision.policy_rule,
-                        }
-                        guard_events.append(non_executable_guard_event)
-                        batch = build_non_executable_event_batch(
-                            guard_decision,
-                            command_id=command_id,
-                            trace_id=str(ctx.trace_id),
-                            causation_id=str(step_ctx.span_id),
-                            starting_sequence_num=int(
-                                request.context.get("non_executable_starting_sequence_num", 1)
-                            ),
-                            timestamp_ms=int(time.time() * 1000),
-                            span_id=str(step_ctx.span_id),
-                            action_id=action_id,
-                        )
-                        non_executable_journal = request.context.get("non_executable_journal")
-                        if non_executable_journal is not None:
-                            await ws_bridge.append_non_executable_event_batch(
-                                batch.events,
-                                journal=non_executable_journal,
-                                session_id=str(request.session_id) if request.session_id else None,
-                            )
-
-                        if guard_decision.decision_status == DecisionStatus.BLOCKED:
-                            all_actions.append(ActionResult(
-                                action=intent.intent,
-                                params=intent.params,
-                                status=ActionStatus.BLOCKED,
-                                success=False,
-                                output=guard_decision.reason,
-                                metadata={
-                                    "not_executed": True,
-                                    "decision_status": guard_decision.decision_status.value,
-                                    "policy_rule": guard_decision.policy_rule,
-                                },
-                            ))
-                            await transition("FAILED", reason=guard_decision.reason)
-                            break
-
-                        response_status = (
-                            CommandStatus.PENDING_APPROVAL
-                            if guard_decision.decision_status == DecisionStatus.APPROVAL_REQUIRED
-                            else CommandStatus.UNKNOWN
-                        )
-                        await transition(
-                            "IDLE",
-                            reason=f"Command {guard_decision.decision_status.value}",
-                        )
-                        duration_ms = (time.perf_counter() - start_time) * 1000
-                        return CommandResponse(
-                            trace_id=str(ctx.trace_id),
-                            status=response_status,
-                            intent=primary_intent,
-                            message=guard_decision.reason,
-                            actions=[],
-                            guard={
-                                "allowed": False,
-                                "reason": guard_decision.reason,
-                                "risk": guard_decision.risk_level.value,
-                                "warnings": all_warnings,
-                                "evaluations": guard_events,
-                            },
-                            warnings=all_warnings,
-                            timestamp=datetime.now(timezone.utc).isoformat() + "Z",
-                            duration_ms=duration_ms,
-                        )
+                    response = await quarantine_non_executable_intent(intent, step_ctx)
+                    if response is not None:
+                        return response
 
                 # B. EMIT ACTION_STARTED to frontend
                 await ws_bridge.emit_action_started(
@@ -796,7 +822,11 @@ class Orchestrator:
             "evaluations": guard_events,
         }
 
-        if final_status not in (CommandStatus.PENDING_APPROVAL, CommandStatus.UNKNOWN):
+        if final_status not in (
+            CommandStatus.PENDING_APPROVAL,
+            CommandStatus.WAITING_FOR_CLARIFICATION,
+            CommandStatus.UNKNOWN,
+        ):
             try:
                 completion_state = _completion_verification_state(
                     all_actions,

@@ -646,7 +646,7 @@ export async function connectRuntime() {
   });
 
   socket.on('connect_error', (err) => {
-    console.error(`[BRIDGE] Connection error: ${err.message}`);
+    console.warn(`[BRIDGE] Connection error: ${err.message}`);
     useRuntimeStore.getState().setTelemetry({ connectionState: 'reconnecting' });
     if (connectionState !== 'reconnecting') {
       scheduleReconnect();

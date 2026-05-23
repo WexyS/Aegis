@@ -135,6 +135,30 @@ def _blocked_batch(starting_sequence_num: int = 300):
     )
 
 
+def _approval_decision():
+    return classify_intent_risk(
+        "write_file",
+        {"path": "scratch/ws-bridge.txt", "content": "hello"},
+        {"command_id": "cmd-approval", "trace_id": "trace-approval"},
+    )
+
+
+def _clarification_decision():
+    return classify_intent_risk(
+        "click",
+        {},
+        {"command_id": "cmd-click", "trace_id": "trace-click", "raw_input": "click that button"},
+    )
+
+
+def _blocked_decision():
+    return classify_intent_risk(
+        "run_command",
+        {"command": "rm -rf /"},
+        {"command_id": "cmd-blocked", "trace_id": "trace-blocked"},
+    )
+
+
 def _assert_no_execution_shape(value) -> None:
     if isinstance(value, dict):
         assert "execution_evidence" not in value
@@ -152,6 +176,390 @@ def _assert_no_execution_shape(value) -> None:
     elif isinstance(value, list):
         for nested in value:
             _assert_no_execution_shape(nested)
+
+
+@pytest.mark.asyncio
+async def test_append_non_executable_decision_approval_allocates_live_sequence_and_fanout_after_append() -> None:
+    reset_sequence_for_testing()
+    journal = NonExecutableMemoryJournal()
+    emitted: list[dict] = []
+
+    async def fanout(event: RuntimeEvent) -> None:
+        assert len(journal.events) == 3
+        assert any(stored["event_id"] == event.event_id for stored in journal.events)
+        emitted.append(event.to_dict())
+
+    result = await ws_bridge.append_non_executable_decision(
+        _approval_decision(),
+        command_id="cmd-approval",
+        trace_id="trace-approval",
+        causation_id="plan-event",
+        span_id="span-approval",
+        action_id="action-approval",
+        journal=journal,
+        session_id="session-live-non-executable",
+        fanout=fanout,
+    )
+
+    assert [event.type for event in result.events] == [
+        ProtocolEventType.COMMAND_CLASSIFIED.value,
+        ProtocolEventType.APPROVAL_REQUESTED.value,
+        ProtocolEventType.COMMAND_WAITING_FOR_APPROVAL.value,
+    ]
+    assert [event["type"] for event in journal.events] == [event.type for event in result.events]
+    assert emitted == journal.events
+    assert [event.sequence_num for event in result.events] == [1, 2, 3]
+    assert len({event.sequence_num for event in result.events}) == 3
+    assert all(event.causation_id == "plan-event" for event in result.events)
+    assert all(event.session_id == "session-live-non-executable" for event in result.events)
+    assert all(event.payload["command_id"] == "cmd-approval" for event in result.events)
+    assert all(event.payload["trace_id"] == "trace-approval" for event in result.events)
+    assert all(event.payload["not_executed"] is True for event in result.events)
+    assert all(event.type != ProtocolEventType.APPROVAL_REQUIRED.value for event in result.events)
+    assert result.events[1].payload["approval_id"] == "approval-policy"
+    assert result.events[1].payload["approval_status"] == "pending"
+    assert result.events[1].payload["approval_scope"] == "single_action"
+    assert result.events[1].payload["required_confirmation_mode"] == "ui"
+    assert result.snapshot_patch["pending_approval"]["approval_id"] == "approval-policy"
+    assert result.action_timeline_entries[0]["kind"] == "approval_requested"
+    assert result.replay_state["command_status"] == "waiting_for_approval"
+    _assert_no_execution_shape([event.to_dict() for event in result.events])
+
+
+@pytest.mark.asyncio
+async def test_append_non_executable_decision_clarification_payload_and_order() -> None:
+    reset_sequence_for_testing()
+    journal = NonExecutableMemoryJournal()
+
+    result = await ws_bridge.append_non_executable_decision(
+        _clarification_decision(),
+        command_id="cmd-click",
+        trace_id="trace-click",
+        causation_id="plan-event",
+        span_id="span-click",
+        action_id="action-click",
+        journal=journal,
+    )
+
+    assert [event.type for event in result.events] == [
+        ProtocolEventType.COMMAND_CLASSIFIED.value,
+        ProtocolEventType.CLARIFICATION_REQUESTED.value,
+        ProtocolEventType.COMMAND_WAITING_FOR_CLARIFICATION.value,
+    ]
+    assert [event.sequence_num for event in result.events] == [1, 2, 3]
+    clarification = result.events[1].payload
+    waiting = result.events[2].payload
+    assert clarification["clarification_id"] == "clarification-policy"
+    assert clarification["ambiguity_type"] == "unresolved_click_target"
+    assert "generic click quarantine" in clarification["reason"]
+    assert "target resolution" in clarification["reason"]
+    assert waiting["command_status"] == "waiting_for_clarification"
+    assert result.snapshot_patch["pending_clarification"]["clarification_id"] == "clarification-policy"
+    assert result.action_timeline_entries[0]["kind"] == "clarification_requested"
+    _assert_no_execution_shape(journal.events)
+
+
+@pytest.mark.asyncio
+async def test_append_non_executable_decision_blocked_payload_and_terminal_projection() -> None:
+    reset_sequence_for_testing()
+    journal = NonExecutableMemoryJournal()
+
+    result = await ws_bridge.append_non_executable_decision(
+        _blocked_decision(),
+        command_id="cmd-blocked",
+        trace_id="trace-blocked",
+        causation_id="plan-event",
+        span_id="span-blocked",
+        action_id="action-blocked",
+        journal=journal,
+    )
+
+    assert [event.type for event in result.events] == [
+        ProtocolEventType.COMMAND_CLASSIFIED.value,
+        ProtocolEventType.ACTION_BLOCKED_BY_POLICY.value,
+        ProtocolEventType.COMMAND_BLOCKED.value,
+    ]
+    assert [event.sequence_num for event in result.events] == [1, 2, 3]
+    assert result.events[1].payload["blocked_id"] == "blocked-policy"
+    assert result.events[1].payload["terminal_non_executed"] is True
+    assert result.events[2].payload["command_status"] == "blocked"
+    assert result.events[2].payload["terminal_non_executed"] is True
+    assert result.snapshot_patch["last_blocked_action"]["blocked_id"] == "blocked-policy"
+    assert result.snapshot_patch["terminal_non_executed"] is True
+    assert result.action_timeline_entries[0]["kind"] == "blocked_by_policy"
+    assert result.replay_state["command_status"] == "blocked"
+    _assert_no_execution_shape(journal.events)
+
+
+@pytest.mark.asyncio
+async def test_append_non_executable_decision_repeated_calls_remain_unique_and_monotonic() -> None:
+    reset_sequence_for_testing()
+    journal = NonExecutableMemoryJournal()
+
+    first = await ws_bridge.append_non_executable_decision(
+        _approval_decision(),
+        command_id="cmd-approval",
+        trace_id="trace-approval",
+        causation_id="approval-cause",
+        journal=journal,
+    )
+    second = await ws_bridge.append_non_executable_decision(
+        _clarification_decision(),
+        command_id="cmd-click",
+        trace_id="trace-click",
+        causation_id="click-cause",
+        journal=journal,
+    )
+
+    sequences = [event["sequence_num"] for event in journal.events]
+    assert sequences == [1, 2, 3, 4, 5, 6]
+    assert len(sequences) == len(set(sequences))
+    assert [event.sequence_num for event in first.events] == [1, 2, 3]
+    assert [event.sequence_num for event in second.events] == [4, 5, 6]
+    assert journal.events_after(3) == journal.events[3:]
+
+
+@pytest.mark.asyncio
+async def test_append_non_executable_decision_generic_click_preserves_quarantine_reason() -> None:
+    reset_sequence_for_testing()
+    journal = NonExecutableMemoryJournal()
+
+    result = await ws_bridge.append_non_executable_decision(
+        _clarification_decision(),
+        command_id="cmd-click",
+        trace_id="trace-click",
+        causation_id="click-cause",
+        action_id="action-click",
+        journal=journal,
+    )
+
+    assert ProtocolEventType.ACTION_STARTED.value not in [event.type for event in result.events]
+    assert all("tool" not in event.payload for event in result.events)
+    assert all("tool_run" not in event.payload for event in result.events)
+    reasons = " ".join(str(event.payload.get("reason", "")) for event in result.events)
+    policies = " ".join(str(event.payload.get("policy_rule", "")) for event in result.events)
+    assert "generic click quarantine" in reasons
+    assert "target resolution" in reasons
+    assert "generic_click.quarantined" in policies
+    assert [entry["kind"] for entry in result.action_timeline_entries] == ["clarification_requested"]
+    _assert_no_execution_shape(journal.events)
+
+
+@pytest.mark.asyncio
+async def test_append_non_executable_decision_rejects_unsupported_decisions() -> None:
+    journal = NonExecutableMemoryJournal()
+    unsupported = [
+        classify_intent_risk("open_app", {"app": "notepad"}),
+        GuardDecision(
+            decision_status=DecisionStatus.UNVERIFIED,
+            risk_level=RiskLevel.MEDIUM,
+            reason="unverified belongs to execution",
+            policy_rule="unverified.executed",
+        ),
+        GuardDecision(
+            decision_status=DecisionStatus.FAILED,
+            risk_level=RiskLevel.MEDIUM,
+            reason="failed belongs to execution",
+            policy_rule="failed.executed",
+        ),
+        GuardDecision(
+            decision_status=DecisionStatus.CANCELLED,
+            risk_level=RiskLevel.LOW,
+            reason="cancelled has separate lifecycle semantics",
+            policy_rule="cancelled.out_of_scope",
+        ),
+    ]
+
+    for decision in unsupported:
+        with pytest.raises(ValueError, match=decision.decision_status.value):
+            await ws_bridge.append_non_executable_decision(
+                decision,
+                command_id="cmd-negative",
+                trace_id="trace-negative",
+                journal=journal,
+            )
+
+    assert journal.events == []
+
+
+@pytest.mark.asyncio
+async def test_append_non_executable_decision_rejects_forbidden_projected_payload(monkeypatch) -> None:
+    reset_sequence_for_testing()
+    journal = NonExecutableMemoryJournal()
+    emitted: list[RuntimeEvent] = []
+
+    def fake_project(*args, **kwargs):
+        return [
+            {
+                "event_type": ProtocolEventType.COMMAND_CLASSIFIED.value,
+                "type": ProtocolEventType.COMMAND_CLASSIFIED.value,
+                "timestamp": 0,
+                "command_id": "cmd-bad",
+                "trace_id": "trace-bad",
+                "span_id": None,
+                "sequence_num": None,
+                "causation_id": "bad-cause",
+                "decision_status": DecisionStatus.CLARIFICATION_REQUIRED.value,
+                "risk_level": RiskLevel.HIGH.value,
+                "policy_rule": "bad.execution_evidence",
+                "reason": "bad",
+                "payload": {
+                    "command_id": "cmd-bad",
+                    "trace_id": "trace-bad",
+                    "decision_status": DecisionStatus.CLARIFICATION_REQUIRED.value,
+                    "risk_level": RiskLevel.HIGH.value,
+                    "policy_rule": "bad.execution_evidence",
+                    "reason": "bad",
+                    "not_executed": True,
+                    "execution_evidence": {"fake": True},
+                },
+            }
+        ]
+
+    async def fanout(event: RuntimeEvent) -> None:
+        emitted.append(event)
+
+    monkeypatch.setattr(ws_bridge, "project_guard_decision_to_journal_entries", fake_project)
+
+    with pytest.raises(ValueError, match="execution_evidence"):
+        await ws_bridge.append_non_executable_decision(
+            _clarification_decision(),
+            command_id="cmd-bad",
+            trace_id="trace-bad",
+            causation_id="bad-cause",
+            journal=journal,
+            fanout=fanout,
+        )
+
+    assert journal.events == []
+    assert emitted == []
+
+
+def _patch_snapshot_dependencies(monkeypatch, *, commands_snapshot: dict | None = None) -> None:
+    class FakeAuthority:
+        def snapshot(self, journal_snapshot):
+            return {"fsm_state": "IDLE", "last_event_sequence": journal_snapshot["last_sequence_num"]}
+
+    class FakeApprovalManager:
+        def snapshot(self):
+            return commands_snapshot or {
+                "records": [],
+                "pending_approvals": [],
+                "pending_clarifications": [],
+                "active_command": None,
+            }
+
+    monkeypatch.setattr(ws_bridge, "_session_id", "session-non-executable")
+    monkeypatch.setattr(ws_bridge, "get_runtime_authority", lambda *args, **kwargs: FakeAuthority())
+    monkeypatch.setattr(ws_bridge, "get_approval_manager", lambda: FakeApprovalManager())
+    monkeypatch.setattr(ws_bridge, "get_last_maintenance_scan", lambda: None)
+    monkeypatch.setattr(ws_bridge, "get_app_registry_snapshot", lambda: {"entries": []})
+    monkeypatch.setattr(ws_bridge, "get_tool_registry_snapshot", lambda: {"tools": []})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("decision_factory", "command_id", "trace_id", "projection_key", "timeline_kind", "command_status"),
+    [
+        (
+            _approval_decision,
+            "cmd-approval",
+            "trace-approval",
+            "pending_approval",
+            "approval_requested",
+            "waiting_for_approval",
+        ),
+        (
+            _clarification_decision,
+            "cmd-click",
+            "trace-click",
+            "pending_clarification",
+            "clarification_requested",
+            "waiting_for_clarification",
+        ),
+        (
+            _blocked_decision,
+            "cmd-blocked",
+            "trace-blocked",
+            "last_blocked_action",
+            "blocked_by_policy",
+            "blocked",
+        ),
+    ],
+)
+async def test_runtime_snapshot_projects_non_executable_state_from_journal(
+    monkeypatch,
+    decision_factory,
+    command_id: str,
+    trace_id: str,
+    projection_key: str,
+    timeline_kind: str,
+    command_status: str,
+) -> None:
+    reset_sequence_for_testing()
+    journal = NonExecutableMemoryJournal()
+    _patch_snapshot_dependencies(monkeypatch)
+
+    await ws_bridge.append_non_executable_decision(
+        decision_factory(),
+        command_id=command_id,
+        trace_id=trace_id,
+        causation_id="guard-cause",
+        span_id="guard-span",
+        action_id="guard-action",
+        journal=journal,
+        session_id="session-non-executable",
+    )
+
+    journal_snapshot, runtime_snapshot = ws_bridge._build_runtime_snapshot(journal)
+    projection = runtime_snapshot["non_executable_decisions"]
+    timeline = runtime_snapshot["action_timeline"]
+
+    assert journal_snapshot["last_sequence_num"] == 3
+    assert projection[projection_key] is not None
+    assert projection["command_status"] == command_status
+    assert projection["not_executed"] is True
+    assert projection["executed"] is False
+    assert "execution_evidence" not in projection
+    assert timeline
+    assert timeline[0]["kind"] == timeline_kind
+    assert timeline[0]["not_executed"] is True
+    assert timeline[0].get("success") is not True
+    assert timeline[0].get("verified") is not True
+    assert "execution_evidence" not in timeline[0]
+    assert ProtocolEventType.APPROVAL_REQUIRED.value not in [event["type"] for event in journal.events]
+    if command_status == "blocked":
+        assert projection["terminal_non_executed"] is True
+        assert timeline[0]["terminal"] is True
+
+
+@pytest.mark.asyncio
+async def test_runtime_snapshot_projects_generic_click_as_pending_clarification(monkeypatch) -> None:
+    reset_sequence_for_testing()
+    journal = NonExecutableMemoryJournal()
+    _patch_snapshot_dependencies(monkeypatch)
+
+    await ws_bridge.append_non_executable_decision(
+        _clarification_decision(),
+        command_id="cmd-click",
+        trace_id="trace-click",
+        causation_id="click-cause",
+        action_id="click-action",
+        journal=journal,
+        session_id="session-non-executable",
+    )
+
+    _, runtime_snapshot = ws_bridge._build_runtime_snapshot(journal)
+    projection = runtime_snapshot["non_executable_decisions"]
+    timeline = runtime_snapshot["action_timeline"]
+
+    assert projection["pending_clarification"]["clarification_id"] == "clarification-policy"
+    assert projection["command_status"] == "waiting_for_clarification"
+    assert "generic click quarantine" in projection["pending_clarification"]["reason"]
+    assert "target resolution" in projection["pending_clarification"]["reason"]
+    assert timeline[0]["kind"] == "clarification_requested"
+    assert ProtocolEventType.ACTION_STARTED.value not in [event["type"] for event in journal.events]
+    _assert_no_execution_shape(journal.events)
 
 
 @pytest.mark.asyncio
@@ -530,6 +938,24 @@ async def test_snapshot_event_carries_truth_sync_contract(monkeypatch) -> None:
             assert sequence_num == 4
             return [
                 {
+                    "event_id": "snapshot-old",
+                    "type": "SNAPSHOT_CREATED",
+                    "sequence_num": 5,
+                    "timestamp": 90,
+                    "payload": {
+                        "missed_events": [
+                            {"type": "SNAPSHOT_CREATED", "sequence_num": 4, "payload": {"recursive": True}}
+                        ]
+                    },
+                },
+                {
+                    "event_id": "system-old",
+                    "type": "SYSTEM_ONLINE",
+                    "sequence_num": 6,
+                    "timestamp": 95,
+                    "payload": {"journal": {"last_sequence_num": 5}},
+                },
+                {
                     "event_id": "11111111-1111-4111-8111-111111111111",
                     "type": "ACTION_COMPLETED",
                     "sequence_num": 7,
@@ -566,16 +992,152 @@ async def test_snapshot_event_carries_truth_sync_contract(monkeypatch) -> None:
 
     await ws_bridge._emit_snapshot(to="sid-1", last_sequence_num=4)
 
-    assert len(appended) == 1
+    assert appended == []
     assert emitted[0][0] == ProtocolEventType.SNAPSHOT_CREATED.value
     assert emitted[0][2] == "sid-1"
-    payload = emitted[0][1]["payload"]
+    event = emitted[0][1]
+    assert "sequence_num" not in event
+    assert "event_hash" not in event
+    payload = event["payload"]
     assert payload["missed_event_count"] == 1
+    assert [event["type"] for event in payload["missed_events"]] == ["ACTION_COMPLETED"]
     assert payload["truth_sync"] == {
         "source_of_truth": "backend_snapshot_protocol_event_journal",
-        "snapshot_sequence_num": appended[0].sequence_num,
+        "snapshot_sequence_num": 7,
         "journal_tail_sequence_num": 7,
         "client_last_sequence_num": 4,
         "missed_event_count": 1,
         "replay_required": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_repeated_snapshot_handshakes_do_not_append_or_grow_recursively(monkeypatch) -> None:
+    appended = []
+    emitted = []
+
+    class FakeJournal:
+        def snapshot(self):
+            return {
+                "event_count": 3,
+                "last_sequence_num": 9,
+                "last_event_hash": "hash",
+                "integrity_status": "hash-chain",
+            }
+
+        def recent_events(self):
+            return []
+
+        def events_after(self, sequence_num: int):
+            return [
+                {
+                    "event_id": "snapshot-prior",
+                    "type": "SNAPSHOT_CREATED",
+                    "sequence_num": 8,
+                    "timestamp": 100,
+                    "payload": {
+                        "runtime": {"large": "snapshot"},
+                        "missed_events": [{"type": "SNAPSHOT_CREATED", "sequence_num": 7}],
+                    },
+                },
+                {
+                    "event_id": "real-event",
+                    "type": "ACTION_FAILED",
+                    "sequence_num": 9,
+                    "timestamp": 101,
+                    "payload": {"action_id": "action-1", "error": "failed"},
+                },
+            ]
+
+        def append(self, event):
+            appended.append(event)
+            return event
+
+    class FakeAuthority:
+        def snapshot(self, journal_snapshot):
+            return {"fsm_state": "IDLE", "last_event_sequence": journal_snapshot["last_sequence_num"]}
+
+    class FakeApprovalManager:
+        def snapshot(self):
+            return {"records": []}
+
+    class FakeSio:
+        async def emit(self, event_name, data, to=None):
+            emitted.append((event_name, data, to))
+
+    monkeypatch.setattr(ws_bridge, "_session_id", "session-test")
+    monkeypatch.setattr(ws_bridge, "get_runtime_journal", lambda: FakeJournal())
+    monkeypatch.setattr(ws_bridge, "get_runtime_authority", lambda *args, **kwargs: FakeAuthority())
+    monkeypatch.setattr(ws_bridge, "get_approval_manager", lambda: FakeApprovalManager())
+    monkeypatch.setattr(ws_bridge, "get_last_maintenance_scan", lambda: None)
+    monkeypatch.setattr(ws_bridge, "get_app_registry_snapshot", lambda: {"entries": []})
+    monkeypatch.setattr(ws_bridge, "get_tool_registry_snapshot", lambda: {"tools": []})
+    monkeypatch.setattr(ws_bridge, "sio", FakeSio())
+
+    await ws_bridge._emit_snapshot(to="sid-1", last_sequence_num=7)
+    await ws_bridge._emit_snapshot(to="sid-1", last_sequence_num=7)
+
+    assert appended == []
+    assert len(emitted) == 2
+    for _, data, _ in emitted:
+        assert "sequence_num" not in data
+        missed = data["payload"]["missed_events"]
+        assert [event["type"] for event in missed] == ["ACTION_FAILED"]
+        assert all("SNAPSHOT_CREATED" != event["type"] for event in missed)
+
+
+@pytest.mark.asyncio
+async def test_connect_handshake_and_snapshot_do_not_consume_global_journal_sequence(monkeypatch) -> None:
+    appended = []
+    emitted = []
+
+    class FakeJournal:
+        def snapshot(self):
+            return {
+                "event_count": 1,
+                "last_sequence_num": 12,
+                "last_event_hash": "hash",
+                "integrity_status": "hash-chain",
+            }
+
+        def recent_events(self):
+            return []
+
+        def events_after(self, sequence_num: int):
+            return []
+
+        def append(self, event):
+            appended.append(event)
+            return event
+
+    class FakeAuthority:
+        def snapshot(self, journal_snapshot):
+            return {"fsm_state": "IDLE", "last_event_sequence": journal_snapshot["last_sequence_num"]}
+
+    class FakeApprovalManager:
+        def snapshot(self):
+            return {"records": []}
+
+    class FakeSio:
+        async def emit(self, event_name, data, to=None):
+            emitted.append((event_name, data, to))
+
+    monkeypatch.setattr(ws_bridge, "_session_id", "session-test")
+    monkeypatch.setattr(ws_bridge, "get_runtime_journal", lambda: FakeJournal())
+    monkeypatch.setattr(ws_bridge, "get_runtime_authority", lambda *args, **kwargs: FakeAuthority())
+    monkeypatch.setattr(ws_bridge, "get_approval_manager", lambda: FakeApprovalManager())
+    monkeypatch.setattr(ws_bridge, "get_last_maintenance_scan", lambda: None)
+    monkeypatch.setattr(ws_bridge, "get_app_registry_snapshot", lambda: {"entries": []})
+    monkeypatch.setattr(ws_bridge, "get_tool_registry_snapshot", lambda: {"tools": []})
+    monkeypatch.setattr(ws_bridge, "sio", FakeSio())
+    ws_bridge._connected_clients.clear()
+
+    await ws_bridge.connect("sid-1", {})
+
+    assert appended == []
+    assert [item[0] for item in emitted] == [
+        ProtocolEventType.SYSTEM_ONLINE.value,
+        ProtocolEventType.SNAPSHOT_CREATED.value,
+    ]
+    assert all("sequence_num" not in data for _, data, _ in emitted)
+    assert emitted[1][1]["payload"]["truth_sync"]["snapshot_sequence_num"] == 12

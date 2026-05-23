@@ -38,10 +38,9 @@ FORBIDDEN_TRUTHY_PAYLOAD_KEYS = {
 }
 
 COMMAND_STATUS_REPRESENTATION_NOTE = (
-    "CommandStatus has pending_approval/blocking states but no dedicated "
-    "waiting_for_clarification enum yet; adapter projections expose the "
-    "conservative string command_status='waiting_for_clarification' until a "
-    "future command lifecycle migration is explicitly scoped."
+    "CommandStatus.WAITING_FOR_CLARIFICATION is available for command "
+    "lifecycle responses; adapter projections also expose the journal-derived "
+    "string command_status='waiting_for_clarification' for snapshot/replay."
 )
 
 

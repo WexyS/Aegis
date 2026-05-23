@@ -403,6 +403,23 @@ def _classify_click(
             "generic click quarantine: missing browser_click/desktop_click target resolution, "
             "so generic click must not be executable"
         )
+        try:
+            click_count = int(params.get("count", 1))
+        except (TypeError, ValueError):
+            click_count = 1
+        if click_count > 20:
+            return _blocked(
+                intent,
+                params,
+                context,
+                RiskLevel.HIGH,
+                (
+                    f"generic click quarantine: click count {click_count} exceeds maximum (20) "
+                    "and target resolution is missing, so generic click must not be executable"
+                ),
+                "generic_click.quarantined.count_limit.blocked",
+                retry_allowed=True,
+            )
         has_low_level_target = any(key in params for key in ("selector", "x", "y", "coordinates"))
         if has_low_level_target:
             return _approval_required(

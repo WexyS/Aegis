@@ -38,6 +38,7 @@ class CommandRecord:
     risk_level: RiskLevel = RiskLevel.NONE
     trace_id: str | None = None
     approval_required: bool = False
+    clarification_required: bool = False
     approved: bool = False
     rejected: bool = False
     active: bool = False
@@ -104,9 +105,38 @@ class ApprovalManager:
             record.risk_level = risk_level
             record.status = CommandStatus.PENDING_APPROVAL
             record.approval_required = True
+            record.clarification_required = False
             record.approved = False
             record.rejected = False
             record.active = False
+            record.reason = reason
+            record.warnings = list(warnings or [])
+            record.metadata.update(metadata or {})
+            record.touch()
+            return record
+
+    def register_waiting_clarification(
+        self,
+        *,
+        command_id: str,
+        text: str,
+        trace_id: str,
+        risk_level: RiskLevel,
+        reason: str,
+        warnings: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> CommandRecord:
+        with self._lock:
+            record = self._records.get(command_id) or self.create_received(text, command_id=command_id)
+            record.trace_id = trace_id
+            record.risk_level = risk_level
+            record.status = CommandStatus.WAITING_FOR_CLARIFICATION
+            record.approval_required = False
+            record.clarification_required = True
+            record.approved = False
+            record.rejected = False
+            record.active = False
+            record.verification_state = "unverified"
             record.reason = reason
             record.warnings = list(warnings or [])
             record.metadata.update(metadata or {})
@@ -121,6 +151,7 @@ class ApprovalManager:
             record.status = CommandStatus.APPROVED
             record.approved = True
             record.approval_required = False
+            record.clarification_required = False
             record.approved_at = now_ms()
             record.touch()
             return record
@@ -131,6 +162,7 @@ class ApprovalManager:
             record.status = CommandStatus.REJECTED
             record.rejected = True
             record.approval_required = False
+            record.clarification_required = False
             record.reason = reason
             record.rejected_at = now_ms()
             record.touch()
@@ -149,6 +181,7 @@ class ApprovalManager:
             record.trace_id = trace_id
             record.status = CommandStatus.RUNNING
             record.active = True
+            record.clarification_required = False
             if risk_level is not None:
                 record.risk_level = risk_level
             if verification_state is not None:
@@ -172,6 +205,7 @@ class ApprovalManager:
             record.status = CommandStatus.BLOCKED
             record.active = False
             record.approval_required = False
+            record.clarification_required = False
             record.verification_state = verification_state
             record.reason = reason
             record.completed_at = now_ms()
@@ -190,6 +224,7 @@ class ApprovalManager:
             record = self._require(command_id)
             record.status = status
             record.active = False
+            record.clarification_required = False
             record.reason = reason or record.reason
             if verification_state is not None:
                 record.verification_state = verification_state
@@ -205,6 +240,7 @@ class ApprovalManager:
             record.status = CommandStatus.CANCELLED
             record.active = False
             record.approval_required = False
+            record.clarification_required = False
             record.reason = reason
             record.cancelled_at = token.cancelled_at
             record.touch()
@@ -223,10 +259,14 @@ class ApprovalManager:
         with self._lock:
             records = [record.to_dict() for record in self._records.values()]
             pending = [r for r in records if r["status"] == CommandStatus.PENDING_APPROVAL.value]
+            pending_clarifications = [
+                r for r in records if r["status"] == CommandStatus.WAITING_FOR_CLARIFICATION.value
+            ]
             active = [r for r in records if r["active"]]
             return {
                 "records": records[-50:],
                 "pending_approvals": pending,
+                "pending_clarifications": pending_clarifications,
                 "active_command": active[-1] if active else None,
             }
 
@@ -253,6 +293,7 @@ class ApprovalManager:
                     record.status = CommandStatus.CANCELLED
                     record.active = False
                     record.approval_required = False
+                    record.clarification_required = False
                     record.reason = self.RESTART_CANCEL_REASON
                     record.cancelled_at = token.cancelled_at
                     record.touch()
@@ -280,6 +321,7 @@ class ApprovalManager:
         candidates: list[Any] = []
         candidates.extend(snapshot.get("records") or [])
         candidates.extend(snapshot.get("pending_approvals") or [])
+        candidates.extend(snapshot.get("pending_clarifications") or [])
         if active := snapshot.get("active_command"):
             candidates.append(active)
 
@@ -344,7 +386,21 @@ def restore_approval_manager_from_journal(
 
         journal = get_runtime_journal()
     manager = manager or get_approval_manager()
-    events = journal.events_after(0)
+    recent_events = getattr(journal, "recent_events", None)
+    if callable(recent_events):
+        events = list(recent_events())
+    else:
+        events = []
+
+    if not _restore_approval_manager_from_events(events, manager):
+        events = journal.events_after(0)
+        return _restore_approval_manager_from_events(events, manager)
+    return True
+
+
+def _restore_approval_manager_from_events(events: list[dict[str, Any]], manager: ApprovalManager) -> bool:
+    if not events:
+        return False
 
     for event in reversed(events):
         payload = event.get("payload") if isinstance(event, dict) else None

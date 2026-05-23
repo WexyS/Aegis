@@ -13,7 +13,7 @@ from aegis.core.non_executable_runtime_adapter import (
     project_non_executable_events_to_action_timeline,
     project_non_executable_events_to_snapshot,
 )
-from aegis.core.protocol import ProtocolEventType, RuntimeEvent
+from aegis.core.protocol import ProtocolEventType, RuntimeEvent, reset_sequence_for_testing
 from aegis.core.runtime_authority import get_runtime_authority
 from aegis.core.schemas import (
     ActionResult,
@@ -33,10 +33,12 @@ class FakeRouter:
 
 
 class FakeParser:
-    def __init__(self, intent: IntentResult) -> None:
+    def __init__(self, intent: IntentResult | list[IntentResult]) -> None:
         self.intent = intent
 
     async def parse(self, text: str, model: str | None = None) -> list[IntentResult]:
+        if isinstance(self.intent, list):
+            return self.intent
         return [self.intent]
 
 
@@ -359,7 +361,7 @@ class ProofBackedSideEffectExecutor:
         )
 
 
-def build_orchestrator(intent: IntentResult, executor=None) -> Orchestrator:
+def build_orchestrator(intent: IntentResult | list[IntentResult], executor=None) -> Orchestrator:
     orchestrator = Orchestrator()
     orchestrator.router = FakeRouter()
     orchestrator.parser = FakeParser(intent)
@@ -403,6 +405,59 @@ def test_approval_manager_restores_pending_approval_snapshot() -> None:
     approved = restored.approve("22222222-2222-4222-8222-222222222222")
     assert approved.status == CommandStatus.APPROVED
     assert approved.approved is True
+
+
+def test_approval_manager_tracks_pending_clarification_as_first_class_lifecycle() -> None:
+    source = ApprovalManager()
+    record = source.register_waiting_clarification(
+        command_id="22222222-2222-4222-8333-222222222222",
+        text="click that",
+        trace_id="trace-clarification",
+        risk_level=RiskLevel.HIGH,
+        reason="generic click quarantine requires target resolution",
+        warnings=["target resolution required"],
+        metadata={"clarification_id": "clarification-policy"},
+    )
+
+    snapshot = source.snapshot()
+
+    assert record.status == CommandStatus.WAITING_FOR_CLARIFICATION
+    assert record.active is False
+    assert record.approval_required is False
+    assert record.clarification_required is True
+    assert record.verification_state == "unverified"
+    assert record.completed_at is None
+    assert len(snapshot["pending_clarifications"]) == 1
+    assert snapshot["pending_clarifications"][0]["command_id"] == record.command_id
+    assert snapshot["pending_clarifications"][0]["status"] == "waiting_for_clarification"
+    assert snapshot["pending_clarifications"][0]["clarification_required"] is True
+    assert snapshot["pending_clarifications"][0]["approved"] is False
+    assert snapshot["pending_clarifications"][0]["metadata"]["clarification_id"] == "clarification-policy"
+    assert snapshot["pending_approvals"] == []
+
+
+def test_approval_manager_restores_pending_clarification_snapshot() -> None:
+    source = ApprovalManager()
+    source.register_waiting_clarification(
+        command_id="33333333-3333-4333-8444-333333333333",
+        text="click that",
+        trace_id="trace-clarification-restore",
+        risk_level=RiskLevel.HIGH,
+        reason="generic click quarantine requires target resolution",
+        metadata={"clarification_id": "clarification-policy"},
+    )
+
+    restored = ApprovalManager()
+    restored.restore_from_snapshot(source.snapshot())
+    snapshot = restored.snapshot()
+    record = restored.get("33333333-3333-4333-8444-333333333333")
+
+    assert record is not None
+    assert record.status == CommandStatus.WAITING_FOR_CLARIFICATION
+    assert record.clarification_required is True
+    assert record.active is False
+    assert len(snapshot["pending_clarifications"]) == 1
+    assert snapshot["pending_clarifications"][0]["command_id"] == record.command_id
 
 
 def test_approval_manager_marks_active_snapshot_cancelled_on_restore() -> None:
@@ -462,6 +517,67 @@ def test_restores_approval_manager_from_latest_journal_runtime_snapshot() -> Non
     assert restored.snapshot()["pending_approvals"][0]["command_id"] == "44444444-4444-4444-8444-444444444444"
 
 
+def test_restores_approval_manager_from_recent_journal_tail_before_full_scan() -> None:
+    source = ApprovalManager()
+    source.register_pending(
+        command_id="44444444-4444-4444-9444-444444444444",
+        text="type hello",
+        trace_id="trace-recent-journal",
+        risk_level=RiskLevel.MEDIUM,
+        reason="medium risk requires approval",
+    )
+
+    class FakeJournal:
+        def recent_events(self) -> list[dict]:
+            return [
+                {
+                    "event_type": "SNAPSHOT_CREATED",
+                    "payload": {
+                        "runtime": {
+                            "commands": source.snapshot(),
+                        },
+                    },
+                },
+            ]
+
+        def events_after(self, sequence_num: int) -> list[dict]:
+            raise AssertionError("startup restore should use recent journal tail before full scan")
+
+    restored = ApprovalManager()
+
+    assert restore_approval_manager_from_journal(journal=FakeJournal(), manager=restored) is True
+    assert restored.snapshot()["pending_approvals"][0]["command_id"] == "44444444-4444-4444-9444-444444444444"
+
+
+def test_restores_approval_manager_falls_back_to_full_journal_when_recent_tail_has_no_state() -> None:
+    source = ApprovalManager()
+    command = source.register_pending(
+        command_id="55555555-5555-4555-9555-555555555555",
+        text="open notepad",
+        trace_id="trace-full-journal",
+        risk_level=RiskLevel.MEDIUM,
+        reason="medium risk requires approval",
+    )
+
+    class FakeJournal:
+        def recent_events(self) -> list[dict]:
+            return [{"event_type": "TELEMETRY_UPDATE", "payload": {"cpu": 1}}]
+
+        def events_after(self, sequence_num: int) -> list[dict]:
+            assert sequence_num == 0
+            return [
+                {
+                    "event_type": "APPROVAL_REQUIRED",
+                    "payload": {"command": command.to_dict()},
+                },
+            ]
+
+    restored = ApprovalManager()
+
+    assert restore_approval_manager_from_journal(journal=FakeJournal(), manager=restored) is True
+    assert restored.snapshot()["pending_approvals"][0]["command_id"] == "55555555-5555-4555-9555-555555555555"
+
+
 def test_restores_approval_manager_from_command_events_when_snapshot_missing() -> None:
     source = ApprovalManager()
     command = source.register_pending(
@@ -493,12 +609,50 @@ def reset_approval_manager() -> None:
     get_approval_manager().reset_for_tests()
 
 
-def _boundary_context(journal: NonExecutableBoundaryJournal, *, start: int = 100) -> dict:
-    return {
+def _boundary_context(
+    journal: NonExecutableBoundaryJournal,
+    *,
+    start: int = 9000,
+    fanout=None,
+) -> dict:
+    context = {
         "enable_non_executable_guard_boundary": True,
         "non_executable_journal": journal,
         "non_executable_starting_sequence_num": start,
     }
+    if fanout is not None:
+        context["non_executable_fanout"] = fanout
+    return context
+
+
+def _default_non_executable_context(
+    journal: NonExecutableBoundaryJournal,
+    *,
+    fanout=None,
+) -> dict:
+    context = {"non_executable_journal": journal}
+    if fanout is not None:
+        context["non_executable_fanout"] = fanout
+    return context
+
+
+def _quiet_runtime_emissions(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_emit_event(*args, **kwargs):
+        return None
+
+    async def fake_emit_state_change(*args, **kwargs):
+        return True
+
+    async def fake_emit_command_status(*args, **kwargs):
+        return None
+
+    async def fake_emit_task_finished(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(orchestrator_module.ws_bridge, "emit_event", fake_emit_event)
+    monkeypatch.setattr(orchestrator_module.ws_bridge, "emit_state_change", fake_emit_state_change)
+    monkeypatch.setattr(orchestrator_module.ws_bridge, "emit_command_status", fake_emit_command_status)
+    monkeypatch.setattr(orchestrator_module.ws_bridge, "emit_task_finished", fake_emit_task_finished)
 
 
 def _event_types(events: list[RuntimeEvent]) -> list[str]:
@@ -564,9 +718,20 @@ def _spy_action_started(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
 async def test_non_executable_boundary_ready_intent_still_reaches_executor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
     executor = SpyExecutor()
     journal = NonExecutableBoundaryJournal()
     action_started_calls = _spy_action_started(monkeypatch)
+
+    async def fail_append_non_executable_decision(*args, **kwargs):
+        raise AssertionError("ready decisions must not call non-executable append")
+
+    monkeypatch.setattr(
+        orchestrator_module.ws_bridge,
+        "append_non_executable_decision",
+        fail_append_non_executable_decision,
+    )
     orchestrator = build_orchestrator(
         intent_result("read_file", RiskLevel.LOW, {"path": "README.md"}),
         executor=executor,
@@ -601,7 +766,7 @@ async def test_non_executable_boundary_ready_intent_still_reaches_executor(
         (
             "read_file",
             {},
-            CommandStatus.UNKNOWN,
+            CommandStatus.WAITING_FOR_CLARIFICATION,
             [
                 ProtocolEventType.COMMAND_CLASSIFIED.value,
                 ProtocolEventType.CLARIFICATION_REQUESTED.value,
@@ -630,10 +795,29 @@ async def test_non_executable_boundary_prevents_executor_and_action_started(
     expected_events: list[str],
     projection_key: str,
 ) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
     executor = SpyExecutor()
     journal = NonExecutableBoundaryJournal()
+    emitted: list[RuntimeEvent] = []
+    append_calls = []
     action_started_calls = _spy_action_started(monkeypatch)
     _force_guard_decision(monkeypatch, forced_intent, forced_params)
+    real_append = orchestrator_module.ws_bridge.append_non_executable_decision
+
+    async def fanout(event: RuntimeEvent) -> None:
+        assert any(stored.event_id == event.event_id for stored in journal.events)
+        emitted.append(event)
+
+    async def spy_append_non_executable_decision(*args, **kwargs):
+        append_calls.append((args, kwargs))
+        return await real_append(*args, **kwargs)
+
+    monkeypatch.setattr(
+        orchestrator_module.ws_bridge,
+        "append_non_executable_decision",
+        spy_append_non_executable_decision,
+    )
     orchestrator = build_orchestrator(
         intent_result("read_file", RiskLevel.LOW, {"path": "README.md"}),
         executor=executor,
@@ -641,13 +825,21 @@ async def test_non_executable_boundary_prevents_executor_and_action_started(
     orchestrator.guard = AllowGuard()
 
     response = await orchestrator.process(
-        CommandRequest(text="read README.md", context=_boundary_context(journal))
+        CommandRequest(text="read README.md", context=_boundary_context(journal, fanout=fanout))
     )
 
     assert response.status == expected_status
     assert executor.calls == []
     assert action_started_calls == []
+    assert len(append_calls) == 1
+    assert append_calls[0][1]["journal"] is journal
     assert _event_types(journal.events) == expected_events
+    assert [event.sequence_num for event in journal.events] == [1, 2, 3]
+    assert emitted == journal.events
+    assert all(event.causation_id == event.span_id for event in journal.events)
+    assert all(event.payload.get("action_id") == event.span_id for event in journal.events)
+    assert all(event.payload["command_id"] == response.trace_id for event in journal.events)
+    assert all(event.payload["trace_id"] == response.trace_id for event in journal.events)
     _assert_non_executable_event_shape(journal.events)
     snapshot_patch = project_non_executable_events_to_snapshot(journal.events)
     assert snapshot_patch[projection_key] is not None
@@ -661,9 +853,23 @@ async def test_non_executable_boundary_prevents_executor_and_action_started(
 async def test_generic_click_boundary_quarantines_before_executor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
     executor = SpyExecutor()
     journal = NonExecutableBoundaryJournal()
+    append_calls = []
     action_started_calls = _spy_action_started(monkeypatch)
+    real_append = orchestrator_module.ws_bridge.append_non_executable_decision
+
+    async def spy_append_non_executable_decision(*args, **kwargs):
+        append_calls.append((args, kwargs))
+        return await real_append(*args, **kwargs)
+
+    monkeypatch.setattr(
+        orchestrator_module.ws_bridge,
+        "append_non_executable_decision",
+        spy_append_non_executable_decision,
+    )
     orchestrator = build_orchestrator(intent_result("click", RiskLevel.LOW, {}), executor=executor)
     orchestrator.guard = AllowGuard()
 
@@ -671,14 +877,16 @@ async def test_generic_click_boundary_quarantines_before_executor(
         CommandRequest(text="click", context=_boundary_context(journal, start=200))
     )
 
-    assert response.status == CommandStatus.UNKNOWN
+    assert response.status == CommandStatus.WAITING_FOR_CLARIFICATION
     assert executor.calls == []
     assert action_started_calls == []
+    assert len(append_calls) == 1
     assert _event_types(journal.events) == [
         ProtocolEventType.COMMAND_CLASSIFIED.value,
         ProtocolEventType.CLARIFICATION_REQUESTED.value,
         ProtocolEventType.COMMAND_WAITING_FOR_CLARIFICATION.value,
     ]
+    assert [event.sequence_num for event in journal.events] == [1, 2, 3]
     _assert_non_executable_event_shape(journal.events)
     assert all(event.type != ProtocolEventType.APPROVAL_REQUIRED.value for event in journal.events)
     reasons = " ".join(str(event.payload.get("reason", "")) for event in journal.events)
@@ -689,6 +897,297 @@ async def test_generic_click_boundary_quarantines_before_executor(
     timeline_entries = project_non_executable_events_to_action_timeline(journal.events)
     assert [entry["kind"] for entry in timeline_entries] == ["clarification_requested"]
     assert all("execution_evidence" not in entry for entry in timeline_entries)
+
+
+@pytest.mark.asyncio
+async def test_default_generic_click_quarantine_prevents_executor_without_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
+    executor = SpyExecutor()
+    journal = NonExecutableBoundaryJournal()
+    emitted: list[RuntimeEvent] = []
+    append_calls = []
+    action_started_calls = _spy_action_started(monkeypatch)
+    real_append = orchestrator_module.ws_bridge.append_non_executable_decision
+
+    async def fanout(event: RuntimeEvent) -> None:
+        assert any(stored.event_id == event.event_id for stored in journal.events)
+        emitted.append(event)
+
+    async def spy_append_non_executable_decision(*args, **kwargs):
+        append_calls.append((args, kwargs))
+        return await real_append(*args, **kwargs)
+
+    monkeypatch.setattr(
+        orchestrator_module.ws_bridge,
+        "append_non_executable_decision",
+        spy_append_non_executable_decision,
+    )
+    orchestrator = build_orchestrator(intent_result("click", RiskLevel.LOW, {}), executor=executor)
+    orchestrator.guard = AllowGuard()
+
+    response = await orchestrator.process(
+        CommandRequest(text="click", context=_default_non_executable_context(journal, fanout=fanout))
+    )
+
+    assert response.status == CommandStatus.WAITING_FOR_CLARIFICATION
+    assert executor.calls == []
+    assert action_started_calls == []
+    assert len(append_calls) == 1
+    assert append_calls[0][1]["journal"] is journal
+    assert _event_types(journal.events) == [
+        ProtocolEventType.COMMAND_CLASSIFIED.value,
+        ProtocolEventType.CLARIFICATION_REQUESTED.value,
+        ProtocolEventType.COMMAND_WAITING_FOR_CLARIFICATION.value,
+    ]
+    assert emitted == journal.events
+    _assert_non_executable_event_shape(journal.events)
+    reasons = " ".join(str(event.payload.get("reason", "")) for event in journal.events)
+    assert "generic click quarantine" in reasons
+    assert "target resolution" in reasons
+    assert ProtocolEventType.APPROVAL_REQUIRED.value not in _event_types(journal.events)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", ["tıkla", "şuna tıkla", "buna tıkla"])
+async def test_default_turkish_generic_click_phrases_are_quarantined(
+    monkeypatch: pytest.MonkeyPatch,
+    text: str,
+) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
+    executor = SpyExecutor()
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+    orchestrator = build_orchestrator(intent_result("click", RiskLevel.LOW, {}), executor=executor)
+    orchestrator.guard = AllowGuard()
+
+    response = await orchestrator.process(
+        CommandRequest(text=text, context=_default_non_executable_context(journal))
+    )
+
+    assert response.status == CommandStatus.WAITING_FOR_CLARIFICATION
+    assert executor.calls == []
+    assert action_started_calls == []
+    assert _event_types(journal.events) == [
+        ProtocolEventType.COMMAND_CLASSIFIED.value,
+        ProtocolEventType.CLARIFICATION_REQUESTED.value,
+        ProtocolEventType.COMMAND_WAITING_FOR_CLARIFICATION.value,
+    ]
+    _assert_non_executable_event_shape(journal.events)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("text", "params", "expected_status", "expected_events"),
+    [
+        (
+            "5 kere tıkla",
+            {"count": 5},
+            CommandStatus.WAITING_FOR_CLARIFICATION,
+            [
+                ProtocolEventType.COMMAND_CLASSIFIED.value,
+                ProtocolEventType.CLARIFICATION_REQUESTED.value,
+                ProtocolEventType.COMMAND_WAITING_FOR_CLARIFICATION.value,
+            ],
+        ),
+        (
+            "click 10 20",
+            {"x": 10, "y": 20},
+            CommandStatus.PENDING_APPROVAL,
+            [
+                ProtocolEventType.COMMAND_CLASSIFIED.value,
+                ProtocolEventType.APPROVAL_REQUESTED.value,
+                ProtocolEventType.COMMAND_WAITING_FOR_APPROVAL.value,
+            ],
+        ),
+        (
+            "click .primary",
+            {"selector": ".primary"},
+            CommandStatus.PENDING_APPROVAL,
+            [
+                ProtocolEventType.COMMAND_CLASSIFIED.value,
+                ProtocolEventType.APPROVAL_REQUESTED.value,
+                ProtocolEventType.COMMAND_WAITING_FOR_APPROVAL.value,
+            ],
+        ),
+    ],
+)
+async def test_default_count_coordinate_and_selector_click_are_quarantined(
+    monkeypatch: pytest.MonkeyPatch,
+    text: str,
+    params: dict,
+    expected_status: CommandStatus,
+    expected_events: list[str],
+) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
+    executor = SpyExecutor()
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+    orchestrator = build_orchestrator(intent_result("click", RiskLevel.LOW, params), executor=executor)
+    orchestrator.guard = AllowGuard()
+
+    response = await orchestrator.process(
+        CommandRequest(text=text, context=_default_non_executable_context(journal))
+    )
+
+    assert response.status == expected_status
+    assert executor.calls == []
+    assert action_started_calls == []
+    assert _event_types(journal.events) == expected_events
+    _assert_non_executable_event_shape(journal.events)
+    reasons = " ".join(str(event.payload.get("reason", "")) for event in journal.events)
+    policy_rules = " ".join(str(event.payload.get("policy_rule", "")) for event in journal.events)
+    assert "generic click quarantine" in reasons
+    assert "target resolution" in reasons
+    assert "generic_click.quarantined" in policy_rules
+    assert ProtocolEventType.APPROVAL_REQUIRED.value not in _event_types(journal.events)
+
+
+@pytest.mark.asyncio
+async def test_default_compound_unresolved_click_quarantines_before_partial_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
+    executor = SpyExecutor()
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+    orchestrator = build_orchestrator(
+        [
+            intent_result("open_app", RiskLevel.LOW, {"app": "brave"}),
+            intent_result("click", RiskLevel.LOW, {"target": "first result"}),
+        ],
+        executor=executor,
+    )
+    orchestrator.guard = AllowGuard()
+
+    response = await orchestrator.process(
+        CommandRequest(
+            text="brave aç ve ilk sonuca tıkla",
+            context=_default_non_executable_context(journal),
+        )
+    )
+
+    assert response.status == CommandStatus.WAITING_FOR_CLARIFICATION
+    assert executor.calls == []
+    assert action_started_calls == []
+    assert _event_types(journal.events) == [
+        ProtocolEventType.COMMAND_CLASSIFIED.value,
+        ProtocolEventType.CLARIFICATION_REQUESTED.value,
+        ProtocolEventType.COMMAND_WAITING_FOR_CLARIFICATION.value,
+    ]
+    _assert_non_executable_event_shape(journal.events)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("intent_name", "params", "text"),
+    [
+        ("read_file", {"path": "README.md"}, "read README.md"),
+        ("search_web", {"query": "aegis"}, "search web for aegis"),
+    ],
+)
+async def test_default_non_click_ready_intents_still_reach_executor(
+    monkeypatch: pytest.MonkeyPatch,
+    intent_name: str,
+    params: dict,
+    text: str,
+) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
+    executor = SpyExecutor()
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+
+    async def fail_append_non_executable_decision(*args, **kwargs):
+        raise AssertionError("default generic click quarantine must not catch non-click intents")
+
+    monkeypatch.setattr(
+        orchestrator_module.ws_bridge,
+        "append_non_executable_decision",
+        fail_append_non_executable_decision,
+    )
+    orchestrator = build_orchestrator(intent_result(intent_name, RiskLevel.LOW, params), executor=executor)
+    orchestrator.guard = AllowGuard()
+
+    response = await orchestrator.process(
+        CommandRequest(text=text, context=_default_non_executable_context(journal))
+    )
+
+    assert response.status == CommandStatus.EXECUTED
+    assert len(executor.calls) == 1
+    assert len(action_started_calls) == 1
+    assert journal.events == []
+
+
+@pytest.mark.asyncio
+async def test_default_open_app_ready_path_still_reaches_executor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+
+    async def fail_append_non_executable_decision(*args, **kwargs):
+        raise AssertionError("default generic click quarantine must not catch open_app")
+
+    monkeypatch.setattr(
+        orchestrator_module.ws_bridge,
+        "append_non_executable_decision",
+        fail_append_non_executable_decision,
+    )
+    orchestrator = build_orchestrator(
+        intent_result("open_app", RiskLevel.LOW, {"app": "notepad"}),
+        executor=VerifiedDesktopExecutor(),
+    )
+    orchestrator.guard = AllowGuard()
+
+    response = await orchestrator.process(
+        CommandRequest(text="open notepad", context=_default_non_executable_context(journal))
+    )
+
+    assert response.status == CommandStatus.EXECUTED
+    assert response.actions[0].action == "open_app"
+    assert len(action_started_calls) == 1
+    assert journal.events == []
+
+
+@pytest.mark.asyncio
+async def test_non_executable_boundary_repeated_calls_use_unique_live_sequences(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+
+    for _ in range(2):
+        orchestrator = build_orchestrator(intent_result("click", RiskLevel.LOW, {}), executor=SpyExecutor())
+        orchestrator.guard = AllowGuard()
+        response = await orchestrator.process(
+            CommandRequest(text="click", context=_boundary_context(journal))
+        )
+        assert response.status == CommandStatus.WAITING_FOR_CLARIFICATION
+
+    assert action_started_calls == []
+    assert [event.sequence_num for event in journal.events] == [1, 2, 3, 4, 5, 6]
+    assert len({event.sequence_num for event in journal.events}) == 6
+    assert _event_types(journal.events[:3]) == [
+        ProtocolEventType.COMMAND_CLASSIFIED.value,
+        ProtocolEventType.CLARIFICATION_REQUESTED.value,
+        ProtocolEventType.COMMAND_WAITING_FOR_CLARIFICATION.value,
+    ]
+    assert _event_types(journal.events[3:]) == [
+        ProtocolEventType.COMMAND_CLASSIFIED.value,
+        ProtocolEventType.CLARIFICATION_REQUESTED.value,
+        ProtocolEventType.COMMAND_WAITING_FOR_CLARIFICATION.value,
+    ]
+    _assert_non_executable_event_shape(journal.events)
 
 
 @pytest.mark.asyncio
@@ -703,9 +1202,9 @@ async def test_low_risk_command_runs_without_approval() -> None:
 
 @pytest.mark.asyncio
 async def test_medium_risk_command_requests_approval_before_execution() -> None:
-    orchestrator = build_orchestrator(intent_result("click", RiskLevel.MEDIUM, {"count": 1}))
+    orchestrator = build_orchestrator(intent_result("open_app", RiskLevel.MEDIUM, {"app": "notepad"}))
 
-    response = await orchestrator.process(CommandRequest(text="click"))
+    response = await orchestrator.process(CommandRequest(text="open notepad"))
 
     assert response.status == CommandStatus.PENDING_APPROVAL
     assert response.actions == []
@@ -917,12 +1416,12 @@ async def test_approved_focus_app_command_resumes_and_executes() -> None:
 @pytest.mark.asyncio
 async def test_proof_backed_side_effect_completes_verified() -> None:
     orchestrator = build_orchestrator(
-        intent_result("click", RiskLevel.MEDIUM, {"count": 1}),
+        intent_result("open_url", RiskLevel.MEDIUM, {"url": "https://example.com"}),
         executor=ProofBackedSideEffectExecutor("browser_evidence"),
     )
     manager = get_approval_manager()
 
-    pending = await orchestrator.process(CommandRequest(text="click"))
+    pending = await orchestrator.process(CommandRequest(text="open https://example.com"))
     command_id = manager.snapshot()["pending_approvals"][0]["command_id"]
     approved = manager.approve(command_id)
 
@@ -938,16 +1437,18 @@ async def test_proof_backed_side_effect_completes_verified() -> None:
     snapshot = manager.snapshot()
     assert pending.status == CommandStatus.PENDING_APPROVAL
     assert response.status == CommandStatus.EXECUTED
-    assert response.actions[0].proof["browser_evidence"]["tool"] == "click"
+    assert response.actions[0].proof["browser_evidence"]["tool"] == "open_url"
     assert snapshot["records"][-1]["verification_state"] == "verified"
 
 
 @pytest.mark.asyncio
 async def test_missing_side_effect_proof_keeps_completed_command_unverified() -> None:
-    orchestrator = build_orchestrator(intent_result("click", RiskLevel.MEDIUM, {"count": 1}))
+    orchestrator = build_orchestrator(
+        intent_result("open_url", RiskLevel.MEDIUM, {"url": "https://example.com"})
+    )
     manager = get_approval_manager()
 
-    pending = await orchestrator.process(CommandRequest(text="click"))
+    pending = await orchestrator.process(CommandRequest(text="open https://example.com"))
     command_id = manager.snapshot()["pending_approvals"][0]["command_id"]
     approved = manager.approve(command_id)
 
@@ -1017,29 +1518,34 @@ async def test_approved_write_file_command_resumes_and_executes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_approved_click_command_resumes_and_executes() -> None:
-    orchestrator = build_orchestrator(intent_result("click", RiskLevel.MEDIUM, {"count": 1}))
-    manager = get_approval_manager()
-
-    pending = await orchestrator.process(CommandRequest(text="click"))
-    command_id = manager.snapshot()["pending_approvals"][0]["command_id"]
-    approved = manager.approve(command_id)
+async def test_approval_granted_does_not_bypass_default_generic_click_quarantine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
+    executor = SpyExecutor()
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+    orchestrator = build_orchestrator(intent_result("click", RiskLevel.MEDIUM, {"x": 10, "y": 20}), executor=executor)
+    orchestrator.guard = AllowGuard()
 
     response = await orchestrator.process(CommandRequest(
-        text=approved.text,
+        text="click 10 20",
         context={
-            "command_id": command_id,
             "approval_granted": True,
-            "cancellation_token": manager.token_for(command_id),
+            **_default_non_executable_context(journal),
         },
     ))
 
-    snapshot = manager.snapshot()
-    assert pending.status == CommandStatus.PENDING_APPROVAL
-    assert response.status == CommandStatus.EXECUTED
-    assert response.actions[0].action == "click"
-    assert snapshot["pending_approvals"] == []
-    assert snapshot["records"][-1]["status"] == CommandStatus.EXECUTED.value
+    assert response.status == CommandStatus.PENDING_APPROVAL
+    assert executor.calls == []
+    assert action_started_calls == []
+    assert _event_types(journal.events) == [
+        ProtocolEventType.COMMAND_CLASSIFIED.value,
+        ProtocolEventType.APPROVAL_REQUESTED.value,
+        ProtocolEventType.COMMAND_WAITING_FOR_APPROVAL.value,
+    ]
+    _assert_non_executable_event_shape(journal.events)
 
 
 @pytest.mark.asyncio

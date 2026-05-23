@@ -41,14 +41,25 @@ from aegis.core.protocol import (
 from aegis.core.commands import get_approval_manager
 from aegis.core.action_timeline import project_action_timeline
 from aegis.core.app_map import get_app_registry_snapshot
+from aegis.core.approval_semantics import DecisionStatus
 from aegis.tools.registry import get_tool_registry_snapshot
 from aegis.core.event_journal import get_runtime_journal
+from aegis.core.guard_policy import GuardDecision
 from aegis.core.maintenance import get_last_maintenance_scan, run_read_only_maintenance_scan
 from aegis.core.maintenance_actions import (
     execute_maintenance_action_proposal,
     is_maintenance_action_record,
     request_maintenance_action_approval,
     response_from_maintenance_action,
+)
+from aegis.core.non_executable_projection import (
+    project_guard_decision_to_journal_entries,
+    reconstruct_non_executable_decision_from_journal,
+)
+from aegis.core.non_executable_runtime_adapter import (
+    project_non_executable_events_to_action_timeline,
+    project_non_executable_events_to_snapshot,
+    runtime_events_to_journal_entries,
 )
 from aegis.core.runtime_authority import get_runtime_authority
 from aegis.core.constants import CommandStatus, RiskLevel
@@ -83,6 +94,15 @@ _NON_EXECUTABLE_BATCH_FORBIDDEN_EVENT_TYPES = {
 }
 _NON_EXECUTABLE_BATCH_FORBIDDEN_PAYLOAD_KEYS = {"execution_evidence"}
 _NON_EXECUTABLE_BATCH_FORBIDDEN_TRUTHY_KEYS = {"success", "verified", "action_started"}
+_SUPPORTED_NON_EXECUTABLE_DECISIONS = {
+    DecisionStatus.APPROVAL_REQUIRED,
+    DecisionStatus.CLARIFICATION_REQUIRED,
+    DecisionStatus.BLOCKED,
+}
+_CONTROL_PLANE_EVENT_TYPES = {
+    ProtocolEventType.SYSTEM_ONLINE.value,
+    ProtocolEventType.SNAPSHOT_CREATED.value,
+}
 
 
 @dataclass(frozen=True)
@@ -93,6 +113,14 @@ class QueuedCommand:
     received_at: float
     command_id: str | None = None
     approval_granted: bool = False
+
+
+@dataclass(frozen=True)
+class NonExecutableDecisionAppendResult:
+    events: list[RuntimeEvent]
+    snapshot_patch: dict[str, Any]
+    action_timeline_entries: list[dict[str, Any]]
+    replay_state: dict[str, Any]
 
 
 def maintenance_scan_context() -> dict[str, Any]:
@@ -145,6 +173,48 @@ async def _create_and_append_event(
         return event
 
 
+def _create_control_event(
+    event_type: ProtocolEventType,
+    payload: Dict[str, Any],
+    *,
+    trace_id: Optional[str] = None,
+    causation_id: Optional[str] = None,
+    span_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    runtime_phase: Optional[RuntimeState | str] = None,
+    source: Optional[Component] = None,
+    severity: Severity = Severity.INFO,
+) -> RuntimeEvent:
+    """Create a client-scoped control-plane event without consuming journal sequence.
+
+    Handshake and snapshot payloads are emitted to one socket client. Persisting
+    them in the global runtime journal creates sequence gaps for other clients
+    and can recursively embed prior snapshots through missed-event replay.
+    """
+    return RuntimeEvent(
+        type=event_type.value,
+        payload=payload or {},
+        trace_id=trace_id,
+        causation_id=causation_id,
+        span_id=span_id,
+        session_id=session_id,
+        runtime_phase=runtime_phase.value if isinstance(runtime_phase, RuntimeState) else runtime_phase,
+        source=source.value if source else None,
+        severity=severity.value,
+        sequence_num=None,
+    )
+
+
+def _replayable_journal_events_after(journal, sequence_num: int) -> list[dict[str, Any]]:
+    if sequence_num <= 0:
+        return []
+    return [
+        event
+        for event in journal.events_after(sequence_num)
+        if str(event.get("type") or "") not in _CONTROL_PLANE_EVENT_TYPES
+    ]
+
+
 async def append_non_executable_event_batch(
     events: Iterable[RuntimeEvent],
     *,
@@ -180,6 +250,102 @@ async def append_non_executable_event_batch(
                 await maybe_awaitable
 
     return appended
+
+
+async def append_non_executable_decision(
+    guard_decision: GuardDecision,
+    *,
+    command_id: str,
+    trace_id: str,
+    causation_id: str | None = None,
+    span_id: str | None = None,
+    action_id: str | None = None,
+    journal=None,
+    session_id: str | None = None,
+    fanout: Callable[[RuntimeEvent], Awaitable[None] | None] | None = None,
+) -> NonExecutableDecisionAppendResult:
+    """Create and append canonical non-executable RuntimeEvents under ws_bridge.
+
+    Unlike the dry-run adapter, this helper allocates sequence numbers through
+    create_event(...) while holding the canonical journal emit lock. Callers may
+    inject a journal and fanout in tests; default orchestration is not wired to
+    this helper yet.
+    """
+
+    _require_non_executable_decision(guard_decision)
+    stable_causation_id = causation_id or f"{command_id}:guard_decision"
+    entries = project_guard_decision_to_journal_entries(
+        guard_decision,
+        command_id=command_id,
+        trace_id=trace_id,
+        span_id=span_id,
+        causation_id=stable_causation_id,
+        sequence_num=None,
+        timestamp=None,
+    )
+    target_journal = journal if journal is not None else get_runtime_journal()
+
+    appended: list[RuntimeEvent] = []
+    async with _journal_emit_lock:
+        events: list[RuntimeEvent] = []
+        for entry in entries:
+            event_type = ProtocolEventType(str(entry["event_type"]))
+            if event_type.value in _NON_EXECUTABLE_BATCH_FORBIDDEN_EVENT_TYPES:
+                raise ValueError(f"non-executable decision cannot append {event_type.value}")
+            payload = _non_executable_payload_from_entry(entry, action_id=action_id)
+            _assert_non_executable_payload_shape(payload)
+            events.append(
+                create_event(
+                    event_type,
+                    payload=payload,
+                    trace_id=trace_id,
+                    causation_id=stable_causation_id,
+                    span_id=span_id,
+                    session_id=session_id,
+                    source=Component.GUARD,
+                    severity=Severity.WARNING,
+                )
+            )
+
+        _validate_non_executable_event_batch(events)
+        for event in events:
+            persisted = await asyncio.to_thread(target_journal.append, event)
+            appended.append(persisted)
+
+    if fanout is not None:
+        for event in appended:
+            maybe_awaitable = fanout(event)
+            if maybe_awaitable is not None:
+                await maybe_awaitable
+
+    return NonExecutableDecisionAppendResult(
+        events=appended,
+        snapshot_patch=project_non_executable_events_to_snapshot(appended),
+        action_timeline_entries=project_non_executable_events_to_action_timeline(appended),
+        replay_state=reconstruct_non_executable_decision_from_journal(
+            runtime_events_to_journal_entries(appended)
+        ),
+    )
+
+
+def _require_non_executable_decision(decision: GuardDecision) -> None:
+    if decision.decision_status not in _SUPPORTED_NON_EXECUTABLE_DECISIONS:
+        raise ValueError(f"non-executable decision append does not support {decision.decision_status.value}")
+
+
+def _non_executable_payload_from_entry(entry: dict[str, Any], *, action_id: str | None = None) -> dict[str, Any]:
+    payload = dict(entry.get("payload") or {})
+    payload.setdefault("command_id", entry["command_id"])
+    payload.setdefault("trace_id", entry["trace_id"])
+    payload.setdefault("decision_status", entry["decision_status"])
+    payload.setdefault("risk_level", entry["risk_level"])
+    payload.setdefault("policy_rule", entry["policy_rule"])
+    payload.setdefault("reason", entry["reason"])
+    payload.setdefault("evidence_refs", entry.get("evidence_refs") or [])
+    if action_id is not None:
+        payload.setdefault("action_id", action_id)
+    payload["not_executed"] = True
+    return payload
 
 
 def _validate_non_executable_event_batch(events: list[RuntimeEvent]) -> None:
@@ -237,7 +403,7 @@ async def connect(sid: str, environ: dict):
     journal_snapshot, runtime_snapshot = _build_runtime_snapshot(journal)
 
     # Send handshake
-    handshake = await _create_and_append_event(
+    handshake = _create_control_event(
         ProtocolEventType.SYSTEM_ONLINE,
         payload={
             "protocol_version": PROTOCOL_VERSION,
@@ -252,7 +418,7 @@ async def connect(sid: str, environ: dict):
         source=Component.SYSTEM,
     )
     await sio.emit("SYSTEM_ONLINE", handshake.to_dict(), to=sid)
-    await _emit_snapshot(to=sid, last_sequence_num=handshake.sequence_num)
+    await _emit_snapshot(to=sid)
 
 
 @sio.event
@@ -775,18 +941,19 @@ async def emit_approval_required(command: dict[str, Any], *, trace_id: str | Non
 async def _emit_snapshot(to: str, last_sequence_num: int = 0):
     journal = get_runtime_journal()
     journal_snapshot, runtime_snapshot = _build_runtime_snapshot(journal)
-    missed_events = journal.events_after(last_sequence_num) if last_sequence_num > 0 else []
+    missed_events = _replayable_journal_events_after(journal, int(last_sequence_num or 0))
+    journal_tail_sequence = int(journal_snapshot.get("last_sequence_num", 0) or 0)
     def add_truth_sync(snapshot) -> None:
         snapshot.payload["truth_sync"] = {
             "source_of_truth": "backend_snapshot_protocol_event_journal",
-            "snapshot_sequence_num": snapshot.sequence_num,
-            "journal_tail_sequence_num": int(journal_snapshot.get("last_sequence_num", 0) or 0),
+            "snapshot_sequence_num": journal_tail_sequence,
+            "journal_tail_sequence_num": journal_tail_sequence,
             "client_last_sequence_num": int(last_sequence_num or 0),
             "missed_event_count": len(missed_events),
             "replay_required": bool(missed_events),
         }
 
-    snapshot = await _create_and_append_event(
+    snapshot = _create_control_event(
         ProtocolEventType.SNAPSHOT_CREATED,
         payload={
             "session_id": _session_id,
@@ -800,20 +967,27 @@ async def _emit_snapshot(to: str, last_sequence_num: int = 0):
         session_id=_session_id,
         runtime_phase=runtime_snapshot["fsm_state"],
         source=Component.SYSTEM,
-        mutate_before_append=add_truth_sync,
     )
+    add_truth_sync(snapshot)
     await sio.emit(ProtocolEventType.SNAPSHOT_CREATED.value, snapshot.to_dict(), to=to)
 
 
 def _build_runtime_snapshot(journal) -> tuple[dict[str, Any], dict[str, Any]]:
     journal_snapshot = journal.snapshot()
+    recent_events = journal.recent_events()
+    scoped_events = [
+        event
+        for event in recent_events
+        if not _session_id or event.get("session_id") == _session_id
+    ]
     runtime_snapshot = get_runtime_authority(_session_id, queue_capacity=_command_queue_capacity).snapshot(journal_snapshot)
     runtime_snapshot["commands"] = get_approval_manager().snapshot()
+    runtime_snapshot["non_executable_decisions"] = project_non_executable_events_to_snapshot(scoped_events)
     runtime_snapshot["maintenance_scan"] = get_last_maintenance_scan()
     runtime_snapshot["app_registry"] = get_app_registry_snapshot()
     runtime_snapshot["tool_registry"] = get_tool_registry_snapshot()
     runtime_snapshot["action_timeline"] = project_action_timeline(
-        journal.recent_events(),
+        recent_events,
         limit=50,
         session_id=_session_id,
     )

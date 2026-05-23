@@ -73,6 +73,7 @@ class ExecutionMode(str, Enum):
 class CommandStatus(str, Enum):
     RECEIVED = "received"
     PENDING_APPROVAL = "pending_approval"
+    WAITING_FOR_CLARIFICATION = "waiting_for_clarification"
     APPROVED = "approved"
     REJECTED = "rejected"
     RUNNING = "running"
