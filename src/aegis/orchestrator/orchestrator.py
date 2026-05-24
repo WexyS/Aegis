@@ -69,9 +69,25 @@ SIDE_EFFECT_PROOF_KEYS = {
     "write_evidence",
 }
 
-
-def _is_generic_click_intent(intent: IntentResult) -> bool:
-    return intent.intent == "click"
+GUARD_POLICY_INTENTS = {
+    "read_file",
+    "summarize_file",
+    "open_app",
+    "focus_app",
+    "search_web",
+    "open_url",
+    "type",
+    "write_file",
+    "run_command",
+    "close_app",
+    "click",
+    "browser_click",
+    "desktop_click",
+    "delete_file",
+    "remove_directory",
+    "kill_process",
+    "install_package",
+}
 
 
 def _non_executable_command_status(decision_status: DecisionStatus) -> CommandStatus:
@@ -304,6 +320,8 @@ class Orchestrator:
             intent: IntentResult,
             step_ctx: ExecutionContext,
         ) -> CommandResponse | None:
+            if intent.intent not in GUARD_POLICY_INTENTS:
+                return None
             action_id = str(step_ctx.span_id)
             guard_decision = classify_intent_risk(
                 intent.intent,
@@ -318,6 +336,12 @@ class Orchestrator:
                 },
             )
             if guard_decision.decision_status == DecisionStatus.READY:
+                return None
+            if (
+                guard_decision.decision_status == DecisionStatus.APPROVAL_REQUIRED
+                and approval_granted
+                and _approval_resolution_can_resume(guard_decision)
+            ):
                 return None
 
             non_executable_guard_event = {
@@ -476,19 +500,6 @@ class Orchestrator:
                 await transition("FAILED", reason="Command cancelled before execution")
                 plan = []
 
-            generic_click_index = next(
-                (i for i, intent in enumerate(plan) if _is_generic_click_intent(intent)),
-                None,
-            )
-            if generic_click_index is not None:
-                click_step_ctx = ctx.create_child(step_index=generic_click_index)
-                response = await quarantine_non_executable_intent(
-                    plan[generic_click_index],
-                    click_step_ctx,
-                )
-                if response is not None:
-                    return response
-
             if plan:
                 preflight_block: str | None = None
                 approval_required = False
@@ -549,7 +560,16 @@ class Orchestrator:
                     )
                     await transition("FAILED", reason=preflight_block)
                     plan = []
-                elif approval_required and not approval_granted:
+                else:
+                    for index, planned_intent in enumerate(plan):
+                        response = await quarantine_non_executable_intent(
+                            planned_intent,
+                            ctx.create_child(step_index=index),
+                        )
+                        if response is not None:
+                            return response
+
+                if plan and approval_required and not approval_granted:
                     pending_reason = f"{highest_risk.value} risk command requires approval"
                     record = approval_manager.register_pending(
                         command_id=command_id,
@@ -580,9 +600,9 @@ class Orchestrator:
                         timestamp=datetime.now(timezone.utc).isoformat() + "Z",
                         duration_ms=duration_ms,
                     )
-                elif approval_granted and command_record.status == CommandStatus.CANCELLED:
+                elif plan and approval_granted and command_record.status == CommandStatus.CANCELLED:
                     raise asyncio.CancelledError()
-                elif approval_granted and _unverified_side_effects(plan):
+                elif plan and approval_granted and _unverified_side_effects(plan):
                     blocked_tools = ", ".join(sorted(set(_unverified_side_effects(plan))))
                     reason = f"Unverified execution gate blocked side-effecting action(s): {blocked_tools}"
                     all_actions.append(ActionResult(
@@ -678,10 +698,9 @@ class Orchestrator:
                     break
 
                 action_id = str(step_ctx.span_id)
-                if request.context.get("enable_non_executable_guard_boundary"):
-                    response = await quarantine_non_executable_intent(intent, step_ctx)
-                    if response is not None:
-                        return response
+                response = await quarantine_non_executable_intent(intent, step_ctx)
+                if response is not None:
+                    return response
 
                 # B. EMIT ACTION_STARTED to frontend
                 await ws_bridge.emit_action_started(

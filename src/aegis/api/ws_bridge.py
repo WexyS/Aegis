@@ -1054,7 +1054,7 @@ async def emit_approval_resolved(record, *, decision: str):
             "approval_status": record.metadata.get("approval_resolution_status"),
             "command_status": record.status.value,
             "reason": record.reason,
-            "not_executed": record.status != CommandStatus.APPROVED,
+            "not_executed": True,
             "executed": False,
             "mutation_performed": False,
             "command": record.to_dict(),

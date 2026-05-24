@@ -1174,6 +1174,135 @@ async def test_default_generic_click_quarantine_prevents_executor_without_flag(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("intent_name", "params", "text", "expected_status", "expected_events", "projection_key"),
+    [
+        (
+            "read_file",
+            {},
+            "read a file",
+            CommandStatus.WAITING_FOR_CLARIFICATION,
+            [
+                ProtocolEventType.COMMAND_CLASSIFIED.value,
+                ProtocolEventType.CLARIFICATION_REQUESTED.value,
+                ProtocolEventType.COMMAND_WAITING_FOR_CLARIFICATION.value,
+            ],
+            "pending_clarification",
+        ),
+        (
+            "open_app",
+            {"app": "unknownapp"},
+            "open unknownapp",
+            CommandStatus.WAITING_FOR_CLARIFICATION,
+            [
+                ProtocolEventType.COMMAND_CLASSIFIED.value,
+                ProtocolEventType.CLARIFICATION_REQUESTED.value,
+                ProtocolEventType.COMMAND_WAITING_FOR_CLARIFICATION.value,
+            ],
+            "pending_clarification",
+        ),
+    ],
+)
+async def test_default_non_executable_guard_stops_non_click_before_executor(
+    monkeypatch: pytest.MonkeyPatch,
+    intent_name: str,
+    params: dict,
+    text: str,
+    expected_status: CommandStatus,
+    expected_events: list[str],
+    projection_key: str,
+) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
+    executor = SpyExecutor()
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+    orchestrator = build_orchestrator(intent_result(intent_name, RiskLevel.LOW, params), executor=executor)
+    orchestrator.guard = AllowGuard()
+
+    response = await orchestrator.process(
+        CommandRequest(text=text, context=_default_non_executable_context(journal))
+    )
+
+    assert response.status == expected_status
+    assert executor.calls == []
+    assert action_started_calls == []
+    assert _event_types(journal.events) == expected_events
+    _assert_non_executable_event_shape(journal.events)
+    snapshot_patch = project_non_executable_events_to_snapshot(journal.events)
+    assert snapshot_patch[projection_key] is not None
+    timeline_entries = project_non_executable_events_to_action_timeline(journal.events)
+    assert timeline_entries
+    assert all(entry.get("executed") is False for entry in timeline_entries)
+    assert all(entry.get("verified") is not True for entry in timeline_entries)
+    assert all("execution_evidence" not in entry for entry in timeline_entries)
+
+
+@pytest.mark.asyncio
+async def test_default_mixed_ready_then_non_executable_non_click_plan_stops_before_partial_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
+    executor = SpyExecutor()
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+    orchestrator = build_orchestrator(
+        [
+            intent_result("open_app", RiskLevel.LOW, {"app": "notepad"}),
+            intent_result("read_file", RiskLevel.LOW, {}),
+        ],
+        executor=executor,
+    )
+    orchestrator.guard = AllowGuard()
+
+    response = await orchestrator.process(
+        CommandRequest(
+            text="open notepad and read a file",
+            context=_default_non_executable_context(journal),
+        )
+    )
+
+    assert response.status == CommandStatus.WAITING_FOR_CLARIFICATION
+    assert executor.calls == []
+    assert action_started_calls == []
+    assert _event_types(journal.events) == [
+        ProtocolEventType.COMMAND_CLASSIFIED.value,
+        ProtocolEventType.CLARIFICATION_REQUESTED.value,
+        ProtocolEventType.COMMAND_WAITING_FOR_CLARIFICATION.value,
+    ]
+    _assert_non_executable_event_shape(journal.events)
+
+
+@pytest.mark.asyncio
+async def test_approval_granted_context_does_not_bypass_non_resumable_click_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
+    executor = SpyExecutor()
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+    orchestrator = build_orchestrator(intent_result("click", RiskLevel.LOW, {"x": 10, "y": 20}), executor=executor)
+    orchestrator.guard = AllowGuard()
+
+    response = await orchestrator.process(
+        CommandRequest(
+            text="click 10 20",
+            context={**_default_non_executable_context(journal), "approval_granted": True},
+        )
+    )
+
+    pending = get_approval_manager().snapshot()["pending_approvals"][0]
+    assert response.status == CommandStatus.PENDING_APPROVAL
+    assert pending["metadata"]["resume_allowed"] is False
+    assert pending["metadata"]["mutation_performed"] is False
+    assert executor.calls == []
+    assert action_started_calls == []
+    _assert_non_executable_event_shape(journal.events)
+
+
+@pytest.mark.asyncio
 async def test_clarification_resolution_for_quarantined_click_remains_non_executed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

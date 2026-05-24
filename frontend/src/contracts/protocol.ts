@@ -450,11 +450,11 @@ export const ApprovalResolvedPayload = z.object({
   approval_status: z.string().optional(),
   command_status: z.string().optional(),
   reason: z.string().optional(),
-  not_executed: z.boolean().optional(),
+  not_executed: z.literal(true),
   executed: z.literal(false).optional(),
   mutation_performed: z.literal(false).optional(),
   command: z.record(z.string(), z.unknown()).optional(),
-}).catchall(z.unknown());
+}).strict();
 
 export const ApprovalExpiredPayload = z.object({
   approval_id: z.string(),
@@ -477,7 +477,7 @@ export const ClarificationResolvedPayload = z.object({
   mutation_performed: z.literal(false).optional(),
   completed_without_execution: z.literal(true).optional(),
   command: z.record(z.string(), z.unknown()).optional(),
-}).catchall(z.unknown());
+}).strict();
 
 export const CommandRecordPayload = z.object({
   command_id: z.string(),
