@@ -163,6 +163,10 @@ def project_non_executable_events_to_snapshot(
         "not_executed": True,
         "executed": False,
     }
+    if replay.get("last_resolution") is not None:
+        patch["last_resolution"] = replay["last_resolution"]
+    if replay.get("resolved_decisions"):
+        patch["resolved_decisions"] = replay["resolved_decisions"]
     if replay["last_guard_decision"]:
         patch["last_risk_level"] = replay["last_guard_decision"].get("risk_level")
     _assert_no_execution_shape(patch)
@@ -224,6 +228,36 @@ def project_non_executable_events_to_action_timeline(
                     "blocked_action": payload.get("blocked_action"),
                     "user_message": payload.get("user_message") or payload.get("reason"),
                     "retry_allowed": bool(payload.get("retry_allowed", False)),
+                }
+            )
+            entries.append(entry)
+        elif event_type == ProtocolEventType.APPROVAL_RESOLVED.value:
+            entry = _timeline_base(event, payload)
+            entry.update(
+                {
+                    "timeline_id": str(payload.get("approval_id") or _fallback_timeline_id(event)),
+                    "kind": "approval_resolved",
+                    "status": payload.get("approval_status") or payload.get("decision"),
+                    "terminal": payload.get("not_executed") is True,
+                    "terminal_non_executed": payload.get("not_executed") is True,
+                    "approval_id": payload.get("approval_id"),
+                    "decision": payload.get("decision"),
+                    "command_status": payload.get("command_status"),
+                }
+            )
+            entries.append(entry)
+        elif event_type == ProtocolEventType.CLARIFICATION_RESOLVED.value:
+            entry = _timeline_base(event, payload)
+            entry.update(
+                {
+                    "timeline_id": str(payload.get("clarification_id") or _fallback_timeline_id(event)),
+                    "kind": "clarification_resolved",
+                    "status": payload.get("clarification_status"),
+                    "terminal": True,
+                    "terminal_non_executed": True,
+                    "clarification_id": payload.get("clarification_id"),
+                    "answer": payload.get("answer"),
+                    "command_status": payload.get("command_status"),
                 }
             )
             entries.append(entry)

@@ -311,6 +311,8 @@ def reconstruct_non_executable_decision_from_journal(entries: list[dict[str, Any
         "terminal_non_executed": False,
         "executed": False,
         "auto_approved": False,
+        "last_resolution": None,
+        "resolved_decisions": [],
         "journal_order": [],
     }
     for _, entry in ordered:
@@ -335,6 +337,38 @@ def reconstruct_non_executable_decision_from_journal(entries: list[dict[str, Any
             state["command_status"] = "waiting_for_clarification"
         elif event_type == "COMMAND_BLOCKED":
             state["command_status"] = "blocked"
+            state["terminal_non_executed"] = True
+            state["pending_approval"] = None
+            state["pending_clarification"] = None
+        elif event_type == "APPROVAL_RESOLVED":
+            resolution = {
+                "kind": "approval_resolved",
+                **payload,
+            }
+            state["last_resolution"] = resolution
+            state["resolved_decisions"].append(resolution)
+            state["pending_approval"] = None
+            state["command_status"] = payload.get("command_status") or state["command_status"]
+            if payload.get("not_executed") is True:
+                state["terminal_non_executed"] = True
+        elif event_type == "CLARIFICATION_RESOLVED":
+            resolution = {
+                "kind": "clarification_resolved",
+                **payload,
+            }
+            state["last_resolution"] = resolution
+            state["resolved_decisions"].append(resolution)
+            state["pending_clarification"] = None
+            state["command_status"] = payload.get("command_status") or state["command_status"]
+            if payload.get("not_executed") is True:
+                state["terminal_non_executed"] = True
+        elif event_type == "COMMAND_REJECTED":
+            state["pending_approval"] = None
+            state["command_status"] = "rejected"
+            state["terminal_non_executed"] = True
+        elif event_type == "COMMAND_CANCELLED":
+            state["pending_clarification"] = None
+            state["command_status"] = "cancelled"
             state["terminal_non_executed"] = True
     return state
 

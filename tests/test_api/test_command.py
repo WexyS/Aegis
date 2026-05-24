@@ -129,8 +129,81 @@ class TestCommandEndpoint:
 
         assert r.status_code == 200
         assert r.json()["status"] == CommandStatus.EXECUTED.value
-        assert emitted[0][0] == "COMMAND_APPROVED"
-        assert emitted[0][1]["command"]["command_id"] == "cmd-http-approve"
+        assert [event[0] for event in emitted[:2]] == ["APPROVAL_RESOLVED", "COMMAND_APPROVED"]
+        assert emitted[1][1]["command"]["command_id"] == "cmd-http-approve"
+
+    @pytest.mark.asyncio
+    async def test_http_approval_decision_grant_for_quarantined_click_does_not_resume(self, monkeypatch) -> None:
+        from aegis.core.constants import RiskLevel
+
+        manager = get_approval_manager()
+        manager.reset_for_tests()
+        manager.register_pending(
+            command_id="cmd-http-click-approval",
+            text="click 10 20",
+            trace_id="trace-http-click-approval",
+            risk_level=RiskLevel.HIGH,
+            reason="generic click quarantine",
+            metadata={
+                "approval_id": "approval-http-click",
+                "resume_allowed": False,
+                "policy_rule": "generic_click.quarantined.approval_required",
+            },
+        )
+        emitted: list[tuple[str, dict]] = []
+
+        async def fake_emit_approval_resolved(record, *, decision):
+            emitted.append(("APPROVAL_RESOLVED", record.to_dict()))
+
+        monkeypatch.setattr("aegis.api.ws_bridge.emit_approval_resolved", fake_emit_approval_resolved)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post("/command/approvals/approval-http-click/resolve", json={"decision": "grant"})
+
+        data = r.json()["command"]
+        assert r.status_code == 200
+        assert data["status"] == "blocked"
+        assert data["metadata"]["approval_resolution_status"] == "approval_granted"
+        assert data["metadata"]["completed_without_execution"] is True
+        assert data["metadata"]["mutation_performed"] is False
+        assert emitted[0][0] == "APPROVAL_RESOLVED"
+
+    @pytest.mark.asyncio
+    async def test_http_clarification_decision_cancel_remains_non_executed(self, monkeypatch) -> None:
+        from aegis.core.constants import RiskLevel
+
+        manager = get_approval_manager()
+        manager.reset_for_tests()
+        manager.register_waiting_clarification(
+            command_id="cmd-http-clarification",
+            text="click that",
+            trace_id="trace-http-clarification",
+            risk_level=RiskLevel.HIGH,
+            reason="generic click quarantine",
+            metadata={"clarification_id": "clarification-http-click"},
+        )
+        emitted: list[tuple[str, dict]] = []
+
+        async def fake_emit_clarification_resolved(record):
+            emitted.append(("CLARIFICATION_RESOLVED", record.to_dict()))
+
+        monkeypatch.setattr("aegis.api.ws_bridge.emit_clarification_resolved", fake_emit_clarification_resolved)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post(
+                "/command/clarifications/clarification-http-click/resolve",
+                json={"cancelled": True},
+            )
+
+        data = r.json()["command"]
+        assert r.status_code == 200
+        assert data["status"] == "cancelled"
+        assert data["metadata"]["clarification_resolution_status"] == "clarification_cancelled"
+        assert data["metadata"]["mutation_performed"] is False
+        assert data["metadata"]["not_executed"] is True
+        assert emitted[0][0] == "CLARIFICATION_RESOLVED"
 
 
 class TestMaintenanceEndpoint:

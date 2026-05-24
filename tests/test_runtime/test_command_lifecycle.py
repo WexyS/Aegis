@@ -460,6 +460,130 @@ def test_approval_manager_restores_pending_clarification_snapshot() -> None:
     assert snapshot["pending_clarifications"][0]["command_id"] == record.command_id
 
 
+def test_approval_manager_denies_pending_approval_by_decision_id_without_execution() -> None:
+    manager = ApprovalManager()
+    manager.register_pending(
+        command_id="cmd-deny",
+        text="write file",
+        trace_id="trace-deny",
+        risk_level=RiskLevel.MEDIUM,
+        reason="approval required",
+        metadata={"approval_id": "approval-deny"},
+    )
+
+    record = manager.resolve_approval("approval-deny", approved=False, reason="operator denied")
+
+    assert record.status == CommandStatus.REJECTED
+    assert record.rejected is True
+    assert record.approved is False
+    assert record.approval_required is False
+    assert record.active is False
+    assert record.reason == "operator denied"
+    assert record.metadata["approval_resolution_status"] == "approval_denied"
+    assert record.metadata["mutation_performed"] is False
+    assert record.metadata["not_executed"] is True
+    assert manager.snapshot()["pending_approvals"] == []
+
+
+def test_approval_manager_grant_for_non_resumable_decision_stays_non_executed() -> None:
+    manager = ApprovalManager()
+    manager.register_pending(
+        command_id="cmd-click-approval",
+        text="click 10 20",
+        trace_id="trace-click-approval",
+        risk_level=RiskLevel.HIGH,
+        reason="generic click quarantine",
+        metadata={
+            "approval_id": "approval-click",
+            "resume_allowed": False,
+            "policy_rule": "generic_click.quarantined.approval_required",
+        },
+    )
+
+    record = manager.resolve_approval("approval-click", approved=True)
+
+    assert record.status == CommandStatus.BLOCKED
+    assert record.approved is True
+    assert record.active is False
+    assert record.approval_required is False
+    assert record.metadata["approval_resolution_status"] == "approval_granted"
+    assert record.metadata["completed_without_execution"] is True
+    assert record.metadata["mutation_performed"] is False
+    assert record.metadata["not_executed"] is True
+    assert manager.snapshot()["pending_approvals"] == []
+
+
+def test_approval_manager_resolves_and_cancels_clarification_without_execution() -> None:
+    manager = ApprovalManager()
+    manager.register_waiting_clarification(
+        command_id="cmd-clarify",
+        text="click that",
+        trace_id="trace-clarify",
+        risk_level=RiskLevel.HIGH,
+        reason="target resolution required",
+        metadata={"clarification_id": "clarification-click"},
+    )
+
+    resolved = manager.resolve_clarification("clarification-click", answer="the blue button")
+
+    assert resolved.status == CommandStatus.BLOCKED
+    assert resolved.clarification_required is False
+    assert resolved.active is False
+    assert resolved.metadata["clarification_resolution_status"] == "clarification_resolved"
+    assert resolved.metadata["clarification_answer"] == "the blue button"
+    assert resolved.metadata["completed_without_execution"] is True
+    assert resolved.metadata["mutation_performed"] is False
+    assert manager.snapshot()["pending_clarifications"] == []
+
+    manager.register_waiting_clarification(
+        command_id="cmd-clarify-cancel",
+        text="click that",
+        trace_id="trace-clarify-cancel",
+        risk_level=RiskLevel.HIGH,
+        reason="target resolution required",
+        metadata={"clarification_id": "clarification-cancel"},
+    )
+    cancelled = manager.resolve_clarification("clarification-cancel", cancelled=True)
+
+    assert cancelled.status == CommandStatus.CANCELLED
+    assert cancelled.metadata["clarification_resolution_status"] == "clarification_cancelled"
+    assert cancelled.metadata["mutation_performed"] is False
+    assert cancelled.metadata["not_executed"] is True
+
+
+def test_missing_and_already_resolved_decision_ids_fail_safely() -> None:
+    manager = ApprovalManager()
+    manager.register_pending(
+        command_id="cmd-once",
+        text="write file",
+        trace_id="trace-once",
+        risk_level=RiskLevel.MEDIUM,
+        reason="approval required",
+        metadata={"approval_id": "approval-once"},
+    )
+
+    with pytest.raises(KeyError):
+        manager.resolve_approval("missing-approval", approved=True)
+
+    manager.resolve_approval("approval-once", approved=False)
+
+    with pytest.raises(ValueError):
+        manager.resolve_approval("approval-once", approved=True)
+
+    manager.register_waiting_clarification(
+        command_id="cmd-clarify-once",
+        text="click that",
+        trace_id="trace-clarify-once",
+        risk_level=RiskLevel.HIGH,
+        reason="target resolution required",
+        metadata={"clarification_id": "clarification-once"},
+    )
+    manager.resolve_clarification("clarification-once", cancelled=True)
+
+    with pytest.raises(ValueError):
+        manager.resolve_clarification("clarification-once", answer="late answer")
+
+
 def test_approval_manager_marks_active_snapshot_cancelled_on_restore() -> None:
     source = ApprovalManager()
     source.create_received("read README.md", command_id="33333333-3333-4333-8333-333333333333")
@@ -686,6 +810,105 @@ def _assert_non_executable_event_shape(events: list[RuntimeEvent]) -> None:
         assert payload.get("success") is not True
         assert payload.get("verified") is not True
         assert payload.get("action_started") is not True
+
+
+def test_resolution_events_clear_pending_projection_without_success_shape() -> None:
+    approval_requested = RuntimeEvent(
+        type=ProtocolEventType.APPROVAL_REQUESTED.value,
+        sequence_num=1,
+        trace_id="trace-resolution",
+        payload={
+            "command_id": "cmd-resolution",
+            "trace_id": "trace-resolution",
+            "approval_id": "approval-resolution",
+            "decision_status": "approval_required",
+            "risk_level": "high",
+            "policy_rule": "generic_click.quarantined.approval_required",
+            "reason": "generic click quarantine",
+            "not_executed": True,
+        },
+    )
+    approval_resolved = RuntimeEvent(
+        type=ProtocolEventType.APPROVAL_RESOLVED.value,
+        sequence_num=2,
+        trace_id="trace-resolution",
+        payload={
+            "command_id": "cmd-resolution",
+            "trace_id": "trace-resolution",
+            "approval_id": "approval-resolution",
+            "decision": "granted",
+            "approval_status": "approval_granted",
+            "command_status": "blocked",
+            "risk_level": "high",
+            "policy_rule": "generic_click.quarantined.approval_required",
+            "reason": "approval recorded but target resolution is missing",
+            "not_executed": True,
+            "executed": False,
+            "mutation_performed": False,
+        },
+    )
+    clarification_requested = RuntimeEvent(
+        type=ProtocolEventType.CLARIFICATION_REQUESTED.value,
+        sequence_num=3,
+        trace_id="trace-resolution",
+        payload={
+            "command_id": "cmd-clarification-resolution",
+            "trace_id": "trace-resolution",
+            "clarification_id": "clarification-resolution",
+            "decision_status": "clarification_required",
+            "risk_level": "high",
+            "policy_rule": "generic_click.quarantined.clarification_required",
+            "reason": "generic click quarantine",
+            "not_executed": True,
+        },
+    )
+    clarification_resolved = RuntimeEvent(
+        type=ProtocolEventType.CLARIFICATION_RESOLVED.value,
+        sequence_num=4,
+        trace_id="trace-resolution",
+        payload={
+            "command_id": "cmd-clarification-resolution",
+            "trace_id": "trace-resolution",
+            "clarification_id": "clarification-resolution",
+            "clarification_status": "clarification_resolved",
+            "command_status": "blocked",
+            "risk_level": "high",
+            "policy_rule": "generic_click.quarantined.clarification_required",
+            "reason": "clarification recorded without execution",
+            "not_executed": True,
+            "executed": False,
+            "mutation_performed": False,
+        },
+    )
+
+    snapshot = project_non_executable_events_to_snapshot([
+        approval_requested,
+        approval_resolved,
+        clarification_requested,
+        clarification_resolved,
+    ])
+    timeline = project_non_executable_events_to_action_timeline([
+        approval_requested,
+        approval_resolved,
+        clarification_requested,
+        clarification_resolved,
+    ])
+
+    assert snapshot["pending_approval"] is None
+    assert snapshot["pending_clarification"] is None
+    assert snapshot["command_status"] == "blocked"
+    assert snapshot["terminal_non_executed"] is True
+    assert snapshot["last_resolution"]["kind"] == "clarification_resolved"
+    assert len(snapshot["resolved_decisions"]) == 2
+    assert [entry["kind"] for entry in timeline] == [
+        "approval_requested",
+        "approval_resolved",
+        "clarification_requested",
+        "clarification_resolved",
+    ]
+    assert all(entry.get("executed") is False for entry in timeline)
+    assert all(entry.get("verified") is not True for entry in timeline)
+    assert all("execution_evidence" not in entry for entry in timeline)
 
 
 def _force_guard_decision(monkeypatch: pytest.MonkeyPatch, intent: str, params: dict) -> None:
@@ -951,6 +1174,38 @@ async def test_default_generic_click_quarantine_prevents_executor_without_flag(
 
 
 @pytest.mark.asyncio
+async def test_clarification_resolution_for_quarantined_click_remains_non_executed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
+    executor = SpyExecutor()
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+    orchestrator = build_orchestrator(intent_result("click", RiskLevel.LOW, {}), executor=executor)
+    orchestrator.guard = AllowGuard()
+
+    response = await orchestrator.process(
+        CommandRequest(text="click", context=_default_non_executable_context(journal))
+    )
+
+    manager = get_approval_manager()
+    pending = manager.snapshot()["pending_clarifications"][0]
+    resolved = manager.resolve_clarification(
+        pending["metadata"]["clarification_id"],
+        answer="the blue button",
+    )
+
+    assert response.status == CommandStatus.WAITING_FOR_CLARIFICATION
+    assert resolved.status == CommandStatus.BLOCKED
+    assert resolved.metadata["clarification_resolution_status"] == "clarification_resolved"
+    assert resolved.metadata["completed_without_execution"] is True
+    assert resolved.metadata["mutation_performed"] is False
+    assert executor.calls == []
+    assert action_started_calls == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("text", ["tıkla", "şuna tıkla", "buna tıkla"])
 async def test_default_turkish_generic_click_phrases_are_quarantined(
     monkeypatch: pytest.MonkeyPatch,
@@ -1045,6 +1300,73 @@ async def test_default_count_coordinate_and_selector_click_are_quarantined(
     assert "target resolution" in reasons
     assert "generic_click.quarantined" in policy_rules
     assert ProtocolEventType.APPROVAL_REQUIRED.value not in _event_types(journal.events)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("text", "params"),
+    [
+        ("click 10 20", {"x": 10, "y": 20}),
+        ("click .primary", {"selector": ".primary"}),
+    ],
+)
+async def test_coordinate_or_selector_click_approval_resolution_does_not_execute(
+    monkeypatch: pytest.MonkeyPatch,
+    text: str,
+    params: dict,
+) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
+    executor = SpyExecutor()
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+    orchestrator = build_orchestrator(intent_result("click", RiskLevel.LOW, params), executor=executor)
+    orchestrator.guard = AllowGuard()
+
+    response = await orchestrator.process(
+        CommandRequest(text=text, context=_default_non_executable_context(journal))
+    )
+
+    manager = get_approval_manager()
+    pending = manager.snapshot()["pending_approvals"][0]
+    approved = manager.resolve_approval(pending["metadata"]["approval_id"], approved=True)
+
+    assert response.status == CommandStatus.PENDING_APPROVAL
+    assert approved.status == CommandStatus.BLOCKED
+    assert approved.metadata["approval_resolution_status"] == "approval_granted"
+    assert approved.metadata["completed_without_execution"] is True
+    assert approved.metadata["mutation_performed"] is False
+    assert executor.calls == []
+    assert action_started_calls == []
+
+
+@pytest.mark.asyncio
+async def test_blocked_excessive_click_cannot_be_approved_into_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_sequence_for_testing()
+    _quiet_runtime_emissions(monkeypatch)
+    executor = SpyExecutor()
+    journal = NonExecutableBoundaryJournal()
+    action_started_calls = _spy_action_started(monkeypatch)
+    orchestrator = build_orchestrator(intent_result("click", RiskLevel.LOW, {"count": 50}), executor=executor)
+    orchestrator.guard = AllowGuard()
+
+    response = await orchestrator.process(
+        CommandRequest(text="click 50 times", context=_default_non_executable_context(journal))
+    )
+
+    manager = get_approval_manager()
+    record = manager.get(response.trace_id)
+    assert response.status == CommandStatus.BLOCKED
+    assert record is not None
+    assert record.status == CommandStatus.BLOCKED
+    with pytest.raises(ValueError):
+        manager.approve(record.command_id)
+    with pytest.raises(KeyError):
+        manager.resolve_approval("blocked-click", approved=True)
+    assert executor.calls == []
+    assert action_started_calls == []
 
 
 @pytest.mark.asyncio

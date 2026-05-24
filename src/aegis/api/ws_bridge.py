@@ -468,6 +468,7 @@ async def approve_command(sid: str, data: dict):
         return
     try:
         record = get_approval_manager().approve(str(command_id))
+        await emit_approval_resolved(record, decision="granted")
         await emit_event(
             ProtocolEventType.COMMAND_APPROVED,
             {"command": record.to_dict()},
@@ -475,6 +476,17 @@ async def approve_command(sid: str, data: dict):
             source=Component.GUARD,
             runtime_phase=get_runtime_authority(_session_id).current_state(),
         )
+        if record.status != CommandStatus.APPROVED:
+            await emit_command_status(
+                command_id=record.command_id,
+                status=record.status,
+                trace_id=record.trace_id,
+                risk_level=record.risk_level,
+                reason=record.reason,
+                verification_state=record.verification_state,
+            )
+            await _emit_snapshot(to=sid)
+            return
         if is_maintenance_action_record(record):
             await execute_maintenance_action_record(record, sid=sid)
             return
@@ -561,6 +573,7 @@ async def reject_command(sid: str, data: dict):
         return
     try:
         record = get_approval_manager().reject(str(command_id), reason=str(payload.get("reason") or "rejected by user"))
+        await emit_approval_resolved(record, decision="denied")
         await emit_event(
             ProtocolEventType.COMMAND_REJECTED,
             {"command": record.to_dict()},
@@ -574,6 +587,98 @@ async def reject_command(sid: str, data: dict):
         await _emit_snapshot(to=sid)
     except Exception as e:
         logger.error("[WS] Failed to reject command: %s", e)
+
+
+@sio.event
+async def resolve_approval(sid: str, data: dict):
+    payload = data.get("payload", data)
+    approval_id = payload.get("approval_id") or payload.get("decision_id")
+    decision = str(payload.get("decision") or "").strip().lower()
+    if not approval_id or decision not in {"grant", "granted", "approve", "approved", "deny", "denied", "reject", "rejected"}:
+        return
+    approved = decision in {"grant", "granted", "approve", "approved"}
+    try:
+        record = get_approval_manager().resolve_approval(
+            str(approval_id),
+            approved=approved,
+            reason=str(payload.get("reason") or ""),
+        )
+        await emit_approval_resolved(record, decision="granted" if approved else "denied")
+        if approved and record.status == CommandStatus.APPROVED:
+            command = QueuedCommand(
+                sid=sid,
+                text=record.text,
+                mode=payload.get("mode", "auto"),
+                received_at=time.time(),
+                command_id=record.command_id,
+                approval_granted=True,
+            )
+            try:
+                _command_queue.put_nowait(command)
+            except asyncio.QueueFull:
+                reason = "Approved command queue full; command was not enqueued"
+                blocked = get_approval_manager().mark_blocked(
+                    record.command_id,
+                    trace_id=record.trace_id or "",
+                    risk_level=record.risk_level,
+                    reason=reason,
+                    verification_state="unverified",
+                )
+                await emit_command_status(
+                    command_id=blocked.command_id,
+                    status=CommandStatus.BLOCKED,
+                    trace_id=blocked.trace_id,
+                    risk_level=blocked.risk_level,
+                    reason=reason,
+                    verification_state=blocked.verification_state,
+                )
+        elif not approved:
+            await emit_event(
+                ProtocolEventType.COMMAND_REJECTED,
+                {"command": record.to_dict()},
+                trace_id=record.trace_id,
+                source=Component.GUARD,
+                runtime_phase=get_runtime_authority(_session_id).current_state(),
+            )
+        if record.status != CommandStatus.APPROVED:
+            await emit_command_status(
+                command_id=record.command_id,
+                status=record.status,
+                trace_id=record.trace_id,
+                risk_level=record.risk_level,
+                reason=record.reason,
+                verification_state=record.verification_state,
+            )
+        await _emit_snapshot(to=sid)
+    except Exception as e:
+        logger.error("[WS] Failed to resolve approval: %s", e)
+
+
+@sio.event
+async def resolve_clarification(sid: str, data: dict):
+    payload = data.get("payload", data)
+    clarification_id = payload.get("clarification_id") or payload.get("decision_id")
+    if not clarification_id:
+        return
+    try:
+        record = get_approval_manager().resolve_clarification(
+            str(clarification_id),
+            answer=payload.get("answer"),
+            cancelled=bool(payload.get("cancelled", False)),
+            reason=str(payload.get("reason") or ""),
+        )
+        await emit_clarification_resolved(record)
+        await emit_command_status(
+            command_id=record.command_id,
+            status=record.status,
+            trace_id=record.trace_id,
+            risk_level=record.risk_level,
+            reason=record.reason,
+            verification_state=record.verification_state,
+        )
+        await _emit_snapshot(to=sid)
+    except Exception as e:
+        logger.error("[WS] Failed to resolve clarification: %s", e)
 
 
 @sio.event
@@ -932,6 +1037,54 @@ async def emit_approval_required(command: dict[str, Any], *, trace_id: str | Non
         ProtocolEventType.APPROVAL_REQUIRED,
         {"command": command},
         trace_id=trace_id,
+        runtime_phase=get_runtime_authority(_session_id).current_state(),
+        source=Component.GUARD,
+        severity=Severity.WARNING,
+    )
+
+
+async def emit_approval_resolved(record, *, decision: str):
+    approval_id = record.metadata.get("approval_id")
+    await emit_event(
+        ProtocolEventType.APPROVAL_RESOLVED,
+        {
+            "command_id": record.command_id,
+            "approval_id": approval_id,
+            "decision": decision,
+            "approval_status": record.metadata.get("approval_resolution_status"),
+            "command_status": record.status.value,
+            "reason": record.reason,
+            "not_executed": record.status != CommandStatus.APPROVED,
+            "executed": False,
+            "mutation_performed": False,
+            "command": record.to_dict(),
+        },
+        trace_id=record.trace_id,
+        runtime_phase=get_runtime_authority(_session_id).current_state(),
+        source=Component.GUARD,
+        severity=Severity.WARNING if record.status in (CommandStatus.BLOCKED, CommandStatus.REJECTED) else Severity.INFO,
+    )
+
+
+async def emit_clarification_resolved(record):
+    clarification_id = record.metadata.get("clarification_id")
+    status = record.metadata.get("clarification_resolution_status")
+    await emit_event(
+        ProtocolEventType.CLARIFICATION_RESOLVED,
+        {
+            "command_id": record.command_id,
+            "clarification_id": clarification_id,
+            "clarification_status": status,
+            "answer": record.metadata.get("clarification_answer"),
+            "command_status": record.status.value,
+            "reason": record.reason,
+            "not_executed": True,
+            "executed": False,
+            "mutation_performed": False,
+            "completed_without_execution": True,
+            "command": record.to_dict(),
+        },
+        trace_id=record.trace_id,
         runtime_phase=get_runtime_authority(_session_id).current_state(),
         source=Component.GUARD,
         severity=Severity.WARNING,

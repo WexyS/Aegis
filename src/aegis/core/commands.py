@@ -67,6 +67,14 @@ class ApprovalManager:
     """In-memory authority for command lifecycle and approval state."""
 
     RESTART_CANCEL_REASON = "runtime restarted before command completed"
+    NON_EXECUTED_APPROVAL_REASON = (
+        "Approval was recorded, but this decision is non-executable until a "
+        "deterministic execution contract exists."
+    )
+    NON_EXECUTED_CLARIFICATION_REASON = (
+        "Clarification was recorded, but v1 does not resume execution from "
+        "clarification answers."
+    )
 
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -109,9 +117,14 @@ class ApprovalManager:
             record.approved = False
             record.rejected = False
             record.active = False
+            record.verification_state = "unverified"
             record.reason = reason
             record.warnings = list(warnings or [])
             record.metadata.update(metadata or {})
+            record.metadata.setdefault("approval_id", record.metadata.get("decision_id") or command_id)
+            record.metadata.setdefault("approval_resolution_status", "waiting_for_approval")
+            record.metadata.setdefault("resume_allowed", True)
+            record.metadata.setdefault("mutation_performed", False)
             record.touch()
             return record
 
@@ -140,31 +153,72 @@ class ApprovalManager:
             record.reason = reason
             record.warnings = list(warnings or [])
             record.metadata.update(metadata or {})
+            record.metadata.setdefault("clarification_id", record.metadata.get("decision_id") or command_id)
+            record.metadata.setdefault("clarification_resolution_status", "waiting_for_clarification")
+            record.metadata.setdefault("resume_allowed", False)
+            record.metadata.setdefault("mutation_performed", False)
             record.touch()
             return record
 
     def approve(self, command_id: str) -> CommandRecord:
         with self._lock:
             record = self._require(command_id)
-            if record.status != CommandStatus.PENDING_APPROVAL:
-                raise ValueError(f"Command {command_id} is not pending approval")
-            record.status = CommandStatus.APPROVED
-            record.approved = True
-            record.approval_required = False
-            record.clarification_required = False
-            record.approved_at = now_ms()
-            record.touch()
-            return record
+            return self._approve_record(record)
+
+    def resolve_approval(
+        self,
+        approval_id: str,
+        *,
+        approved: bool,
+        reason: str = "",
+    ) -> CommandRecord:
+        with self._lock:
+            record = self._find_pending_decision("approval_id", approval_id, CommandStatus.PENDING_APPROVAL)
+            if approved:
+                return self._approve_record(record, decision_id=approval_id, reason=reason)
+            return self._reject_record(
+                record,
+                reason=reason or "approval denied by user",
+                decision_id=approval_id,
+            )
 
     def reject(self, command_id: str, reason: str = "rejected by user") -> CommandRecord:
         with self._lock:
             record = self._require(command_id)
-            record.status = CommandStatus.REJECTED
-            record.rejected = True
-            record.approval_required = False
+            return self._reject_record(record, reason=reason)
+
+    def resolve_clarification(
+        self,
+        clarification_id: str,
+        *,
+        answer: str | None = None,
+        cancelled: bool = False,
+        reason: str = "",
+    ) -> CommandRecord:
+        with self._lock:
+            record = self._find_pending_decision(
+                "clarification_id",
+                clarification_id,
+                CommandStatus.WAITING_FOR_CLARIFICATION,
+            )
             record.clarification_required = False
-            record.reason = reason
-            record.rejected_at = now_ms()
+            record.approval_required = False
+            record.active = False
+            record.completed_at = now_ms()
+            record.metadata["clarification_id"] = clarification_id
+            record.metadata["clarification_answer"] = answer
+            record.metadata["mutation_performed"] = False
+            record.metadata["not_executed"] = True
+            record.metadata["completed_without_execution"] = True
+            if cancelled:
+                record.status = CommandStatus.CANCELLED
+                record.reason = reason or "clarification cancelled by user"
+                record.cancelled_at = record.completed_at
+                record.metadata["clarification_resolution_status"] = "clarification_cancelled"
+            else:
+                record.status = CommandStatus.BLOCKED
+                record.reason = reason or self.NON_EXECUTED_CLARIFICATION_REASON
+                record.metadata["clarification_resolution_status"] = "clarification_resolved"
             record.touch()
             return record
 
@@ -314,6 +368,86 @@ class ApprovalManager:
         record = self._records.get(command_id)
         if record is None:
             raise KeyError(f"Unknown command_id: {command_id}")
+        return record
+
+    def _find_pending_decision(
+        self,
+        metadata_key: str,
+        decision_id: str,
+        expected_status: CommandStatus,
+    ) -> CommandRecord:
+        if not decision_id:
+            raise KeyError("Missing decision_id")
+        matches = [
+            record
+            for record in self._records.values()
+            if str(record.metadata.get(metadata_key) or "") == str(decision_id)
+        ]
+        if not matches:
+            raise KeyError(f"Unknown {metadata_key}: {decision_id}")
+        record = matches[-1]
+        if record.status != expected_status:
+            raise ValueError(
+                f"Decision {decision_id} is not pending; current status is {record.status.value}"
+            )
+        return record
+
+    def _approve_record(
+        self,
+        record: CommandRecord,
+        *,
+        decision_id: str | None = None,
+        reason: str = "",
+    ) -> CommandRecord:
+        if record.status != CommandStatus.PENDING_APPROVAL:
+            raise ValueError(f"Command {record.command_id} is not pending approval")
+
+        record.approved = True
+        record.rejected = False
+        record.approval_required = False
+        record.clarification_required = False
+        record.approved_at = now_ms()
+        if decision_id is not None:
+            record.metadata["approval_id"] = decision_id
+        record.metadata["approval_resolution_status"] = "approval_granted"
+        record.metadata["mutation_performed"] = False
+
+        if record.metadata.get("resume_allowed") is False:
+            record.status = CommandStatus.BLOCKED
+            record.active = False
+            record.reason = reason or self.NON_EXECUTED_APPROVAL_REASON
+            record.completed_at = now_ms()
+            record.metadata["not_executed"] = True
+            record.metadata["completed_without_execution"] = True
+        else:
+            record.status = CommandStatus.APPROVED
+            record.reason = reason or record.reason
+        record.touch()
+        return record
+
+    def _reject_record(
+        self,
+        record: CommandRecord,
+        *,
+        reason: str,
+        decision_id: str | None = None,
+    ) -> CommandRecord:
+        if record.status != CommandStatus.PENDING_APPROVAL:
+            raise ValueError(f"Command {record.command_id} is not pending approval")
+        record.status = CommandStatus.REJECTED
+        record.rejected = True
+        record.approved = False
+        record.approval_required = False
+        record.clarification_required = False
+        record.active = False
+        record.reason = reason
+        record.rejected_at = now_ms()
+        record.metadata["approval_resolution_status"] = "approval_denied"
+        record.metadata["mutation_performed"] = False
+        record.metadata["not_executed"] = True
+        if decision_id is not None:
+            record.metadata["approval_id"] = decision_id
+        record.touch()
         return record
 
     def _iter_snapshot_records(self, snapshot: dict[str, Any]) -> list[dict[str, Any]]:

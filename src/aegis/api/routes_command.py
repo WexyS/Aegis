@@ -140,12 +140,31 @@ async def approve_command(command_id: str) -> CommandResponse:
 
     from aegis.api import ws_bridge
 
+    await ws_bridge.emit_approval_resolved(record, decision="granted")
     await ws_bridge.emit_event(
         ws_bridge.ProtocolEventType.COMMAND_APPROVED,
         {"command": record.to_dict()},
         trace_id=record.trace_id,
         source=ws_bridge.Component.GUARD,
     )
+
+    if record.status != CommandStatus.APPROVED:
+        await ws_bridge.emit_command_status(
+            command_id=record.command_id,
+            status=record.status,
+            trace_id=record.trace_id,
+            risk_level=record.risk_level,
+            reason=record.reason,
+            verification_state=record.verification_state,
+        )
+        return CommandResponse(
+            trace_id=record.trace_id or command_id,
+            status=record.status,
+            intent=str(record.metadata.get("decision_status") or "approval"),
+            message=record.reason,
+            actions=[],
+            warnings=record.warnings,
+        )
 
     if is_maintenance_action_record(record):
         return await ws_bridge.execute_maintenance_action_record(record)
@@ -170,6 +189,7 @@ async def reject_command(command_id: str, body: dict[str, Any] | None = Body(def
         record = get_approval_manager().reject(command_id, reason=reason)
         from aegis.api import ws_bridge
 
+        await ws_bridge.emit_approval_resolved(record, decision="denied")
         await ws_bridge.emit_event(
             ws_bridge.ProtocolEventType.COMMAND_REJECTED,
             {"command": record.to_dict()},
@@ -179,6 +199,59 @@ async def reject_command(command_id: str, body: dict[str, Any] | None = Body(def
         return {"command": record.to_dict()}
     except KeyError:
         raise HTTPException(status_code=404, detail="Unknown command") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@router.post("/command/approvals/{approval_id}/resolve")
+async def resolve_approval(
+    approval_id: str,
+    body: dict[str, Any] | None = Body(default=None),
+) -> dict[str, Any]:
+    payload = body or {}
+    decision = str(payload.get("decision") or "").strip().lower()
+    if decision not in {"grant", "granted", "approve", "approved", "deny", "denied", "reject", "rejected"}:
+        raise HTTPException(status_code=400, detail="Decision must be grant or deny")
+    approved = decision in {"grant", "granted", "approve", "approved"}
+    try:
+        record = get_approval_manager().resolve_approval(
+            approval_id,
+            approved=approved,
+            reason=str(payload.get("reason") or ""),
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown approval decision") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+    from aegis.api import ws_bridge
+
+    await ws_bridge.emit_approval_resolved(record, decision="granted" if approved else "denied")
+    return {"command": record.to_dict()}
+
+
+@router.post("/command/clarifications/{clarification_id}/resolve")
+async def resolve_clarification(
+    clarification_id: str,
+    body: dict[str, Any] | None = Body(default=None),
+) -> dict[str, Any]:
+    payload = body or {}
+    try:
+        record = get_approval_manager().resolve_clarification(
+            clarification_id,
+            answer=payload.get("answer"),
+            cancelled=bool(payload.get("cancelled", False)),
+            reason=str(payload.get("reason") or ""),
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown clarification decision") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+    from aegis.api import ws_bridge
+
+    await ws_bridge.emit_clarification_resolved(record)
+    return {"command": record.to_dict()}
 
 
 @router.post("/command/{command_id}/cancel")

@@ -343,6 +343,14 @@ class Orchestrator:
                 session_id=str(request.session_id) if request.session_id else None,
                 fanout=request.context.get("non_executable_fanout"),
             )
+            _register_non_executable_command_lifecycle(
+                approval_manager,
+                guard_decision,
+                command_id=command_id,
+                text=request.text,
+                trace_id=str(ctx.trace_id),
+                metadata={"plan": [item.model_dump(mode="json") for item in plan]},
+            )
 
             response_status = _non_executable_command_status(guard_decision.decision_status)
             if guard_decision.decision_status == DecisionStatus.BLOCKED:
@@ -868,3 +876,94 @@ def get_orchestrator() -> Orchestrator:
     if _instance is None:
         _instance = Orchestrator()
     return _instance
+
+
+def _register_non_executable_command_lifecycle(
+    approval_manager,
+    guard_decision,
+    *,
+    command_id: str,
+    text: str,
+    trace_id: str,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    base_metadata = dict(metadata or {})
+    base_metadata.update(
+        {
+            "non_executable_decision": True,
+            "decision_status": guard_decision.decision_status.value,
+            "policy_rule": guard_decision.policy_rule,
+            "mutation_performed": False,
+        }
+    )
+    if guard_decision.decision_status == DecisionStatus.APPROVAL_REQUIRED:
+        request = guard_decision.approval_request
+        resume_allowed = _approval_resolution_can_resume(guard_decision)
+        if request is not None:
+            base_metadata.update(
+                {
+                    "approval_id": request.approval_id,
+                    "approval_request": request.model_dump(mode="json"),
+                    "resume_allowed": resume_allowed,
+                }
+            )
+        approval_manager.register_pending(
+            command_id=command_id,
+            text=text,
+            trace_id=trace_id,
+            risk_level=guard_decision.risk_level,
+            reason=guard_decision.reason,
+            metadata=base_metadata,
+        )
+        return
+    if guard_decision.decision_status == DecisionStatus.CLARIFICATION_REQUIRED:
+        request = guard_decision.clarification_request
+        if request is not None:
+            base_metadata.update(
+                {
+                    "clarification_id": request.clarification_id,
+                    "clarification_request": request.model_dump(mode="json"),
+                    "resume_allowed": False,
+                }
+            )
+        approval_manager.register_waiting_clarification(
+            command_id=command_id,
+            text=text,
+            trace_id=trace_id,
+            risk_level=guard_decision.risk_level,
+            reason=guard_decision.reason,
+            metadata=base_metadata,
+        )
+        return
+    if guard_decision.decision_status == DecisionStatus.BLOCKED:
+        approval_manager.mark_blocked(
+            command_id,
+            trace_id=trace_id,
+            risk_level=guard_decision.risk_level,
+            reason=guard_decision.reason,
+            verification_state="unverified",
+        )
+        record = approval_manager.get(command_id)
+        if record is not None:
+            record.metadata.update(base_metadata)
+            if guard_decision.blocked_action is not None:
+                record.metadata["blocked_id"] = guard_decision.blocked_action.blocked_id
+            record.metadata["not_executed"] = True
+            record.metadata["completed_without_execution"] = True
+            record.metadata["mutation_performed"] = False
+            record.touch()
+
+
+def _approval_resolution_can_resume(guard_decision) -> bool:
+    request = guard_decision.approval_request
+    tool = ""
+    if request is not None:
+        tool = str(request.proposed_action.tool or "")
+    policy_rule = str(guard_decision.policy_rule or "")
+    if tool in {"click", "browser_click", "desktop_click"}:
+        return False
+    if "generic_click.quarantined" in policy_rule:
+        return False
+    if "target_resolution_missing" in policy_rule:
+        return False
+    return True
