@@ -13,6 +13,22 @@ MANIFEST_SCHEMA_VERSION = "runtime-journal-archive-compaction-manifest/1"
 SUPPORTED_MANIFEST_PLAN_MODES = {"dry_run", "archive_plan", "compact_plan"}
 EXECUTED_MANIFEST_MODES = {"executed_archive", "executed_compaction"}
 SAFE_MANIFEST_OUTPUT_DIR_NAMES = {"archive", "manifests"}
+BOUNDARY_VALIDATION_VERSION = "runtime-journal-compaction-boundary-validation/1"
+
+BOUNDARY_STATUS_NO_COMPACTION_NEEDED = "no_compaction_needed"
+BOUNDARY_STATUS_BOUNDARY_CANDIDATE = "boundary_candidate"
+BOUNDARY_STATUS_BOUNDARY_CANDIDATE_WITH_WARNINGS = "boundary_candidate_with_warnings"
+BOUNDARY_STATUS_MIXED_SEQUENCE_ERAS_BLOCKED = "mixed_sequence_eras_blocked"
+BOUNDARY_STATUS_SEQUENCE_GAP_BLOCKED = "sequence_gap_blocked"
+BOUNDARY_STATUS_HASH_CHAIN_BOUNDARY_REQUIRED = "hash_chain_boundary_required"
+BOUNDARY_STATUS_MALFORMED_JOURNAL_BLOCKED = "malformed_journal_blocked"
+BOUNDARY_STATUS_MISSING_JOURNAL_BLOCKED = "missing_journal_blocked"
+
+COMPACTION_READINESS_NOT_NEEDED = "not_needed"
+COMPACTION_READINESS_DRY_RUN_ONLY = "dry_run_only"
+COMPACTION_READINESS_ARCHIVE_PLAN_ONLY = "archive_plan_only"
+COMPACTION_READINESS_REQUIRES_EXPLICIT_BOUNDARY = "compact_plan_requires_explicit_boundary"
+COMPACTION_READINESS_BLOCKED = "blocked"
 
 
 def scan_runtime_journal_snapshot_bloat(journal_path: str | Path) -> dict[str, Any]:
@@ -140,6 +156,121 @@ def scan_runtime_journal_snapshot_bloat(journal_path: str | Path) -> dict[str, A
     return report
 
 
+def validate_runtime_journal_compaction_boundary(journal_path: str | Path) -> dict[str, Any]:
+    """Classify journal compaction boundary readiness without mutating history."""
+
+    path = Path(journal_path)
+    validation: dict[str, Any] = {
+        "validation_version": BOUNDARY_VALIDATION_VERSION,
+        "journal_path": str(path),
+        "exists": path.exists(),
+        "mutated": False,
+        "status": BOUNDARY_STATUS_NO_COMPACTION_NEEDED,
+        "compaction_readiness": COMPACTION_READINESS_NOT_NEEDED,
+        "blockers": [],
+        "warnings": [],
+        "event_count": 0,
+        "parse_error_count": 0,
+        "control_plane": {
+            "event_count": 0,
+            "block_count": 0,
+            "interleaved_with_runtime_events": False,
+            "first_line": None,
+            "last_line": None,
+            "first_sequence_num": None,
+            "last_sequence_num": None,
+        },
+        "sequence": {
+            "first_sequence_num": None,
+            "last_sequence_num": None,
+            "monotonic": True,
+            "gap_count": 0,
+            "gaps": [],
+            "decrease_count": 0,
+            "decreases": [],
+            "mixed_sequence_eras_suspected": False,
+        },
+        "hash_chain": {
+            "checked_links": 0,
+            "mismatch_count": 0,
+            "mismatches": [],
+            "explicit_boundary_required": False,
+        },
+        "evidence": {
+            "failed_or_unverified_count": 0,
+            "sequences": [],
+            "preservation_required": False,
+        },
+    }
+
+    if not path.exists():
+        validation["status"] = BOUNDARY_STATUS_MISSING_JOURNAL_BLOCKED
+        validation["compaction_readiness"] = COMPACTION_READINESS_BLOCKED
+        validation["blockers"].append("journal_missing")
+        return validation
+
+    control_lines: list[int] = []
+    previous_sequence: int | None = None
+    previous_hash: str | None = None
+    previous_line: int | None = None
+
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                validation["parse_error_count"] += 1
+                continue
+
+            validation["event_count"] += 1
+            event_type = str(event.get("type") or event.get("event_type") or "")
+            sequence_num = _coerce_sequence(event.get("sequence_num"))
+            _record_boundary_sequence(validation["sequence"], sequence_num, line_number, previous_sequence)
+            if sequence_num is not None:
+                previous_sequence = sequence_num
+
+            if previous_hash is not None:
+                current_previous_hash = event.get("previous_hash")
+                if isinstance(current_previous_hash, str):
+                    validation["hash_chain"]["checked_links"] += 1
+                    if current_previous_hash != previous_hash:
+                        validation["hash_chain"]["mismatch_count"] += 1
+                        validation["hash_chain"]["mismatches"].append(
+                            {
+                                "line": line_number,
+                                "sequence_num": sequence_num,
+                                "expected_previous_hash": previous_hash,
+                                "observed_previous_hash": current_previous_hash,
+                                "previous_line": previous_line,
+                            }
+                        )
+            event_hash = event.get("event_hash")
+            if isinstance(event_hash, str) and event_hash:
+                previous_hash = event_hash
+                previous_line = line_number
+
+            if event_type in CONTROL_PLANE_EVENT_TYPES:
+                control_lines.append(line_number)
+                control = validation["control_plane"]
+                control["event_count"] += 1
+                if control["first_line"] is None:
+                    control["first_line"] = line_number
+                control["last_line"] = line_number
+                _record_control_sequence(control, sequence_num)
+
+            if _event_has_failed_or_unverified_evidence(event, event_type):
+                evidence = validation["evidence"]
+                evidence["failed_or_unverified_count"] += 1
+                if sequence_num is not None:
+                    evidence["sequences"].append(sequence_num)
+
+    _record_control_blocks(validation["control_plane"], control_lines)
+    _classify_boundary_validation(validation)
+    return validation
+
+
 def build_runtime_journal_compaction_manifest(
     journal_path: str | Path,
     *,
@@ -162,6 +293,7 @@ def build_runtime_journal_compaction_manifest(
 
     path = Path(journal_path)
     scan = scan_runtime_journal_snapshot_bloat(path)
+    boundary = validate_runtime_journal_compaction_boundary(path)
     op_id = operation_id or f"journal-cleanup-{uuid4().hex}"
     timestamp = created_at or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     archive_root = Path(archive_dir) if archive_dir is not None else path.parent / "archive"
@@ -204,6 +336,12 @@ def build_runtime_journal_compaction_manifest(
     if has_parse_errors:
         blockers.append("journal_parse_errors")
         warnings.append("Journal parse errors must be resolved before archive or compaction execution.")
+    for blocker in boundary["blockers"]:
+        if blocker not in blockers:
+            blockers.append(blocker)
+    for warning in boundary["warnings"]:
+        if warning not in warnings:
+            warnings.append(warning)
 
     if mode == "compact_plan" and not has_control_plane_bloat:
         blockers.append("nothing_to_compact")
@@ -256,6 +394,11 @@ def build_runtime_journal_compaction_manifest(
         "in_place_compaction_allowed": False,
         "blocked_operations": ["in_place_removal", "in_place_compaction"],
         "recommended_operation": recommended_operation,
+        "boundary_validation": boundary,
+        "boundary_validation_status": boundary["status"],
+        "boundary_blockers": boundary["blockers"],
+        "boundary_warnings": boundary["warnings"],
+        "future_compaction_readiness": boundary["compaction_readiness"],
         "warnings": warnings,
         "blockers": blockers,
         "scan": scan,
@@ -340,6 +483,122 @@ def _record_control_sequence(control: dict[str, Any], sequence_num: int | None) 
     if control["first_sequence_num"] is None:
         control["first_sequence_num"] = sequence_num
     control["last_sequence_num"] = sequence_num
+
+
+def _record_boundary_sequence(
+    sequence: dict[str, Any],
+    sequence_num: int | None,
+    line_number: int,
+    previous_sequence: int | None,
+) -> None:
+    if sequence_num is None:
+        return
+    if sequence["first_sequence_num"] is None:
+        sequence["first_sequence_num"] = sequence_num
+    sequence["last_sequence_num"] = sequence_num
+    if previous_sequence is None:
+        return
+    if sequence_num < previous_sequence:
+        sequence["monotonic"] = False
+        sequence["decrease_count"] += 1
+        sequence["mixed_sequence_eras_suspected"] = True
+        sequence["decreases"].append(
+            {
+                "line": line_number,
+                "previous_sequence_num": previous_sequence,
+                "sequence_num": sequence_num,
+            }
+        )
+    elif sequence_num > previous_sequence + 1:
+        sequence["gap_count"] += 1
+        sequence["gaps"].append(
+            {
+                "line": line_number,
+                "after_sequence_num": previous_sequence,
+                "sequence_num": sequence_num,
+                "missing_count": sequence_num - previous_sequence - 1,
+            }
+        )
+
+
+def _record_control_blocks(control: dict[str, Any], control_lines: list[int]) -> None:
+    if not control_lines:
+        return
+    block_count = 1
+    for previous, current in zip(control_lines, control_lines[1:]):
+        if current != previous + 1:
+            block_count += 1
+    control["block_count"] = block_count
+    first_line = control_lines[0]
+    last_line = control_lines[-1]
+    control["interleaved_with_runtime_events"] = (last_line - first_line + 1) != len(control_lines)
+
+
+def _classify_boundary_validation(validation: dict[str, Any]) -> None:
+    if validation["parse_error_count"]:
+        validation["status"] = BOUNDARY_STATUS_MALFORMED_JOURNAL_BLOCKED
+        validation["compaction_readiness"] = COMPACTION_READINESS_BLOCKED
+        validation["blockers"].append("journal_parse_errors")
+        validation["warnings"].append("Malformed journal lines block archive/compaction planning.")
+        return
+
+    sequence = validation["sequence"]
+    if sequence["decrease_count"]:
+        validation["status"] = BOUNDARY_STATUS_MIXED_SEQUENCE_ERAS_BLOCKED
+        validation["compaction_readiness"] = COMPACTION_READINESS_BLOCKED
+        validation["blockers"].append("mixed_sequence_eras")
+        validation["warnings"].append("Sequence number decreases indicate mixed historical sequence eras.")
+        return
+    if sequence["gap_count"]:
+        validation["status"] = BOUNDARY_STATUS_SEQUENCE_GAP_BLOCKED
+        validation["compaction_readiness"] = COMPACTION_READINESS_BLOCKED
+        validation["blockers"].append("sequence_gaps")
+        validation["warnings"].append("Sequence gaps require explicit replay analysis before compaction.")
+        return
+
+    hash_chain = validation["hash_chain"]
+    if hash_chain["mismatch_count"]:
+        hash_chain["explicit_boundary_required"] = True
+        validation["status"] = BOUNDARY_STATUS_HASH_CHAIN_BOUNDARY_REQUIRED
+        validation["compaction_readiness"] = COMPACTION_READINESS_REQUIRES_EXPLICIT_BOUNDARY
+        validation["warnings"].append("Hash-chain mismatch requires an explicit compaction boundary.")
+        return
+
+    control = validation["control_plane"]
+    evidence = validation["evidence"]
+    if evidence["failed_or_unverified_count"]:
+        evidence["preservation_required"] = True
+        validation["warnings"].append("Failed or unverified evidence records must be preserved.")
+
+    if not control["event_count"]:
+        validation["status"] = BOUNDARY_STATUS_NO_COMPACTION_NEEDED
+        validation["compaction_readiness"] = COMPACTION_READINESS_NOT_NEEDED
+        return
+
+    hash_chain["explicit_boundary_required"] = True
+    if control["interleaved_with_runtime_events"] or control["block_count"] > 1:
+        validation["status"] = BOUNDARY_STATUS_BOUNDARY_CANDIDATE_WITH_WARNINGS
+        validation["compaction_readiness"] = COMPACTION_READINESS_ARCHIVE_PLAN_ONLY
+        validation["warnings"].append("Control-plane bloat is interleaved with runtime events.")
+    else:
+        validation["status"] = BOUNDARY_STATUS_BOUNDARY_CANDIDATE
+        validation["compaction_readiness"] = COMPACTION_READINESS_REQUIRES_EXPLICIT_BOUNDARY
+    validation["warnings"].append("Control-plane removal would require an explicit hash-chain boundary.")
+
+
+def _event_has_failed_or_unverified_evidence(event: dict[str, Any], event_type: str) -> bool:
+    payload = event.get("payload")
+    if not isinstance(payload, dict):
+        return event_type in {"ACTION_FAILED", "VERIFICATION_FAILED"}
+    if event_type in {"ACTION_FAILED", "VERIFICATION_FAILED"}:
+        return True
+    if payload.get("success") is False or payload.get("verified") is False:
+        return True
+    evidence = payload.get("execution_evidence")
+    if not isinstance(evidence, dict):
+        return False
+    verification_state = str(evidence.get("verification_state") or "").lower()
+    return verification_state in {"failed", "unverified"}
 
 
 def _has_recursive_snapshot_risk(event: dict[str, Any]) -> bool:

@@ -7,9 +7,22 @@ from pathlib import Path
 import pytest
 
 from aegis.core.journal_cleanup import (
+    BOUNDARY_STATUS_BOUNDARY_CANDIDATE,
+    BOUNDARY_STATUS_BOUNDARY_CANDIDATE_WITH_WARNINGS,
+    BOUNDARY_STATUS_HASH_CHAIN_BOUNDARY_REQUIRED,
+    BOUNDARY_STATUS_MALFORMED_JOURNAL_BLOCKED,
+    BOUNDARY_STATUS_MISSING_JOURNAL_BLOCKED,
+    BOUNDARY_STATUS_MIXED_SEQUENCE_ERAS_BLOCKED,
+    BOUNDARY_STATUS_NO_COMPACTION_NEEDED,
+    BOUNDARY_STATUS_SEQUENCE_GAP_BLOCKED,
+    COMPACTION_READINESS_ARCHIVE_PLAN_ONLY,
+    COMPACTION_READINESS_BLOCKED,
+    COMPACTION_READINESS_NOT_NEEDED,
+    COMPACTION_READINESS_REQUIRES_EXPLICIT_BOUNDARY,
     MANIFEST_SCHEMA_VERSION,
     build_runtime_journal_compaction_manifest,
     scan_runtime_journal_snapshot_bloat,
+    validate_runtime_journal_compaction_boundary,
     write_runtime_journal_compaction_manifest_artifact,
 )
 
@@ -278,6 +291,9 @@ def test_compaction_manifest_dry_run_includes_required_safety_contract(tmp_path)
     assert "verify replay preserves executable, verification, and evidence events" in (
         manifest["replay_validation_requirements"]
     )
+    assert manifest["boundary_validation_status"] == BOUNDARY_STATUS_BOUNDARY_CANDIDATE
+    assert manifest["future_compaction_readiness"] == COMPACTION_READINESS_REQUIRES_EXPLICIT_BOUNDARY
+    assert manifest["boundary_validation"]["evidence"]["failed_or_unverified_count"] == 1
 
 
 def test_compaction_manifest_clean_journal_is_no_op_plan(tmp_path) -> None:
@@ -318,6 +334,8 @@ def test_compaction_manifest_clean_journal_is_no_op_plan(tmp_path) -> None:
     assert manifest["destructive_default"] is False
     assert manifest["requires_explicit_operator_confirmation"] is True
     assert manifest["blockers"] == []
+    assert manifest["boundary_validation_status"] == BOUNDARY_STATUS_NO_COMPACTION_NEEDED
+    assert manifest["future_compaction_readiness"] == COMPACTION_READINESS_NOT_NEEDED
 
 
 def test_compaction_manifest_missing_journal_fails_safely(tmp_path) -> None:
@@ -339,6 +357,8 @@ def test_compaction_manifest_missing_journal_fails_safely(tmp_path) -> None:
     assert "cannot_plan_missing_journal" in manifest["blockers"]
     assert manifest["destructive_default"] is False
     assert manifest["in_place_compaction_allowed"] is False
+    assert manifest["boundary_validation_status"] == BOUNDARY_STATUS_MISSING_JOURNAL_BLOCKED
+    assert manifest["future_compaction_readiness"] == COMPACTION_READINESS_BLOCKED
 
 
 def test_compaction_manifest_malformed_journal_blocks_future_execution(tmp_path) -> None:
@@ -358,6 +378,7 @@ def test_compaction_manifest_malformed_journal_blocks_future_execution(tmp_path)
     assert "journal_parse_errors" in manifest["blockers"]
     assert any("parse errors" in warning for warning in manifest["warnings"])
     assert manifest["destructive_default"] is False
+    assert manifest["boundary_validation_status"] == BOUNDARY_STATUS_MALFORMED_JOURNAL_BLOCKED
 
 
 def test_compaction_manifest_rejects_executed_modes_in_dry_run_planner(tmp_path) -> None:
@@ -366,6 +387,195 @@ def test_compaction_manifest_rejects_executed_modes_in_dry_run_planner(tmp_path)
 
     with pytest.raises(ValueError, match="require an executed operation"):
         build_runtime_journal_compaction_manifest(journal_path, mode="executed_compaction")
+
+
+def test_boundary_validation_clean_journal_returns_no_compaction_needed(tmp_path) -> None:
+    journal_path = tmp_path / "runtime_events.jsonl"
+    _write_jsonl(
+        journal_path,
+        [
+            {
+                "type": "COMMAND_RECEIVED",
+                "sequence_num": 1,
+                "event_hash": "hash-1",
+                "previous_hash": "genesis",
+                "payload": {"text": "read README.md"},
+            },
+            {
+                "type": "ACTION_COMPLETED",
+                "sequence_num": 2,
+                "event_hash": "hash-2",
+                "previous_hash": "hash-1",
+                "payload": {"success": True, "verified": True},
+            },
+        ],
+    )
+    before = journal_path.read_text(encoding="utf-8")
+
+    validation = validate_runtime_journal_compaction_boundary(journal_path)
+
+    assert journal_path.read_text(encoding="utf-8") == before
+    assert validation["status"] == BOUNDARY_STATUS_NO_COMPACTION_NEEDED
+    assert validation["compaction_readiness"] == COMPACTION_READINESS_NOT_NEEDED
+    assert validation["blockers"] == []
+    assert validation["control_plane"]["event_count"] == 0
+    assert validation["sequence"]["monotonic"] is True
+
+
+def test_boundary_validation_missing_and_malformed_journals_fail_closed(tmp_path) -> None:
+    missing = validate_runtime_journal_compaction_boundary(tmp_path / "missing.jsonl")
+    assert missing["status"] == BOUNDARY_STATUS_MISSING_JOURNAL_BLOCKED
+    assert missing["compaction_readiness"] == COMPACTION_READINESS_BLOCKED
+    assert "journal_missing" in missing["blockers"]
+
+    malformed_path = tmp_path / "runtime_events.jsonl"
+    malformed_path.write_text("{not-json}\n", encoding="utf-8")
+    before = malformed_path.read_text(encoding="utf-8")
+
+    malformed = validate_runtime_journal_compaction_boundary(malformed_path)
+
+    assert malformed_path.read_text(encoding="utf-8") == before
+    assert malformed["status"] == BOUNDARY_STATUS_MALFORMED_JOURNAL_BLOCKED
+    assert malformed["compaction_readiness"] == COMPACTION_READINESS_BLOCKED
+    assert "journal_parse_errors" in malformed["blockers"]
+
+
+def test_boundary_validation_contiguous_control_plane_bloat_is_boundary_candidate(tmp_path) -> None:
+    journal_path = tmp_path / "runtime_events.jsonl"
+    _write_jsonl(
+        journal_path,
+        [
+            {"type": "COMMAND_RECEIVED", "sequence_num": 1, "event_hash": "hash-1", "payload": {}},
+            {
+                "type": "SYSTEM_ONLINE",
+                "sequence_num": 2,
+                "event_hash": "hash-2",
+                "previous_hash": "hash-1",
+                "payload": {},
+            },
+            {
+                "type": "SNAPSHOT_CREATED",
+                "sequence_num": 3,
+                "event_hash": "hash-3",
+                "previous_hash": "hash-2",
+                "payload": {"missed_events": []},
+            },
+            {
+                "type": "ACTION_COMPLETED",
+                "sequence_num": 4,
+                "event_hash": "hash-4",
+                "previous_hash": "hash-3",
+                "payload": {"success": True},
+            },
+        ],
+    )
+
+    validation = validate_runtime_journal_compaction_boundary(journal_path)
+
+    assert validation["status"] == BOUNDARY_STATUS_BOUNDARY_CANDIDATE
+    assert validation["compaction_readiness"] == COMPACTION_READINESS_REQUIRES_EXPLICIT_BOUNDARY
+    assert validation["control_plane"]["block_count"] == 1
+    assert validation["control_plane"]["interleaved_with_runtime_events"] is False
+    assert validation["hash_chain"]["explicit_boundary_required"] is True
+
+
+def test_boundary_validation_interleaved_control_plane_bloat_warns_archive_only(tmp_path) -> None:
+    journal_path = tmp_path / "runtime_events.jsonl"
+    _write_jsonl(
+        journal_path,
+        [
+            {"type": "COMMAND_RECEIVED", "sequence_num": 1, "event_hash": "hash-1", "payload": {}},
+            {
+                "type": "SNAPSHOT_CREATED",
+                "sequence_num": 2,
+                "event_hash": "hash-2",
+                "previous_hash": "hash-1",
+                "payload": {"missed_events": []},
+            },
+            {
+                "type": "ACTION_FAILED",
+                "sequence_num": 3,
+                "event_hash": "hash-3",
+                "previous_hash": "hash-2",
+                "payload": {"success": False, "execution_evidence": {"verification_state": "failed"}},
+            },
+            {
+                "type": "SYSTEM_ONLINE",
+                "sequence_num": 4,
+                "event_hash": "hash-4",
+                "previous_hash": "hash-3",
+                "payload": {},
+            },
+        ],
+    )
+
+    validation = validate_runtime_journal_compaction_boundary(journal_path)
+
+    assert validation["status"] == BOUNDARY_STATUS_BOUNDARY_CANDIDATE_WITH_WARNINGS
+    assert validation["compaction_readiness"] == COMPACTION_READINESS_ARCHIVE_PLAN_ONLY
+    assert validation["control_plane"]["block_count"] == 2
+    assert validation["control_plane"]["interleaved_with_runtime_events"] is True
+    assert validation["evidence"]["failed_or_unverified_count"] == 1
+    assert validation["evidence"]["preservation_required"] is True
+    assert any("interleaved" in warning for warning in validation["warnings"])
+
+
+def test_boundary_validation_sequence_gap_and_mixed_sequence_eras_block_compaction(tmp_path) -> None:
+    gap_path = tmp_path / "gap_runtime_events.jsonl"
+    _write_jsonl(
+        gap_path,
+        [
+            {"type": "COMMAND_RECEIVED", "sequence_num": 1, "payload": {}},
+            {"type": "SNAPSHOT_CREATED", "sequence_num": 3, "payload": {"missed_events": []}},
+        ],
+    )
+
+    gap = validate_runtime_journal_compaction_boundary(gap_path)
+
+    assert gap["status"] == BOUNDARY_STATUS_SEQUENCE_GAP_BLOCKED
+    assert gap["compaction_readiness"] == COMPACTION_READINESS_BLOCKED
+    assert "sequence_gaps" in gap["blockers"]
+    assert gap["sequence"]["gap_count"] == 1
+
+    mixed_path = tmp_path / "mixed_runtime_events.jsonl"
+    _write_jsonl(
+        mixed_path,
+        [
+            {"type": "COMMAND_RECEIVED", "sequence_num": 20, "payload": {}},
+            {"type": "SNAPSHOT_CREATED", "sequence_num": 2, "payload": {"missed_events": []}},
+        ],
+    )
+
+    mixed = validate_runtime_journal_compaction_boundary(mixed_path)
+
+    assert mixed["status"] == BOUNDARY_STATUS_MIXED_SEQUENCE_ERAS_BLOCKED
+    assert mixed["compaction_readiness"] == COMPACTION_READINESS_BLOCKED
+    assert "mixed_sequence_eras" in mixed["blockers"]
+    assert mixed["sequence"]["mixed_sequence_eras_suspected"] is True
+
+
+def test_boundary_validation_hash_chain_mismatch_requires_explicit_boundary(tmp_path) -> None:
+    journal_path = tmp_path / "runtime_events.jsonl"
+    _write_jsonl(
+        journal_path,
+        [
+            {"type": "COMMAND_RECEIVED", "sequence_num": 1, "event_hash": "hash-1", "payload": {}},
+            {
+                "type": "SNAPSHOT_CREATED",
+                "sequence_num": 2,
+                "event_hash": "hash-2",
+                "previous_hash": "not-hash-1",
+                "payload": {"missed_events": []},
+            },
+        ],
+    )
+
+    validation = validate_runtime_journal_compaction_boundary(journal_path)
+
+    assert validation["status"] == BOUNDARY_STATUS_HASH_CHAIN_BOUNDARY_REQUIRED
+    assert validation["compaction_readiness"] == COMPACTION_READINESS_REQUIRES_EXPLICIT_BOUNDARY
+    assert validation["hash_chain"]["mismatch_count"] == 1
+    assert validation["hash_chain"]["explicit_boundary_required"] is True
 
 
 def test_manifest_artifact_writer_writes_json_to_explicit_safe_output_path(tmp_path) -> None:
@@ -429,6 +639,10 @@ def test_manifest_artifact_writer_writes_json_to_explicit_safe_output_path(tmp_p
     assert manifest["requires_explicit_operator_confirmation"] is True
     assert manifest["hash_chain_handling_strategy"] == "explicit_boundary"
     assert manifest["sequence_handling_strategy"] == "compacted_with_boundary"
+    assert manifest["boundary_validation_status"] == BOUNDARY_STATUS_BOUNDARY_CANDIDATE
+    assert manifest["future_compaction_readiness"] == COMPACTION_READINESS_REQUIRES_EXPLICIT_BOUNDARY
+    assert manifest["boundary_validation"]["mutated"] is False
+    assert manifest["boundary_validation"]["control_plane"]["event_count"] == 1
     assert "verify replay preserves executable, verification, and evidence events" in (
         manifest["replay_validation_requirements"]
     )
