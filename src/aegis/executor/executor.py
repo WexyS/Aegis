@@ -243,11 +243,15 @@ class Executor:
                 # B. Focus-First (Ranked & PID-Verified)
                 pids = get_running_pids(process_name) if process_name else []
                 candidates = []
-                for w in gw.getAllWindows():
-                    if any(k.lower() in (w.title or "").lower() for k in keywords):
-                        score = score_window(w, pids)
-                        if score > 0:
-                            candidates.append((score, w))
+                if pids:
+                    for w in gw.getAllWindows():
+                        if any(k.lower() in (w.title or "").lower() for k in keywords):
+                            window = _window_evidence(w)
+                            if not window or window.get("pid") not in pids:
+                                continue
+                            score = score_window(w, pids)
+                            if score > 0:
+                                candidates.append((score, w))
                 
                 candidates.sort(key=lambda x: x[0], reverse=True)
                 

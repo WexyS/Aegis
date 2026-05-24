@@ -14,6 +14,17 @@ from aegis.executor.utils import get_running_pids, get_window_pid
 VERIFIER_VERSION = "process-window-verifier/2"
 
 
+def _infer_process_name(app_id: str) -> str | None:
+    cleaned = app_id.strip()
+    if not cleaned:
+        return None
+    if cleaned.lower().endswith(".exe"):
+        return cleaned
+    if any(char.isspace() for char in cleaned):
+        return None
+    return f"{cleaned}.exe"
+
+
 def now_ms() -> int:
     return int(time.time() * 1000)
 
@@ -71,10 +82,8 @@ def resolve_desktop_target(
     config = get_app_config(app_id) or {}
     configured_process = process_name or config.get("process_name")
     keywords = window_keywords or config.get("window_keywords") or [app_id, app]
-    if not configured_process and app_id.endswith(".exe"):
-        configured_process = app_id
-    elif not configured_process and app_id:
-        configured_process = f"{app_id}.exe"
+    if not configured_process and app_id:
+        configured_process = _infer_process_name(app_id)
     return DesktopTarget(
         app_id=app_id,
         display_name=app,

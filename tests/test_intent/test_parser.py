@@ -213,6 +213,14 @@ class TestAppLifecycle:
         assert r[0].risk == RiskLevel.MEDIUM
         assert r[0].params["app"] == "steam"
 
+    async def test_antigravity_alias_is_normalized_for_open_app_metadata(self) -> None:
+        r = await self.parser.parse("open antigravity i")
+
+        assert r[0].intent == "open_app"
+        assert r[0].params["app"] == "antigravity"
+        assert r[0].params["_process_name"] == "Antigravity IDE.exe"
+        assert "Antigravity IDE" in r[0].params["_keywords"]
+
 
 @pytest.mark.asyncio
 class TestTurkishAliasEncoding:

@@ -31,6 +31,7 @@ async def test_focus_app_activates_matching_visible_window(monkeypatch) -> None:
     window = FakeWindow("Untitled - Notepad", minimized=True)
     monkeypatch.setattr("aegis.tools.desktop_tools.gw.getAllWindows", lambda: [window])
     monkeypatch.setattr("aegis.tools.desktop_tools.gw.getActiveWindow", lambda: window)
+    monkeypatch.setattr("aegis.tools.desktop_tools.get_running_pids", lambda process_name: [4242])
     monkeypatch.setattr("aegis.tools.desktop_tools.get_window_pid", lambda hwnd: 4242)
 
     result = await FocusTool().run("notepad")
@@ -46,6 +47,7 @@ async def test_focus_app_records_selection_and_foreground_evidence(monkeypatch) 
     window = FakeWindow("Untitled - Notepad")
     monkeypatch.setattr("aegis.tools.desktop_tools.gw.getAllWindows", lambda: [window])
     monkeypatch.setattr("aegis.tools.desktop_tools.gw.getActiveWindow", lambda: window)
+    monkeypatch.setattr("aegis.tools.desktop_tools.get_running_pids", lambda process_name: [4242])
     monkeypatch.setattr("aegis.tools.desktop_tools.get_window_pid", lambda hwnd: 4242)
     evidence: list[dict] = []
 
@@ -105,10 +107,26 @@ async def test_focus_app_filters_by_process_metadata_when_available(monkeypatch)
 @pytest.mark.asyncio
 async def test_focus_app_reports_missing_window(monkeypatch) -> None:
     monkeypatch.setattr("aegis.tools.desktop_tools.gw.getAllWindows", lambda: [FakeWindow("Calculator")])
+    monkeypatch.setattr("aegis.tools.desktop_tools.get_running_pids", lambda process_name: [4242])
 
     result = await FocusTool().run("notepad")
 
     assert result == "Error: No visible window found for 'notepad'."
+
+
+@pytest.mark.asyncio
+async def test_focus_app_requires_observed_process_identity(monkeypatch) -> None:
+    window = FakeWindow("Untitled - Notepad")
+    monkeypatch.setattr("aegis.tools.desktop_tools.gw.getAllWindows", lambda: [window])
+    monkeypatch.setattr("aegis.tools.desktop_tools.get_running_pids", lambda process_name: [])
+    evidence: list[dict] = []
+
+    result = await FocusTool().run("notepad", _focus_evidence=evidence)
+
+    assert result == "Error: Process identity for 'notepad' was not observed. Aborting focus action for safety."
+    assert window.activated is False
+    assert evidence[0]["candidate_count"] == 0
+    assert evidence[0]["outcome"] == "not_found"
 
 
 @pytest.mark.asyncio

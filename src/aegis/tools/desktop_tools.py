@@ -29,11 +29,22 @@ def _window_keywords(app: str) -> list[str]:
     return [app_id, app]
 
 
-def _process_name(app: str) -> str:
+def _infer_process_name(app_id: str) -> str | None:
+    cleaned = app_id.strip()
+    if not cleaned:
+        return None
+    if cleaned.lower().endswith(".exe"):
+        return cleaned
+    if any(char.isspace() for char in cleaned):
+        return None
+    return f"{cleaned}.exe"
+
+
+def _process_name(app: str) -> str | None:
     app_id, config = _app_config(app)
     if config and config.get("process_name"):
         return str(config["process_name"])
-    return app_id if app_id.lower().endswith(".exe") else f"{app_id}.exe"
+    return _infer_process_name(app_id)
 
 
 def _process_pid(proc) -> int | None:
@@ -238,7 +249,10 @@ class CloseAppTool(BaseTool):
 
     async def run(self, app: str, **kwargs) -> str:
         import psutil
-        target_process = str(kwargs.get("_process_name") or _process_name(app)).lower()
+        resolved_process_name = kwargs.get("_process_name") or _process_name(app)
+        if not resolved_process_name:
+            return f"Error: Process identity is unknown for '{app}'."
+        target_process = str(resolved_process_name).lower()
         timeout = float(kwargs.get("timeout", 3.0))
         evidence_sink = kwargs.get("_close_evidence")
         expected_pids = _expected_pid_set(kwargs.get("_expected_pids"))
@@ -331,6 +345,10 @@ class FocusTool(BaseTool):
             "outcome": "not_found",
         }
         candidates = []
+        if not target_pids:
+            _record_evidence(evidence_sink, focus_attempt)
+            return f"Error: Process identity for '{app}' was not observed. Aborting focus action for safety."
+
         for window in gw.getAllWindows():
             if not getattr(window, "visible", False):
                 continue

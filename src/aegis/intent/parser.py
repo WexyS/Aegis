@@ -276,7 +276,7 @@ class IntentParser:
         APP_KEYWORDS = [
             "notepad", "calc", "hesap makinesi", "not defteri",
             "premiere", "photoshop", "adobe", "premier",
-            "chrome", "brave", "edge", "firefox"
+            "chrome", "brave", "edge", "firefox", "antigravity"
         ]
 
         norm_text = self.normalize_text(text)

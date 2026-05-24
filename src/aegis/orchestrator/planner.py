@@ -59,7 +59,7 @@ class Planner:
                 elif app_query:
                     last_app = app_query
                     last_focus_keywords = [str(app_query)]
-                    last_focus_process_name = f"{app_query}.exe" if not str(app_query).lower().endswith(".exe") else str(app_query)
+                    last_focus_process_name = str(app_query) if str(app_query).lower().endswith(".exe") else None
                 
                 # Apps need time to launch, but we optimize for chaining
                 if intent.intent == "open_app":

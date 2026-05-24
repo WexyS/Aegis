@@ -19,7 +19,7 @@ def verify_path(path: str) -> tuple[bool, str | None]:
     if not path:
         return False, None
 
-    path = path.strip()
+    path = os.path.expandvars(path.strip())
     if path.startswith(("steam://", "com.epicgames.launcher://")):
         return True, path
 

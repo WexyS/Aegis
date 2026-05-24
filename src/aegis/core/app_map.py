@@ -51,6 +51,30 @@ APP_REGISTRY: dict[str, dict] = {
         "aliases": ["brave", "brave browser", "brave tarayıcı"],
         "fallback": "chrome",
         "window_keywords": ["Brave", "New Tab"]
+    },
+    "antigravity": {
+        "path": r"%LOCALAPPDATA%\Programs\Antigravity IDE\Antigravity IDE.exe",
+        "process_name": "Antigravity IDE.exe",
+        "aliases": [
+            "antigravity",
+            "antigravity ide",
+            "antigravity i",
+            "google antigravity",
+        ],
+        "fallback": None,
+        "window_keywords": ["Antigravity", "Antigravity IDE"],
+        "display_name": "Antigravity IDE",
+    },
+    "antigravity_agent_manager": {
+        "path": r"%LOCALAPPDATA%\Programs\Antigravity\Antigravity.exe",
+        "process_name": "Antigravity.exe",
+        "aliases": [
+            "antigravity agent manager",
+            "antigravity manager",
+        ],
+        "fallback": None,
+        "window_keywords": ["Antigravity Agent Manager", "Antigravity"],
+        "display_name": "Antigravity Agent Manager",
     }
 }
 

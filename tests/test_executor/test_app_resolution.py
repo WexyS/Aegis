@@ -15,6 +15,19 @@ def test_verify_path_allows_known_launcher_uri_schemes() -> None:
     )
 
 
+def test_verify_path_expands_environment_variables_for_configured_app_paths(tmp_path, monkeypatch) -> None:
+    app_dir = tmp_path / "Programs" / "Antigravity IDE"
+    app_dir.mkdir(parents=True)
+    executable = app_dir / "Antigravity IDE.exe"
+    executable.write_text("", encoding="utf-8")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+    assert verify_path(r"%LOCALAPPDATA%\Programs\Antigravity IDE\Antigravity IDE.exe") == (
+        True,
+        str(executable),
+    )
+
+
 class AllowingSafety:
     def evaluate(self, intent: IntentResult) -> GuardResult:
         return GuardResult(allowed=True, reason="ok", risk=intent.risk)
@@ -320,6 +333,48 @@ async def test_open_app_launch_without_process_or_window_evidence_is_unverified(
     assert evidence["process_alive"] is None
     assert evidence["window"] is None
     assert any("No process_name configured" in warning for warning in evidence["warnings"])
+
+
+async def test_open_app_window_title_without_process_name_does_not_verify(monkeypatch) -> None:
+    class FakeWindow:
+        title = "Portal"
+        _hWnd = 808
+        isMinimized = False
+
+        def activate(self) -> None:
+            raise AssertionError("window-only match must not be focused as verified")
+
+    monkeypatch.setattr(executor_module, "resolve_app_name", lambda name: "portal")
+    monkeypatch.setattr(executor_module, "smart_match_app", lambda name: None)
+    monkeypatch.setattr(executor_module, "get_app_config", lambda name: {
+        "path": "portal://open",
+        "process_name": None,
+        "window_keywords": ["Portal"],
+        "fallback": None,
+    })
+    monkeypatch.setattr(executor_module, "verify_path", lambda path: (True, path))
+    monkeypatch.setattr(executor_module.gw, "getAllWindows", lambda: [FakeWindow()])
+    monkeypatch.setitem(executor_module.TOOLS, "open_app", type("FakeOpenAppTool", (), {"run": staticmethod(fake_tool_run)})())
+
+    result = await Executor(AllowingSafety(), dry_run_default=False).execute(
+        IntentResult(
+            intent="open_app",
+            confidence=1.0,
+            params={"app": "portal"},
+            risk=RiskLevel.MEDIUM,
+            source=IntentSource.RULE,
+            raw_input="open portal",
+        ),
+        ExecutionMode.LIVE,
+    )
+
+    action = result[0]
+    evidence = action.proof["execution_evidence"]
+    assert evidence["method"] == "launch"
+    assert evidence["verification_state"] == "unverified"
+    assert evidence["process_name"] is None
+    assert evidence["process_alive"] is None
+    assert evidence["window"] is None
 
 
 async def test_legacy_executor_standard_tool_returns_unverified_side_effect_evidence(monkeypatch) -> None:

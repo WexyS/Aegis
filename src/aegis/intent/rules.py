@@ -348,6 +348,12 @@ APP_ALIASES: dict[str, str] = {
     "premiere": "premiere",
     "adobe premiere": "premiere",
     "premiere pro": "premiere",
+    "antigravity": "antigravity",
+    "antigravity ide": "antigravity",
+    "antigravity i": "antigravity",
+    "google antigravity": "antigravity",
+    "antigravity agent manager": "antigravity_agent_manager",
+    "antigravity manager": "antigravity_agent_manager",
 }
 # Verification Metadata for Tier 4 Deterministic Tracking
 # Maps canonical app ID -> {process_name, keywords}
@@ -360,4 +366,9 @@ VERIFICATION_METADATA: dict[str, dict[str, Any]] = {
     "powershell": {"process_name": "powershell.exe", "keywords": ["PowerShell"]},
     "spotify": {"process_name": "Spotify.exe", "keywords": ["Spotify"]},
     "explorer": {"process_name": "explorer.exe", "keywords": ["File Explorer", "Dosya Gezgini"]},
+    "antigravity": {"process_name": "Antigravity IDE.exe", "keywords": ["Antigravity", "Antigravity IDE"]},
+    "antigravity_agent_manager": {
+        "process_name": "Antigravity.exe",
+        "keywords": ["Antigravity Agent Manager", "Antigravity"],
+    },
 }

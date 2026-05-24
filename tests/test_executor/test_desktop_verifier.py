@@ -3,6 +3,7 @@ from __future__ import annotations
 from aegis.executor.desktop_verifier import (
     make_desktop_execution_evidence,
     observe_desktop_target,
+    resolve_desktop_target,
     verification_to_execution_evidence,
     verify_desktop_action,
 )
@@ -185,6 +186,39 @@ def test_verify_desktop_action_close_records_inferred_process_not_alive(monkeypa
     assert evidence.process_name == "portal.exe"
     assert evidence.process_alive is False
     assert evidence.verification_reason == "target process is no longer alive"
+
+
+def test_antigravity_alias_uses_explicit_process_mapping() -> None:
+    target = resolve_desktop_target("antigravity i")
+
+    assert target.app_id == "antigravity"
+    assert target.process_name == "Antigravity IDE.exe"
+    assert "Antigravity IDE" in target.window_keywords
+
+
+def test_unknown_multi_word_app_does_not_infer_invalid_exe() -> None:
+    target = resolve_desktop_target("unknown ide")
+
+    assert target.app_id == "unknown ide"
+    assert target.process_name is None
+    assert target.window_keywords == ["unknown ide", "unknown ide"]
+
+
+def test_window_title_without_process_identity_remains_unverified(monkeypatch) -> None:
+    window = FakeWindow("Unknown IDE", 909)
+    monkeypatch.setattr("aegis.executor.desktop_verifier.resolve_app_name", lambda app: None)
+    monkeypatch.setattr("aegis.executor.desktop_verifier.get_app_config", lambda app_id: None)
+    monkeypatch.setattr("aegis.executor.desktop_verifier.get_window_pid", lambda hwnd: None)
+    monkeypatch.setattr("aegis.executor.desktop_verifier.gw.getActiveWindow", lambda: window)
+    monkeypatch.setattr("aegis.executor.desktop_verifier.gw.getAllWindows", lambda: [window])
+
+    verification = verify_desktop_action(action="open_app", app="unknown ide")
+
+    assert verification.verified is False
+    assert verification.verification_state == "unverified"
+    assert verification.reason == "process_name is not configured"
+    assert verification.observation.process_alive is None
+    assert verification.observation.matching_windows[0]["title"] == "Unknown IDE"
 
 
 def test_verify_desktop_action_focus_records_foreground_pid_match_check(monkeypatch) -> None:

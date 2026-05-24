@@ -136,3 +136,22 @@ def test_brave_is_configured_as_a_verified_browser_target() -> None:
     assert config["process_name"] == "brave.exe"
     assert "Brave" in config["window_keywords"]
     assert config["fallback"] == "chrome"
+
+
+@pytest.mark.parametrize("alias", ["antigravity", "antigravity ide", "antigravity i", "Antigravity IDE"])
+def test_antigravity_aliases_resolve_to_explicit_registry_target(alias: str) -> None:
+    assert resolve_app_name(alias) == "antigravity"
+    config = get_app_config(alias)
+
+    assert config is APP_REGISTRY["antigravity"]
+    assert config["path"] == r"%LOCALAPPDATA%\Programs\Antigravity IDE\Antigravity IDE.exe"
+    assert config["process_name"] == "Antigravity IDE.exe"
+    assert "Antigravity IDE" in config["window_keywords"]
+
+
+def test_antigravity_agent_manager_has_separate_process_identity() -> None:
+    assert resolve_app_name("antigravity agent manager") == "antigravity_agent_manager"
+    config = get_app_config("antigravity agent manager")
+
+    assert config["path"] == r"%LOCALAPPDATA%\Programs\Antigravity\Antigravity.exe"
+    assert config["process_name"] == "Antigravity.exe"
