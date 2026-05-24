@@ -10,6 +10,7 @@ from aegis.core.journal_cleanup import (
     MANIFEST_SCHEMA_VERSION,
     build_runtime_journal_compaction_manifest,
     scan_runtime_journal_snapshot_bloat,
+    write_runtime_journal_compaction_manifest_artifact,
 )
 
 
@@ -365,3 +366,184 @@ def test_compaction_manifest_rejects_executed_modes_in_dry_run_planner(tmp_path)
 
     with pytest.raises(ValueError, match="require an executed operation"):
         build_runtime_journal_compaction_manifest(journal_path, mode="executed_compaction")
+
+
+def test_manifest_artifact_writer_writes_json_to_explicit_safe_output_path(tmp_path) -> None:
+    journal_dir = tmp_path / "logs"
+    journal_dir.mkdir()
+    journal_path = journal_dir / "runtime_events.jsonl"
+    archive_dir = journal_dir / "archive"
+    archive_dir.mkdir()
+    output_path = archive_dir / "cleanup-manifest.json"
+    _write_jsonl(
+        journal_path,
+        [
+            {
+                "type": "COMMAND_RECEIVED",
+                "sequence_num": 1,
+                "event_hash": "hash-1",
+                "previous_hash": "genesis",
+                "payload": {"text": "open notepad"},
+            },
+            {
+                "type": "SNAPSHOT_CREATED",
+                "sequence_num": 2,
+                "event_hash": "hash-2",
+                "previous_hash": "hash-1",
+                "payload": {"missed_events": [{"type": "SYSTEM_ONLINE", "sequence_num": 1}]},
+            },
+            {
+                "type": "ACTION_FAILED",
+                "sequence_num": 3,
+                "event_hash": "hash-3",
+                "previous_hash": "hash-2",
+                "payload": {
+                    "success": False,
+                    "verified": False,
+                    "execution_evidence": {"verification_state": "failed"},
+                },
+            },
+        ],
+    )
+    before = journal_path.read_bytes()
+
+    result = write_runtime_journal_compaction_manifest_artifact(
+        journal_path,
+        output_path,
+        operation_id="op-artifact",
+        created_at="2026-05-24T00:00:00Z",
+    )
+
+    assert journal_path.read_bytes() == before
+    assert output_path.exists()
+    written = output_path.read_text(encoding="utf-8")
+    assert written.endswith("\n")
+    manifest = json.loads(written)
+    assert manifest["manifest_schema_version"] == MANIFEST_SCHEMA_VERSION
+    assert manifest["operation_id"] == "op-artifact"
+    assert manifest["original_sha256"] == hashlib.sha256(before).hexdigest()
+    assert manifest["total_event_count"] == 3
+    assert manifest["detected_control_plane_event_counts"]["SNAPSHOT_CREATED"] == 1
+    assert manifest["detected_control_plane_byte_impact"]["total"] > 0
+    assert manifest["destructive_default"] is False
+    assert manifest["requires_explicit_operator_confirmation"] is True
+    assert manifest["hash_chain_handling_strategy"] == "explicit_boundary"
+    assert manifest["sequence_handling_strategy"] == "compacted_with_boundary"
+    assert "verify replay preserves executable, verification, and evidence events" in (
+        manifest["replay_validation_requirements"]
+    )
+    assert "execution_evidence" in manifest["evidence_audit_preservation_statement"]
+    assert result == {
+        "output_path": str(output_path),
+        "bytes_written": len(written.encode("utf-8")),
+        "manifest_operation_id": "op-artifact",
+        "original_journal_sha256": manifest["original_sha256"],
+        "dry_run": True,
+        "destructive_default": False,
+        "journal_mutated": False,
+        "archive_created": False,
+        "compacted_journal_created": False,
+    }
+
+
+def test_manifest_artifact_writer_can_create_safe_parent_directory_only_when_requested(tmp_path) -> None:
+    journal_dir = tmp_path / "logs"
+    journal_dir.mkdir()
+    journal_path = journal_dir / "runtime_events.jsonl"
+    output_path = journal_dir / "manifests" / "cleanup-manifest.json"
+    _write_jsonl(journal_path, [{"type": "COMMAND_RECEIVED", "sequence_num": 1, "payload": {}}])
+
+    with pytest.raises(FileNotFoundError):
+        write_runtime_journal_compaction_manifest_artifact(journal_path, output_path)
+
+    result = write_runtime_journal_compaction_manifest_artifact(
+        journal_path,
+        output_path,
+        operation_id="op-create-parent",
+        created_at="2026-05-24T00:00:00Z",
+        create_parent_dirs=True,
+    )
+
+    assert output_path.exists()
+    assert result["manifest_operation_id"] == "op-create-parent"
+
+
+def test_manifest_artifact_writer_refuses_source_journal_and_runtime_journal_filename(tmp_path) -> None:
+    journal_dir = tmp_path / "logs"
+    archive_dir = journal_dir / "archive"
+    archive_dir.mkdir(parents=True)
+    journal_path = journal_dir / "runtime_events.jsonl"
+    _write_jsonl(journal_path, [{"type": "COMMAND_RECEIVED", "sequence_num": 1, "payload": {}}])
+
+    with pytest.raises(ValueError, match="source journal path"):
+        write_runtime_journal_compaction_manifest_artifact(journal_path, journal_path)
+    with pytest.raises(ValueError, match="runtime journal filename"):
+        write_runtime_journal_compaction_manifest_artifact(journal_path, archive_dir / "runtime_events.jsonl")
+
+
+def test_manifest_artifact_writer_refuses_unsafe_output_paths(tmp_path) -> None:
+    journal_dir = tmp_path / "logs"
+    archive_dir = journal_dir / "archive"
+    archive_dir.mkdir(parents=True)
+    journal_path = journal_dir / "runtime_events.jsonl"
+    _write_jsonl(journal_path, [{"type": "COMMAND_RECEIVED", "sequence_num": 1, "payload": {}}])
+
+    unsafe_outside = tmp_path / "outside.json"
+    unsafe_traversal = archive_dir / ".." / "escape.json"
+    unsafe_frontend = journal_dir / "archive" / ".next" / "manifest.json"
+    bad_suffix = archive_dir / "manifest.txt"
+    with pytest.raises(ValueError, match="archive or manifests directory"):
+        write_runtime_journal_compaction_manifest_artifact(journal_path, unsafe_outside)
+    with pytest.raises(ValueError, match="archive or manifests directory"):
+        write_runtime_journal_compaction_manifest_artifact(journal_path, unsafe_traversal)
+    with pytest.raises(ValueError, match="frontend build"):
+        write_runtime_journal_compaction_manifest_artifact(journal_path, unsafe_frontend)
+    with pytest.raises(ValueError, match="must end with .json"):
+        write_runtime_journal_compaction_manifest_artifact(journal_path, bad_suffix)
+
+
+def test_manifest_artifact_writer_refuses_overwrite_by_default_and_allows_explicit_overwrite(tmp_path) -> None:
+    journal_dir = tmp_path / "logs"
+    archive_dir = journal_dir / "archive"
+    archive_dir.mkdir(parents=True)
+    journal_path = journal_dir / "runtime_events.jsonl"
+    output_path = archive_dir / "manifest.json"
+    _write_jsonl(journal_path, [{"type": "COMMAND_RECEIVED", "sequence_num": 1, "payload": {}}])
+    output_path.write_text('{"old":true}\n', encoding="utf-8")
+
+    with pytest.raises(FileExistsError):
+        write_runtime_journal_compaction_manifest_artifact(journal_path, output_path)
+
+    result = write_runtime_journal_compaction_manifest_artifact(
+        journal_path,
+        output_path,
+        operation_id="op-overwrite",
+        created_at="2026-05-24T00:00:00Z",
+        overwrite=True,
+    )
+
+    manifest = json.loads(output_path.read_text(encoding="utf-8"))
+    assert manifest["operation_id"] == "op-overwrite"
+    assert result["manifest_operation_id"] == "op-overwrite"
+
+
+def test_manifest_artifact_writer_missing_or_malformed_journal_does_not_write(tmp_path) -> None:
+    journal_dir = tmp_path / "logs"
+    archive_dir = journal_dir / "archive"
+    archive_dir.mkdir(parents=True)
+    missing_journal = journal_dir / "missing_runtime_events.jsonl"
+    missing_output = archive_dir / "missing-manifest.json"
+
+    with pytest.raises(ValueError, match="blockers"):
+        write_runtime_journal_compaction_manifest_artifact(missing_journal, missing_output)
+    assert not missing_output.exists()
+
+    malformed_journal = journal_dir / "runtime_events.jsonl"
+    malformed_output = archive_dir / "malformed-manifest.json"
+    malformed_journal.write_text("{not-json}\n", encoding="utf-8")
+    before = malformed_journal.read_text(encoding="utf-8")
+
+    with pytest.raises(ValueError, match="blockers"):
+        write_runtime_journal_compaction_manifest_artifact(malformed_journal, malformed_output)
+    assert malformed_journal.read_text(encoding="utf-8") == before
+    assert not malformed_output.exists()

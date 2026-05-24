@@ -12,6 +12,7 @@ CONTROL_PLANE_EVENT_TYPES = {"SNAPSHOT_CREATED", "SYSTEM_ONLINE"}
 MANIFEST_SCHEMA_VERSION = "runtime-journal-archive-compaction-manifest/1"
 SUPPORTED_MANIFEST_PLAN_MODES = {"dry_run", "archive_plan", "compact_plan"}
 EXECUTED_MANIFEST_MODES = {"executed_archive", "executed_compaction"}
+SAFE_MANIFEST_OUTPUT_DIR_NAMES = {"archive", "manifests"}
 
 
 def scan_runtime_journal_snapshot_bloat(journal_path: str | Path) -> dict[str, Any]:
@@ -261,6 +262,63 @@ def build_runtime_journal_compaction_manifest(
     }
 
 
+def write_runtime_journal_compaction_manifest_artifact(
+    journal_path: str | Path,
+    output_path: str | Path,
+    *,
+    mode: str = "dry_run",
+    operation_id: str | None = None,
+    created_at: str | None = None,
+    archive_dir: str | Path | None = None,
+    overwrite: bool = False,
+    create_parent_dirs: bool = False,
+) -> dict[str, Any]:
+    """Write a dry-run manifest JSON artifact to an explicit safe path.
+
+    This writes only the manifest. It never archives, compacts, rewrites, or
+    truncates the runtime journal.
+    """
+
+    journal = Path(journal_path)
+    output = Path(output_path)
+    _validate_manifest_output_path(
+        journal,
+        output,
+        overwrite=overwrite,
+        create_parent_dirs=create_parent_dirs,
+    )
+
+    manifest = build_runtime_journal_compaction_manifest(
+        journal,
+        mode=mode,
+        operation_id=operation_id,
+        created_at=created_at,
+        archive_dir=archive_dir,
+    )
+    fatal_blockers = {"journal_missing", "journal_parse_errors", "cannot_plan_missing_journal"}
+    if fatal_blockers.intersection(manifest["blockers"]):
+        raise ValueError(f"manifest artifact not written because blockers are present: {manifest['blockers']}")
+
+    if create_parent_dirs:
+        output.parent.mkdir(parents=True, exist_ok=True)
+
+    data = json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    output.write_text(data, encoding="utf-8")
+    bytes_written = len(data.encode("utf-8"))
+
+    return {
+        "output_path": str(output),
+        "bytes_written": bytes_written,
+        "manifest_operation_id": manifest["operation_id"],
+        "original_journal_sha256": manifest["original_sha256"],
+        "dry_run": manifest["mode"] == "dry_run",
+        "destructive_default": manifest["destructive_default"],
+        "journal_mutated": False,
+        "archive_created": False,
+        "compacted_journal_created": False,
+    }
+
+
 def _coerce_sequence(value: Any) -> int | None:
     try:
         return int(value)
@@ -311,3 +369,45 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _validate_manifest_output_path(
+    journal_path: Path,
+    output_path: Path,
+    *,
+    overwrite: bool,
+    create_parent_dirs: bool,
+) -> None:
+    if str(output_path).strip() == "":
+        raise ValueError("manifest output path must be explicit")
+
+    resolved_journal = journal_path.resolve(strict=False)
+    resolved_output = output_path.resolve(strict=False)
+    if resolved_output == resolved_journal:
+        raise ValueError("manifest output path cannot be the source journal path")
+    if resolved_output.name == resolved_journal.name:
+        raise ValueError("manifest output path cannot use the runtime journal filename")
+    if output_path.suffix.lower() != ".json":
+        raise ValueError("manifest output path must end with .json")
+    if any(part in {".next", "node_modules"} for part in resolved_output.parts):
+        raise ValueError("manifest output path cannot target frontend build or dependency output")
+
+    allowed_roots = [
+        (resolved_journal.parent / dirname).resolve(strict=False)
+        for dirname in SAFE_MANIFEST_OUTPUT_DIR_NAMES
+    ]
+    if not any(_is_relative_to(resolved_output, root) for root in allowed_roots):
+        raise ValueError("manifest output path must be under the journal archive or manifests directory")
+
+    if output_path.exists() and not overwrite:
+        raise FileExistsError(f"manifest output already exists: {output_path}")
+    if not output_path.parent.exists() and not create_parent_dirs:
+        raise FileNotFoundError(f"manifest output parent does not exist: {output_path.parent}")
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
