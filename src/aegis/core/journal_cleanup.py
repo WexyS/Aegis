@@ -30,6 +30,46 @@ COMPACTION_READINESS_ARCHIVE_PLAN_ONLY = "archive_plan_only"
 COMPACTION_READINESS_REQUIRES_EXPLICIT_BOUNDARY = "compact_plan_requires_explicit_boundary"
 COMPACTION_READINESS_BLOCKED = "blocked"
 
+EXECUTION_READINESS_VERSION = "runtime-journal-archive-compaction-execution-readiness/1"
+
+EXECUTION_STATUS_NOT_NEEDED = "execution_not_needed"
+EXECUTION_STATUS_ARCHIVE_PLAN_READY = "archive_execution_plan_ready"
+EXECUTION_STATUS_COMPACTION_REQUIRES_BOUNDARY_APPROVAL = "compaction_execution_requires_boundary_approval"
+EXECUTION_STATUS_BLOCKED_MISSING_BACKUP = "execution_blocked_missing_backup"
+EXECUTION_STATUS_BLOCKED_MISSING_RESTORE_PLAN = "execution_blocked_missing_restore_plan"
+EXECUTION_STATUS_BLOCKED_SEQUENCE_GAP = "execution_blocked_sequence_gap"
+EXECUTION_STATUS_BLOCKED_MIXED_SEQUENCE_ERAS = "execution_blocked_mixed_sequence_eras"
+EXECUTION_STATUS_BLOCKED_HASH_CHAIN_RISK = "execution_blocked_hash_chain_risk"
+EXECUTION_STATUS_BLOCKED_MALFORMED_JOURNAL = "execution_blocked_malformed_journal"
+EXECUTION_STATUS_BLOCKED_MISSING_JOURNAL = "execution_blocked_missing_journal"
+
+REQUIRED_OPERATOR_CONFIRMATIONS = [
+    "confirm_original_journal_sha256_matches_manifest",
+    "confirm_backup_path_is_writable_and_not_source_journal",
+    "confirm_restore_plan_is_documented",
+    "confirm_no_in_place_mutation",
+    "confirm_evidence_audit_records_remain_preserved",
+]
+
+REQUIRED_PREFLIGHT_CHECKS = [
+    "verify original journal path exists",
+    "verify original journal sha256 matches manifest",
+    "verify backup path is separate from source journal",
+    "verify restore plan exists before mutation",
+    "verify boundary validation is not blocked",
+    "verify replay validation plan is present",
+    "verify evidence audit preservation statement is present",
+]
+
+REQUIRED_POST_EXECUTION_CHECKS = [
+    "verify source journal backup exists and matches original sha256",
+    "verify replay succeeds from archive or compacted journal",
+    "verify sequence continuity across any explicit boundary",
+    "verify hash-chain handling matches manifest strategy",
+    "verify failed and unverified evidence records remain visible",
+    "verify historical control-plane events remain excluded from live missed_events replay",
+]
+
 
 def scan_runtime_journal_snapshot_bloat(journal_path: str | Path) -> dict[str, Any]:
     """Dry-run scan for historically persisted websocket control-plane events.
@@ -348,6 +388,35 @@ def build_runtime_journal_compaction_manifest(
     if mode in {"archive_plan", "compact_plan"} and not exists:
         blockers.append("cannot_plan_missing_journal")
 
+    execution_readiness = evaluate_runtime_journal_compaction_execution_readiness(
+        {
+            "mode": mode,
+            "original_journal_path": str(path),
+            "original_sha256": original_sha256,
+            "candidate_archive_path": candidate_archive_path,
+            "candidate_compacted_journal_path": candidate_compacted_journal_path,
+            "backup_path": backup_path,
+            "destructive_default": False,
+            "requires_explicit_operator_confirmation": True,
+            "in_place_compaction_allowed": False,
+            "boundary_validation": boundary,
+            "boundary_validation_status": boundary["status"],
+            "future_compaction_readiness": boundary["compaction_readiness"],
+            "blockers": blockers,
+            "replay_validation_requirements": [
+                "verify original journal hash before execution",
+                "verify compacted journal hash after execution if compaction is implemented",
+                "verify replay preserves executable, verification, and evidence events",
+                "verify sequence ordering is explicit across any compaction boundary",
+                "verify historical control-plane events remain excluded from live missed_events replay",
+            ],
+            "evidence_audit_preservation_statement": (
+                "Cleanup planning must not remove, rewrite, downgrade, or hide ACTION_FAILED, "
+                "VERIFICATION_FAILED, execution_evidence, success, or verified fields."
+            ),
+        }
+    )
+
     return {
         "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
         "operation_id": op_id,
@@ -399,10 +468,96 @@ def build_runtime_journal_compaction_manifest(
         "boundary_blockers": boundary["blockers"],
         "boundary_warnings": boundary["warnings"],
         "future_compaction_readiness": boundary["compaction_readiness"],
+        "execution_readiness": execution_readiness,
+        "execution_readiness_status": execution_readiness["status"],
+        "execution_blockers": execution_readiness["blockers"],
+        "required_operator_confirmations": execution_readiness["required_operator_confirmations"],
+        "required_preflight_checks": execution_readiness["required_preflight_checks"],
+        "required_post_execution_checks": execution_readiness["required_post_execution_checks"],
+        "restore_plan_required": execution_readiness["restore_plan_required"],
+        "backup_required": execution_readiness["backup_required"],
+        "mutation_performed": False,
         "warnings": warnings,
         "blockers": blockers,
         "scan": scan,
     }
+
+
+def evaluate_runtime_journal_compaction_execution_readiness(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Evaluate future archive/compaction execution gates without executing them."""
+
+    boundary = manifest.get("boundary_validation")
+    if not isinstance(boundary, dict):
+        boundary = {}
+    boundary_status = str(manifest.get("boundary_validation_status") or boundary.get("status") or "")
+    compaction_readiness = str(
+        manifest.get("future_compaction_readiness") or boundary.get("compaction_readiness") or ""
+    )
+    backup_path = manifest.get("backup_path")
+    has_backup_path = isinstance(backup_path, str) and bool(backup_path.strip())
+    original_sha256 = manifest.get("original_sha256")
+    has_original_sha256 = isinstance(original_sha256, str) and bool(original_sha256.strip())
+    blockers = list(manifest.get("blockers") or [])
+    readiness: dict[str, Any] = {
+        "readiness_version": EXECUTION_READINESS_VERSION,
+        "status": EXECUTION_STATUS_NOT_NEEDED,
+        "archive_execution_allowed": False,
+        "compaction_execution_allowed": False,
+        "execution_blocked": False,
+        "blockers": [],
+        "warnings": [],
+        "required_operator_confirmations": list(REQUIRED_OPERATOR_CONFIRMATIONS),
+        "required_preflight_checks": list(REQUIRED_PREFLIGHT_CHECKS),
+        "required_post_execution_checks": list(REQUIRED_POST_EXECUTION_CHECKS),
+        "backup_required": True,
+        "restore_plan_required": True,
+        "requires_explicit_boundary_approval": False,
+        "requires_explicit_operator_confirmation": True,
+        "destructive_default": False,
+        "in_place_mutation_allowed": False,
+        "mutation_performed": False,
+    }
+
+    def block(status: str, blocker: str) -> dict[str, Any]:
+        readiness["status"] = status
+        readiness["execution_blocked"] = True
+        readiness["blockers"].append(blocker)
+        return readiness
+
+    if boundary_status == BOUNDARY_STATUS_NO_COMPACTION_NEEDED:
+        readiness["status"] = EXECUTION_STATUS_NOT_NEEDED
+        readiness["warnings"].append("No historical control-plane bloat detected; execution is not needed.")
+        return readiness
+    if boundary_status == BOUNDARY_STATUS_MISSING_JOURNAL_BLOCKED or "journal_missing" in blockers:
+        return block(EXECUTION_STATUS_BLOCKED_MISSING_JOURNAL, "journal_missing")
+    if boundary_status == BOUNDARY_STATUS_MALFORMED_JOURNAL_BLOCKED or "journal_parse_errors" in blockers:
+        return block(EXECUTION_STATUS_BLOCKED_MALFORMED_JOURNAL, "journal_parse_errors")
+    if boundary_status == BOUNDARY_STATUS_SEQUENCE_GAP_BLOCKED or "sequence_gaps" in blockers:
+        return block(EXECUTION_STATUS_BLOCKED_SEQUENCE_GAP, "sequence_gaps")
+    if boundary_status == BOUNDARY_STATUS_MIXED_SEQUENCE_ERAS_BLOCKED or "mixed_sequence_eras" in blockers:
+        return block(EXECUTION_STATUS_BLOCKED_MIXED_SEQUENCE_ERAS, "mixed_sequence_eras")
+    if boundary_status == BOUNDARY_STATUS_HASH_CHAIN_BOUNDARY_REQUIRED:
+        readiness["requires_explicit_boundary_approval"] = True
+        return block(EXECUTION_STATUS_BLOCKED_HASH_CHAIN_RISK, "hash_chain_boundary_required")
+    if not has_original_sha256:
+        return block(EXECUTION_STATUS_BLOCKED_MISSING_JOURNAL, "original_journal_sha256_missing")
+    if not has_backup_path:
+        return block(EXECUTION_STATUS_BLOCKED_MISSING_BACKUP, "backup_path_missing")
+
+    if compaction_readiness == COMPACTION_READINESS_ARCHIVE_PLAN_ONLY:
+        readiness["status"] = EXECUTION_STATUS_ARCHIVE_PLAN_READY
+        readiness["archive_execution_allowed"] = True
+        readiness["warnings"].append("Archive planning may proceed later, but this helper performs no mutation.")
+        return readiness
+
+    if compaction_readiness == COMPACTION_READINESS_REQUIRES_EXPLICIT_BOUNDARY:
+        readiness["status"] = EXECUTION_STATUS_COMPACTION_REQUIRES_BOUNDARY_APPROVAL
+        readiness["archive_execution_allowed"] = True
+        readiness["requires_explicit_boundary_approval"] = True
+        readiness["warnings"].append("Compaction requires explicit boundary approval before any future execution.")
+        return readiness
+
+    return block(EXECUTION_STATUS_BLOCKED_MISSING_RESTORE_PLAN, "unsupported_execution_readiness_state")
 
 
 def write_runtime_journal_compaction_manifest_artifact(

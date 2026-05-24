@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import aegis.core.journal_cleanup as journal_cleanup
 from aegis.core.journal_cleanup import (
     BOUNDARY_STATUS_BOUNDARY_CANDIDATE,
     BOUNDARY_STATUS_BOUNDARY_CANDIDATE_WITH_WARNINGS,
@@ -19,8 +20,17 @@ from aegis.core.journal_cleanup import (
     COMPACTION_READINESS_BLOCKED,
     COMPACTION_READINESS_NOT_NEEDED,
     COMPACTION_READINESS_REQUIRES_EXPLICIT_BOUNDARY,
+    EXECUTION_STATUS_ARCHIVE_PLAN_READY,
+    EXECUTION_STATUS_BLOCKED_HASH_CHAIN_RISK,
+    EXECUTION_STATUS_BLOCKED_MALFORMED_JOURNAL,
+    EXECUTION_STATUS_BLOCKED_MISSING_JOURNAL,
+    EXECUTION_STATUS_BLOCKED_MIXED_SEQUENCE_ERAS,
+    EXECUTION_STATUS_BLOCKED_SEQUENCE_GAP,
+    EXECUTION_STATUS_COMPACTION_REQUIRES_BOUNDARY_APPROVAL,
+    EXECUTION_STATUS_NOT_NEEDED,
     MANIFEST_SCHEMA_VERSION,
     build_runtime_journal_compaction_manifest,
+    evaluate_runtime_journal_compaction_execution_readiness,
     scan_runtime_journal_snapshot_bloat,
     validate_runtime_journal_compaction_boundary,
     write_runtime_journal_compaction_manifest_artifact,
@@ -294,6 +304,17 @@ def test_compaction_manifest_dry_run_includes_required_safety_contract(tmp_path)
     assert manifest["boundary_validation_status"] == BOUNDARY_STATUS_BOUNDARY_CANDIDATE
     assert manifest["future_compaction_readiness"] == COMPACTION_READINESS_REQUIRES_EXPLICIT_BOUNDARY
     assert manifest["boundary_validation"]["evidence"]["failed_or_unverified_count"] == 1
+    assert manifest["execution_readiness_status"] == EXECUTION_STATUS_COMPACTION_REQUIRES_BOUNDARY_APPROVAL
+    assert manifest["execution_readiness"]["archive_execution_allowed"] is True
+    assert manifest["execution_readiness"]["compaction_execution_allowed"] is False
+    assert manifest["execution_readiness"]["requires_explicit_boundary_approval"] is True
+    assert manifest["execution_readiness"]["mutation_performed"] is False
+    assert manifest["restore_plan_required"] is True
+    assert manifest["backup_required"] is True
+    assert manifest["mutation_performed"] is False
+    assert "confirm_no_in_place_mutation" in manifest["required_operator_confirmations"]
+    assert "verify original journal sha256 matches manifest" in manifest["required_preflight_checks"]
+    assert "verify replay succeeds from archive or compacted journal" in manifest["required_post_execution_checks"]
 
 
 def test_compaction_manifest_clean_journal_is_no_op_plan(tmp_path) -> None:
@@ -336,6 +357,10 @@ def test_compaction_manifest_clean_journal_is_no_op_plan(tmp_path) -> None:
     assert manifest["blockers"] == []
     assert manifest["boundary_validation_status"] == BOUNDARY_STATUS_NO_COMPACTION_NEEDED
     assert manifest["future_compaction_readiness"] == COMPACTION_READINESS_NOT_NEEDED
+    assert manifest["execution_readiness_status"] == EXECUTION_STATUS_NOT_NEEDED
+    assert manifest["execution_readiness"]["archive_execution_allowed"] is False
+    assert manifest["execution_readiness"]["compaction_execution_allowed"] is False
+    assert manifest["mutation_performed"] is False
 
 
 def test_compaction_manifest_missing_journal_fails_safely(tmp_path) -> None:
@@ -359,6 +384,8 @@ def test_compaction_manifest_missing_journal_fails_safely(tmp_path) -> None:
     assert manifest["in_place_compaction_allowed"] is False
     assert manifest["boundary_validation_status"] == BOUNDARY_STATUS_MISSING_JOURNAL_BLOCKED
     assert manifest["future_compaction_readiness"] == COMPACTION_READINESS_BLOCKED
+    assert manifest["execution_readiness_status"] == EXECUTION_STATUS_BLOCKED_MISSING_JOURNAL
+    assert "journal_missing" in manifest["execution_blockers"]
 
 
 def test_compaction_manifest_malformed_journal_blocks_future_execution(tmp_path) -> None:
@@ -379,6 +406,8 @@ def test_compaction_manifest_malformed_journal_blocks_future_execution(tmp_path)
     assert any("parse errors" in warning for warning in manifest["warnings"])
     assert manifest["destructive_default"] is False
     assert manifest["boundary_validation_status"] == BOUNDARY_STATUS_MALFORMED_JOURNAL_BLOCKED
+    assert manifest["execution_readiness_status"] == EXECUTION_STATUS_BLOCKED_MALFORMED_JOURNAL
+    assert "journal_parse_errors" in manifest["execution_blockers"]
 
 
 def test_compaction_manifest_rejects_executed_modes_in_dry_run_planner(tmp_path) -> None:
@@ -578,6 +607,157 @@ def test_boundary_validation_hash_chain_mismatch_requires_explicit_boundary(tmp_
     assert validation["hash_chain"]["explicit_boundary_required"] is True
 
 
+def test_execution_readiness_blocks_sequence_gap_and_mixed_sequence_eras(tmp_path) -> None:
+    gap_path = tmp_path / "gap_runtime_events.jsonl"
+    _write_jsonl(
+        gap_path,
+        [
+            {"type": "COMMAND_RECEIVED", "sequence_num": 1, "payload": {}},
+            {"type": "SNAPSHOT_CREATED", "sequence_num": 3, "payload": {"missed_events": []}},
+        ],
+    )
+
+    gap_manifest = build_runtime_journal_compaction_manifest(gap_path, operation_id="op-gap")
+
+    assert gap_manifest["execution_readiness_status"] == EXECUTION_STATUS_BLOCKED_SEQUENCE_GAP
+    assert gap_manifest["execution_readiness"]["execution_blocked"] is True
+    assert "sequence_gaps" in gap_manifest["execution_blockers"]
+    assert gap_manifest["mutation_performed"] is False
+
+    mixed_path = tmp_path / "mixed_runtime_events.jsonl"
+    _write_jsonl(
+        mixed_path,
+        [
+            {"type": "COMMAND_RECEIVED", "sequence_num": 20, "payload": {}},
+            {"type": "SNAPSHOT_CREATED", "sequence_num": 2, "payload": {"missed_events": []}},
+        ],
+    )
+
+    mixed_manifest = build_runtime_journal_compaction_manifest(mixed_path, operation_id="op-mixed")
+
+    assert mixed_manifest["execution_readiness_status"] == EXECUTION_STATUS_BLOCKED_MIXED_SEQUENCE_ERAS
+    assert mixed_manifest["execution_readiness"]["execution_blocked"] is True
+    assert "mixed_sequence_eras" in mixed_manifest["execution_blockers"]
+    assert mixed_manifest["mutation_performed"] is False
+
+
+def test_execution_readiness_hash_chain_risk_blocks_future_execution(tmp_path) -> None:
+    journal_path = tmp_path / "runtime_events.jsonl"
+    _write_jsonl(
+        journal_path,
+        [
+            {"type": "COMMAND_RECEIVED", "sequence_num": 1, "event_hash": "hash-1", "payload": {}},
+            {
+                "type": "SNAPSHOT_CREATED",
+                "sequence_num": 2,
+                "event_hash": "hash-2",
+                "previous_hash": "wrong-hash",
+                "payload": {"missed_events": []},
+            },
+        ],
+    )
+
+    manifest = build_runtime_journal_compaction_manifest(journal_path, operation_id="op-hash")
+
+    assert manifest["execution_readiness_status"] == EXECUTION_STATUS_BLOCKED_HASH_CHAIN_RISK
+    assert manifest["execution_readiness"]["requires_explicit_boundary_approval"] is True
+    assert manifest["execution_readiness"]["execution_blocked"] is True
+    assert "hash_chain_boundary_required" in manifest["execution_blockers"]
+    assert manifest["mutation_performed"] is False
+
+
+def test_execution_readiness_archive_plan_only_does_not_perform_mutation(tmp_path) -> None:
+    journal_path = tmp_path / "runtime_events.jsonl"
+    _write_jsonl(
+        journal_path,
+        [
+            {"type": "COMMAND_RECEIVED", "sequence_num": 1, "event_hash": "hash-1", "payload": {}},
+            {
+                "type": "SNAPSHOT_CREATED",
+                "sequence_num": 2,
+                "event_hash": "hash-2",
+                "previous_hash": "hash-1",
+                "payload": {"missed_events": []},
+            },
+            {
+                "type": "ACTION_FAILED",
+                "sequence_num": 3,
+                "event_hash": "hash-3",
+                "previous_hash": "hash-2",
+                "payload": {"success": False, "execution_evidence": {"verification_state": "failed"}},
+            },
+            {
+                "type": "SYSTEM_ONLINE",
+                "sequence_num": 4,
+                "event_hash": "hash-4",
+                "previous_hash": "hash-3",
+                "payload": {},
+            },
+        ],
+    )
+    before = journal_path.read_bytes()
+
+    manifest = build_runtime_journal_compaction_manifest(journal_path, operation_id="op-archive-only")
+
+    assert journal_path.read_bytes() == before
+    assert manifest["boundary_validation_status"] == BOUNDARY_STATUS_BOUNDARY_CANDIDATE_WITH_WARNINGS
+    assert manifest["future_compaction_readiness"] == COMPACTION_READINESS_ARCHIVE_PLAN_ONLY
+    assert manifest["execution_readiness_status"] == EXECUTION_STATUS_ARCHIVE_PLAN_READY
+    assert manifest["execution_readiness"]["archive_execution_allowed"] is True
+    assert manifest["execution_readiness"]["compaction_execution_allowed"] is False
+    assert manifest["execution_readiness"]["mutation_performed"] is False
+    assert manifest["execution_readiness"]["in_place_mutation_allowed"] is False
+    assert manifest["mutation_performed"] is False
+
+
+def test_execution_readiness_can_be_evaluated_from_manifest_shape_without_execution(tmp_path) -> None:
+    journal_path = tmp_path / "runtime_events.jsonl"
+    _write_jsonl(
+        journal_path,
+        [
+            {"type": "COMMAND_RECEIVED", "sequence_num": 1, "event_hash": "hash-1", "payload": {}},
+            {
+                "type": "SNAPSHOT_CREATED",
+                "sequence_num": 2,
+                "event_hash": "hash-2",
+                "previous_hash": "hash-1",
+                "payload": {"missed_events": []},
+            },
+        ],
+    )
+    manifest = build_runtime_journal_compaction_manifest(journal_path, operation_id="op-manifest-eval")
+
+    readiness = evaluate_runtime_journal_compaction_execution_readiness(manifest)
+
+    assert readiness["status"] == EXECUTION_STATUS_COMPACTION_REQUIRES_BOUNDARY_APPROVAL
+    assert readiness["archive_execution_allowed"] is True
+    assert readiness["compaction_execution_allowed"] is False
+    assert readiness["requires_explicit_operator_confirmation"] is True
+    assert readiness["backup_required"] is True
+    assert readiness["restore_plan_required"] is True
+    assert readiness["destructive_default"] is False
+    assert readiness["in_place_mutation_allowed"] is False
+    assert readiness["mutation_performed"] is False
+    assert "confirm_original_journal_sha256_matches_manifest" in readiness["required_operator_confirmations"]
+    assert "verify original journal sha256 matches manifest" in readiness["required_preflight_checks"]
+    assert "verify failed and unverified evidence records remain visible" in readiness["required_post_execution_checks"]
+
+
+def test_journal_cleanup_module_does_not_expose_archive_or_compaction_execution() -> None:
+    forbidden_helpers = [
+        "execute_runtime_journal_archive",
+        "execute_runtime_journal_compaction",
+        "compact_runtime_journal",
+        "archive_runtime_journal",
+        "delete_runtime_journal_control_plane_events",
+        "rewrite_runtime_journal",
+        "truncate_runtime_journal",
+    ]
+
+    for helper_name in forbidden_helpers:
+        assert not hasattr(journal_cleanup, helper_name)
+
+
 def test_manifest_artifact_writer_writes_json_to_explicit_safe_output_path(tmp_path) -> None:
     journal_dir = tmp_path / "logs"
     journal_dir.mkdir()
@@ -643,6 +823,13 @@ def test_manifest_artifact_writer_writes_json_to_explicit_safe_output_path(tmp_p
     assert manifest["future_compaction_readiness"] == COMPACTION_READINESS_REQUIRES_EXPLICIT_BOUNDARY
     assert manifest["boundary_validation"]["mutated"] is False
     assert manifest["boundary_validation"]["control_plane"]["event_count"] == 1
+    assert manifest["execution_readiness_status"] == EXECUTION_STATUS_COMPACTION_REQUIRES_BOUNDARY_APPROVAL
+    assert manifest["execution_readiness"]["mutation_performed"] is False
+    assert manifest["execution_readiness"]["archive_execution_allowed"] is True
+    assert manifest["execution_readiness"]["compaction_execution_allowed"] is False
+    assert manifest["mutation_performed"] is False
+    assert manifest["backup_required"] is True
+    assert manifest["restore_plan_required"] is True
     assert "verify replay preserves executable, verification, and evidence events" in (
         manifest["replay_validation_requirements"]
     )
