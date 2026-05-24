@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Ban, Check, ShieldAlert, Square, Wrench } from 'lucide-react';
 
 import { EmptyState } from '@/components/EmptyState';
@@ -414,30 +414,40 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
   const addLog = useRuntimeStore((state) => state.addLog);
   const [resolving, setResolving] = useState<'grant' | 'deny' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const inFlightRef = useRef(false);
   const proposal = getMaintenanceProposalFromCommand(command);
   const resources = Array.isArray(proposal?.affected_resources) ? proposal.affected_resources : [];
   const evidenceRefs = Array.isArray(proposal?.evidence_refs) ? proposal.evidence_refs : [];
   const approvalId = getMetadataString(command, 'approval_id') || command.command_id;
   const resumeAllowed = command.metadata?.resume_allowed === true;
   const nonExecutable = command.metadata?.resume_allowed === false || isQuarantinedClickDecision(command);
+  const isPending = command.status === 'pending_approval';
+  const controlsDisabled = resolving !== null || !isPending;
   const resolve = async (decision: 'grant' | 'deny') => {
+    if (inFlightRef.current || resolving !== null) return;
+    if (!isPending) {
+      setError(`Approval is no longer pending: ${command.status}`);
+      return;
+    }
+    inFlightRef.current = true;
     setResolving(decision);
     setError(null);
     try {
       const updated = await resolveApprovalDecision(approvalId, decision);
       upsertCommand(updated);
       addLog({
-        level: decision === 'grant' && updated.status === 'approved' ? 'OK' : 'WARN',
+        level: decision === 'grant' ? 'INFO' : 'WARN',
         message: decision === 'grant'
-          ? `Approval grant recorded: ${updated.status}`
+          ? `Approval grant recorded by backend: ${updated.status}`
           : `Approval denied: ${updated.reason || 'operator decision'}`,
-        color: decision === 'grant' && updated.status === 'approved' ? 'text-success' : 'text-warning',
+        color: decision === 'grant' ? 'text-accent' : 'text-warning',
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Approval resolve failed';
       setError(message);
       addLog({ level: 'ERR', message: `Approval resolve failed: ${message}`, color: 'text-danger' });
     } finally {
+      inFlightRef.current = false;
       setResolving(null);
     }
   };
@@ -455,12 +465,17 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
           <div className="flex items-center justify-between gap-2">
             <span className="truncate">approval id: {approvalId}</span>
             <span className={resumeAllowed ? 'text-warning' : 'text-foreground/45'}>
-              {resumeAllowed ? 'policy-gated resume' : 'state-only / non-executing'}
+              {resumeAllowed ? 'backend-gated state update' : 'state-only / non-executing'}
             </span>
           </div>
           {nonExecutable && (
             <p className="mt-1 text-warning/80">
               Grant records the decision only; quarantined or unresolved click actions are not executed by this control.
+            </p>
+          )}
+          {!isPending && (
+            <p className="mt-1 text-warning/80">
+              This approval is no longer pending; controls are disabled until the backend snapshot changes.
             </p>
           )}
         </div>
@@ -492,7 +507,8 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
         <button
           type="button"
           onClick={() => void resolve('grant')}
-          disabled={resolving !== null}
+          disabled={controlsDisabled}
+          aria-busy={resolving === 'grant'}
           className="flex items-center justify-center gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-success hover:bg-success/15 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
         >
           <Check size={12} /> {resolving === 'grant' ? 'Resolving' : 'Grant'}
@@ -500,7 +516,8 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
         <button
           type="button"
           onClick={() => void resolve('deny')}
-          disabled={resolving !== null}
+          disabled={controlsDisabled}
+          aria-busy={resolving === 'deny'}
           className="flex items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground/55 hover:text-danger hover:border-danger/30 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
         >
           <Ban size={12} /> {resolving === 'deny' ? 'Resolving' : 'Deny'}
@@ -518,14 +535,27 @@ const ClarificationItem = React.memo(({ command }: { command: CommandRecord }) =
   const [answer, setAnswer] = useState('');
   const [resolving, setResolving] = useState<'submit' | 'cancel' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const inFlightRef = useRef(false);
   const clarificationId = getMetadataString(command, 'clarification_id') || command.command_id;
+  const isPending = command.status === 'waiting_for_clarification';
+  const hasAnswer = answer.trim().length > 0;
 
   const resolve = async (mode: 'submit' | 'cancel') => {
+    if (inFlightRef.current || resolving !== null) return;
+    if (!isPending) {
+      setError(`Clarification is no longer pending: ${command.status}`);
+      return;
+    }
+    if (mode === 'submit' && !hasAnswer) {
+      setError('Enter a clarification response before resolving, or cancel the clarification.');
+      return;
+    }
+    inFlightRef.current = true;
     setResolving(mode);
     setError(null);
     try {
       const updated = await resolveClarificationDecision(clarificationId, {
-        answer: mode === 'submit' ? answer.trim() || undefined : undefined,
+        answer: mode === 'submit' ? answer.trim() : undefined,
         cancelled: mode === 'cancel',
       });
       upsertCommand(updated);
@@ -539,6 +569,7 @@ const ClarificationItem = React.memo(({ command }: { command: CommandRecord }) =
       setError(message);
       addLog({ level: 'ERR', message: `Clarification resolve failed: ${message}`, color: 'text-danger' });
     } finally {
+      inFlightRef.current = false;
       setResolving(null);
     }
   };
@@ -555,12 +586,23 @@ const ClarificationItem = React.memo(({ command }: { command: CommandRecord }) =
         <div className="rounded-md border border-warning/20 bg-warning/[0.04] px-2 py-1.5 text-[9px] font-mono leading-relaxed text-warning/80">
           Clarification resolve is state-only in backend v1. Submitting an answer records the decision and does not reparse or execute the command.
         </div>
+        {!isPending && (
+          <p className="rounded-md border border-warning/20 bg-warning/[0.04] px-2 py-1.5 text-[9px] font-mono text-warning/80">
+            This clarification is no longer pending; controls are disabled until the backend snapshot changes.
+          </p>
+        )}
         <textarea
           value={answer}
           onChange={(event) => setAnswer(event.target.value)}
           placeholder="Clarification response"
+          disabled={resolving !== null || !isPending}
           className="min-h-[72px] w-full resize-y rounded-md border border-white/10 bg-black/20 px-2 py-2 text-[11px] text-foreground/80 outline-none placeholder:text-foreground/30 focus:border-accent/40"
         />
+        {!hasAnswer && isPending && (
+          <p className="text-[9px] font-mono text-foreground/40">
+            Enter a response to resolve, or cancel the clarification without execution.
+          </p>
+        )}
         {error && (
           <p className="rounded-md border border-danger/30 bg-danger/10 px-2 py-1.5 text-[9px] font-mono text-danger">
             {error}
@@ -571,7 +613,8 @@ const ClarificationItem = React.memo(({ command }: { command: CommandRecord }) =
         <button
           type="button"
           onClick={() => void resolve('submit')}
-          disabled={resolving !== null}
+          disabled={resolving !== null || !isPending || !hasAnswer}
+          aria-busy={resolving === 'submit'}
           className="flex items-center justify-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-warning hover:bg-warning/15 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
         >
           <Check size={12} /> {resolving === 'submit' ? 'Resolving' : 'Submit'}
@@ -579,7 +622,8 @@ const ClarificationItem = React.memo(({ command }: { command: CommandRecord }) =
         <button
           type="button"
           onClick={() => void resolve('cancel')}
-          disabled={resolving !== null}
+          disabled={resolving !== null || !isPending}
+          aria-busy={resolving === 'cancel'}
           className="flex items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground/55 hover:text-danger hover:border-danger/30 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
         >
           <Ban size={12} /> {resolving === 'cancel' ? 'Resolving' : 'Cancel'}
@@ -596,6 +640,9 @@ const ResolvedDecisionItem = ({ command }: { command: CommandRecord }) => {
   const clarificationStatus = getMetadataString(command, 'clarification_resolution_status');
   const status = approvalStatus || clarificationStatus || command.status;
   const tone = command.status === 'rejected' || command.status === 'cancelled' || command.status === 'blocked' ? 'text-warning' : 'text-foreground/70';
+  const mutationLabel = Object.prototype.hasOwnProperty.call(command.metadata ?? {}, 'mutation_performed')
+    ? String(command.metadata?.mutation_performed)
+    : 'Unavailable';
 
   return (
     <div className="rounded-md border border-white/10 bg-white/[0.02] px-2 py-1.5">
@@ -604,7 +651,7 @@ const ResolvedDecisionItem = ({ command }: { command: CommandRecord }) => {
         <span className={tone}>{status}</span>
       </div>
       <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">
-        {command.status} / mutation={String(command.metadata?.mutation_performed ?? 'unknown')} / {command.command_id}
+        {command.status} / mutation={mutationLabel} / {command.command_id}
       </p>
     </div>
   );

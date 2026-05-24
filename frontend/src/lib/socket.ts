@@ -435,10 +435,11 @@ function registerEventHandlers() {
     }
     const nonExecuted = payload.not_executed === true;
     const status = payload.approval_status || payload.decision || payload.command_status || 'resolved';
+    const denied = status === 'approval_denied' || status === 'deny' || payload.command_status === 'rejected';
     getRuntimeStore().addLog({
-      level: nonExecuted ? 'WARN' : 'OK',
-      message: `Approval ${status}${nonExecuted ? ' without execution' : ''}`,
-      color: nonExecuted ? 'text-warning' : 'text-success',
+      level: nonExecuted || denied ? 'WARN' : 'INFO',
+      message: `Approval ${status} state updated${nonExecuted ? ' without execution' : ''}`,
+      color: nonExecuted || denied ? 'text-warning' : 'text-accent',
     });
   });
 
