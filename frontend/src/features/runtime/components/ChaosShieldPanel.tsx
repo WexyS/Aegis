@@ -1,5 +1,6 @@
 import React from 'react';
 import { ShieldAlert, Power, AlertTriangle, RefreshCcw, Activity } from 'lucide-react';
+import { StatusBadge } from '@/components/StatusBadge';
 import { sendCommand } from '@/lib/socket';
 import { useRuntimeStore } from '@/store/useRuntimeStore';
 
@@ -33,9 +34,7 @@ export const ChaosShieldPanel = () => {
         <section className="glass-panel p-5 rounded-lg space-y-6">
           <div className="flex items-center justify-between">
             <h3 className="text-[11px] font-bold text-accent tracking-widest uppercase">Global Policy</h3>
-            <span className="px-3 py-1 rounded-md text-[9px] font-bold tracking-widest border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
-              BACKEND AUTHORITY
-            </span>
+            <StatusBadge label="BACKEND AUTHORITY" tone="info" />
           </div>
           
           <div className="space-y-3">
@@ -48,7 +47,10 @@ export const ChaosShieldPanel = () => {
 
         {/* Emergency Controls */}
         <section className="glass-panel p-5 rounded-lg space-y-6">
-          <h3 className="text-[11px] font-bold text-red-400 tracking-widest uppercase">System Override</h3>
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-[11px] font-bold text-red-400 tracking-widest uppercase">System Override</h3>
+            <StatusBadge label="EXISTING RAW CONTROLS" tone="danger" />
+          </div>
           
           <div className="space-y-4">
             <button 

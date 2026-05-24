@@ -3,6 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Terminal as TerminalIcon, ShieldCheck, AlertTriangle, Activity } from 'lucide-react';
 
+import { StatusBadge } from '@/components/StatusBadge';
 import { useRuntimeStore } from '@/store/useRuntimeStore';
 
 export const RuntimeConsole = () => {
@@ -23,8 +24,12 @@ export const RuntimeConsole = () => {
           <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/80">Runtime Daemon</span>
         </div>
         <div className="flex items-center gap-5 text-[10px] font-mono text-foreground/40">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-success/10 border border-success/20 text-success"><ShieldCheck size={10} /> {runtimeIntegrity.toUpperCase()}</div>
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-surface/50 border border-white/5"><AlertTriangle size={10} className="text-warning" /> {currentState}</div>
+          <StatusBadge
+            label={runtimeIntegrity}
+            tone={integrityTone(runtimeIntegrity)}
+            icon={integrityTone(runtimeIntegrity) === 'warning' ? <AlertTriangle size={10} /> : <ShieldCheck size={10} />}
+          />
+          <StatusBadge label={currentState ?? 'unknown'} tone={stateTone(currentState)} icon={<AlertTriangle size={10} />} />
         </div>
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 font-mono text-[11px] space-y-1 custom-scrollbar bg-[#010308] shadow-inner">
@@ -64,3 +69,16 @@ const LogLine = ({ time, level, msg, color = "text-foreground/50", duration, bad
     {duration && <span className="text-foreground/30 opacity-70 text-[9px]">{duration}</span>}
   </div>
 );
+
+function integrityTone(integrity: string): 'info' | 'warning' | 'unknown' {
+  if (integrity === 'unverified' || integrity === 'resyncing') return 'warning';
+  if (integrity === 'session-reset') return 'unknown';
+  return 'info';
+}
+
+function stateTone(state: string | undefined): 'info' | 'warning' | 'danger' | 'unknown' {
+  if (!state) return 'unknown';
+  if (state === 'FAILED') return 'danger';
+  if (state === 'IDLE' || state === 'COMPLETED') return 'info';
+  return 'warning';
+}

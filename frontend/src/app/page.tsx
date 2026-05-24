@@ -16,6 +16,7 @@ import { ChaosShieldPanel } from '@/features/runtime/components/ChaosShieldPanel
 import { PendingApprovalPanel } from '@/features/runtime/components/PendingApprovalPanel';
 import { AppRegistryPanel } from '@/features/runtime/components/AppRegistryPanel';
 import { ToolRegistryPanel } from '@/features/runtime/components/ToolRegistryPanel';
+import { SystemOverview } from '@/features/dashboard/components/SystemOverview';
 
 import { connectRuntime, disconnectRuntime } from '@/lib/socket';
 import { getVisionStreamUrl } from '@/lib/api';
@@ -66,6 +67,8 @@ export default function AegisDashboard() {
 
         {/* SCIENTIFIC INSPECTOR (Right Panel) */}
         <aside className="hidden xl:flex w-96 flex-col space-y-6 overflow-y-auto custom-scrollbar pr-2">
+          <SystemOverview />
+
           {/* SECTION: REAL-TIME METRICS */}
           <section className="space-y-4">
             <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent flex items-center gap-2">

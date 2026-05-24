@@ -1,5 +1,7 @@
 import React from 'react';
 import { Network, Cpu, Database, Activity, GitBranch, ShieldCheck, AlertTriangle, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { EmptyState } from '@/components/EmptyState';
+import { StatusBadge } from '@/components/StatusBadge';
 import { useRuntimeStore } from '@/store/useRuntimeStore';
 import { RuntimeState } from '@/types/fsm';
 
@@ -34,9 +36,7 @@ export const AgentGraphPanel = () => {
           <h3 className="text-[11px] font-bold text-foreground/50 tracking-widest uppercase flex items-center gap-2">
             <GitBranch size={14} /> FSM Topology
           </h3>
-          <div className="text-[10px] font-mono text-violet-300 border border-violet-500/30 bg-violet-500/10 px-3 py-1 rounded-md">
-            CURRENT: {currentState}
-          </div>
+          <StatusBadge label={`CURRENT: ${currentState ?? 'unknown'}`} tone={currentState === RuntimeState.FAILED ? 'danger' : currentState === RuntimeState.IDLE ? 'info' : 'warning'} />
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -55,7 +55,7 @@ export const AgentGraphPanel = () => {
           <div className="text-[10px] font-mono text-foreground/40 mb-2 uppercase">Execution Trace Projection</div>
           <div className="space-y-2">
             {latestSteps.length === 0 ? (
-              <div className="text-[11px] text-foreground/20 italic">No steps recorded in current session.</div>
+              <EmptyState title="No backend steps recorded" detail="Execution trace appears only after backend action timeline events or snapshots arrive." />
             ) : (
               latestSteps.map(step => (
                 <div key={step.id} className="flex items-center justify-between text-[11px]">

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Activity, Cpu, Radio } from 'lucide-react';
+import { StatusBadge } from '@/components/StatusBadge';
 import { useRuntimeStore } from '@/store/useRuntimeStore';
 
 export const Header = () => {
@@ -37,6 +38,7 @@ export const Header = () => {
           <span className="text-foreground/45">SOCKET</span>
           <span className="font-bold text-foreground/80">{connectionState.toUpperCase()}</span>
         </div>
+        <StatusBadge label={runtimeIntegrity} tone={integrityTone(runtimeIntegrity)} className="hidden sm:inline-flex" />
         <div className="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10px] font-mono">
           <Cpu size={13} className="text-accent" />
           <span className="hidden sm:inline text-foreground/45">MODEL CONFIG</span>
@@ -50,3 +52,9 @@ export const Header = () => {
     </header>
   );
 };
+
+function integrityTone(integrity: string): 'info' | 'warning' | 'unknown' {
+  if (integrity === 'unverified' || integrity === 'resyncing') return 'warning';
+  if (integrity === 'session-reset') return 'unknown';
+  return 'info';
+}

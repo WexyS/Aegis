@@ -3,6 +3,8 @@
 import React from 'react';
 import { Ban, Check, ShieldAlert, Square, Wrench } from 'lucide-react';
 
+import { EmptyState } from '@/components/EmptyState';
+import { StatusBadge } from '@/components/StatusBadge';
 import { approveCommand, cancelCommand, rejectCommand, requestMaintenanceAction, runMaintenanceScan } from '@/lib/socket';
 import { useRuntimeStore } from '@/store/useRuntimeStore';
 import {
@@ -57,9 +59,7 @@ export const PendingApprovalPanel = () => {
 
       <div className="space-y-3">
         {pendingApprovals.length === 0 ? (
-          <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-[11px] font-mono text-foreground/35">
-            No backend pending approvals.
-          </div>
+          <EmptyState title="No backend pending approvals" detail="Approval state is shown only from backend command records." icon={<ShieldAlert size={14} />} />
         ) : (
           pendingApprovals.map((command) => (
             <ApprovalItem key={command.command_id} command={command} />
@@ -88,7 +88,10 @@ export const PendingApprovalPanel = () => {
           <div className="text-[9px] font-bold uppercase tracking-widest text-foreground/40">Maintenance Scan</div>
           <div className="mt-2 flex items-center justify-between text-[10px] font-mono text-foreground/55">
             <span>{String(lastMaintenanceScan.scan_version ?? 'maintenance-scan/1')}</span>
-            <span>{lastMaintenanceScan.read_only === true ? 'READ ONLY' : 'UNKNOWN'}</span>
+            <StatusBadge
+              label={lastMaintenanceScan.read_only === true ? 'READ ONLY' : 'UNKNOWN MODE'}
+              tone={lastMaintenanceScan.read_only === true ? 'info' : 'warning'}
+            />
           </div>
           {runtimeHealth && <RuntimeHealthSummary health={runtimeHealth} />}
           {findings.length > 0 && <MaintenanceFindings findings={findings} />}
@@ -119,7 +122,7 @@ export const PendingApprovalPanel = () => {
 const RuntimeHealthSummary = ({ health }: { health: RuntimeHealth }) => {
   const statusTone = health.status === 'ok' ? 'text-success' : health.status === 'fail' ? 'text-danger' : 'text-warning';
   const attention = Array.isArray(health.attention) ? health.attention : [];
-  const findingCount = Number(health.finding_count ?? 0);
+  const findingCount = numberish(health.finding_count);
   return (
     <div className="mt-3 border-t border-white/10 pt-3">
       <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest">
@@ -134,7 +137,7 @@ const RuntimeHealthSummary = ({ health }: { health: RuntimeHealth }) => {
       {attention.length > 0 && (
         <p className="mt-2 truncate text-[9px] font-mono text-warning/85">{attention.join(', ')}</p>
       )}
-      {findingCount > 0 && (
+      {findingCount !== null && findingCount > 0 && (
         <p className="mt-2 text-[9px] font-mono text-foreground/45">{findingCount} backend findings</p>
       )}
       {typeof health.action_proposal_count === 'number' && health.action_proposal_count > 0 && (
@@ -209,6 +212,36 @@ function findingSeverityTone(severity: string): string {
   return 'text-foreground/45';
 }
 
+function riskBorderStyle(risk: string): string {
+  switch (risk) {
+    case 'critical': return 'border-red-500/30 bg-red-500/5';
+    case 'high': return 'border-orange-500/25 bg-orange-500/5';
+    case 'medium': return 'border-amber-500/20 bg-amber-500/5';
+    case 'low': return 'border-emerald-500/20 bg-emerald-500/5';
+    default: return 'border-white/10 bg-white/[0.02]';
+  }
+}
+
+function riskBadgeStyle(risk: string): string {
+  switch (risk) {
+    case 'critical': return 'bg-red-500/15 border-red-500/30 text-red-300';
+    case 'high': return 'bg-orange-500/15 border-orange-500/30 text-orange-300';
+    case 'medium': return 'bg-amber-500/15 border-amber-500/30 text-amber-300';
+    case 'low': return 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300';
+    default: return 'bg-slate-500/10 border-slate-500/20 text-slate-300';
+  }
+}
+
+function runtimeTruthLabel(runtimeSnapshot: RuntimeSnapshotDiagnostics | null): string {
+  if (!runtimeSnapshot) return 'unknown';
+  return runtimeSnapshot.sequence_aligned === false ? 'drift' : 'synced';
+}
+
+function runtimeTruthTone(runtimeSnapshot: RuntimeSnapshotDiagnostics | null): string {
+  if (!runtimeSnapshot) return 'text-foreground/45';
+  return runtimeSnapshot.sequence_aligned === false ? 'text-warning' : 'text-success';
+}
+
 const RuntimeTruthSummary = ({
   commandLifecycle,
   runtimeSnapshot,
@@ -223,18 +256,23 @@ const RuntimeTruthSummary = ({
   <div className="mt-3 border-t border-white/10 pt-3">
     <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest">
       <span className="text-foreground/40">Runtime Truth</span>
-      <span className={runtimeSnapshot?.sequence_aligned === false ? 'text-warning' : 'text-success'}>
-        {runtimeSnapshot?.sequence_aligned === false ? 'drift' : 'synced'}
-      </span>
+      <span className={runtimeTruthTone(runtimeSnapshot)}>{runtimeTruthLabel(runtimeSnapshot)}</span>
     </div>
     <div className="mt-2 grid grid-cols-2 gap-1.5">
-      <AuditMetric label="pending" value={commandLifecycle?.pending_count ?? 0} tone={(commandLifecycle?.pending_count ?? 0) > 0 ? 'warning' : 'success'} />
-      <AuditMetric label="active" value={commandLifecycle?.active_count ?? 0} tone={(commandLifecycle?.active_count ?? 0) > 0 ? 'warning' : 'success'} />
-      <AuditMetric label="clients" value={websocket?.connected_clients ?? 0} />
-      <AuditMetric label="queue" value={websocket?.queue_depth ?? runtimeSnapshot?.queue_depth ?? 0} />
-      <AuditMetric label="actions" value={actionTimeline?.action_count ?? 0} />
-      <AuditMetric label="errors" value={actionTimeline?.error_count ?? 0} tone={(actionTimeline?.error_count ?? 0) > 0 ? 'warning' : 'success'} />
+      {commandLifecycle && <AuditMetric label="pending" value={commandLifecycle.pending_count} tone={commandLifecycle.pending_count > 0 ? 'warning' : 'default'} />}
+      {commandLifecycle && <AuditMetric label="active" value={commandLifecycle.active_count} tone={commandLifecycle.active_count > 0 ? 'warning' : 'default'} />}
+      {websocket && typeof websocket.connected_clients === 'number' && <AuditMetric label="clients" value={websocket.connected_clients} />}
+      {(websocket?.queue_depth !== null && websocket?.queue_depth !== undefined) ? (
+        <AuditMetric label="queue" value={websocket.queue_depth} />
+      ) : runtimeSnapshot ? (
+        <AuditMetric label="queue" value={runtimeSnapshot.queue_depth} />
+      ) : null}
+      {actionTimeline && <AuditMetric label="actions" value={actionTimeline.action_count} />}
+      {actionTimeline && <AuditMetric label="errors" value={actionTimeline.error_count} tone={actionTimeline.error_count > 0 ? 'warning' : 'default'} />}
     </div>
+    {!runtimeSnapshot && (
+      <p className="mt-2 text-[9px] font-mono text-foreground/35">Runtime snapshot diagnostics unavailable.</p>
+    )}
   </div>
 );
 
@@ -289,9 +327,9 @@ const ResourceDiagnosticsSummary = ({
 
 const EvidenceAuditSummary = ({ audit }: { audit: EvidenceAudit }) => {
   const statusTone = audit.status === 'ok' ? 'text-success' : audit.status === 'fail' ? 'text-danger' : 'text-warning';
-  const verifiedActionCount = audit.verified_action_count ?? 0;
-  const checkFailCount = audit.check_fail_count ?? 0;
-  const criticalFailureCount = audit.critical_failure_count ?? 0;
+  const verifiedActionCount = numberish(audit.verified_action_count);
+  const checkFailCount = numberish(audit.check_fail_count);
+  const criticalFailureCount = numberish(audit.critical_failure_count);
   const criticalFailures = Array.isArray(audit.critical_failures) ? audit.critical_failures : [];
   return (
     <div className="mt-3 border-t border-white/10 pt-3">
@@ -303,9 +341,9 @@ const EvidenceAuditSummary = ({ audit }: { audit: EvidenceAudit }) => {
         <AuditMetric label="actions" value={audit.action_count} />
         <AuditMetric label="backed" value={audit.evidence_backed_count} />
         <AuditMetric label="missing" value={audit.missing_evidence_count} tone={audit.missing_evidence_count > 0 ? 'warning' : 'success'} />
-        <AuditMetric label="verified" value={verifiedActionCount} tone={verifiedActionCount > 0 ? 'success' : 'default'} />
-        <AuditMetric label="check fail" value={checkFailCount} tone={checkFailCount > 0 ? 'danger' : 'success'} />
-        <AuditMetric label="critical" value={criticalFailureCount} tone={criticalFailureCount > 0 ? 'danger' : 'success'} />
+        <AuditMetric label="verified" value={countLabel(verifiedActionCount)} tone={verifiedActionCount !== null && verifiedActionCount > 0 ? 'success' : 'default'} />
+        <AuditMetric label="check fail" value={countLabel(checkFailCount)} tone={checkFailCount !== null && checkFailCount > 0 ? 'danger' : 'default'} />
+        <AuditMetric label="critical" value={countLabel(criticalFailureCount)} tone={criticalFailureCount !== null && criticalFailureCount > 0 ? 'danger' : 'default'} />
       </div>
       {criticalFailures.length > 0 && (
         <div className="mt-2 space-y-1">
@@ -330,7 +368,7 @@ const StatusMetric = ({ label, status }: { label: string; status: string }) => {
   );
 };
 
-const AuditMetric = ({ label, value, tone = 'default' }: { label: string; value: number; tone?: 'default' | 'success' | 'warning' | 'danger' }) => {
+const AuditMetric = ({ label, value, tone = 'default' }: { label: string; value: number | string; tone?: 'default' | 'success' | 'warning' | 'danger' }) => {
   const valueColor = tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-warning' : tone === 'danger' ? 'text-danger' : 'text-foreground/70';
   return (
     <div className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.02] px-2 py-1 text-[9px] font-mono">
@@ -356,10 +394,10 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
   const evidenceRefs = Array.isArray(proposal?.evidence_refs) ? proposal.evidence_refs : [];
 
   return (
-    <div className="rounded-lg border border-warning/25 bg-warning/5 p-3 space-y-3">
+    <div className={`rounded-lg border p-3 space-y-3 ${riskBorderStyle(command.risk_level)}`}>
       <div className="space-y-1">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-[9px] font-bold uppercase tracking-widest text-warning">{command.risk_level} risk</span>
+          <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${riskBadgeStyle(command.risk_level)}`}>{command.risk_level} risk</span>
           <span className="text-[9px] font-mono text-foreground/35">{command.verification_state}</span>
         </div>
         <p className="text-[12px] font-medium leading-relaxed text-foreground/85">{command.text}</p>
@@ -623,6 +661,10 @@ function formatResource(resource: Record<string, unknown>): string {
 
 function numberish(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function countLabel(value: number | null): string {
+  return value === null ? 'Unavailable' : String(value);
 }
 
 function formatBytes(value: number): string {

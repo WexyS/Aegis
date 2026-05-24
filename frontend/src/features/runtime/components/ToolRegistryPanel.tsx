@@ -81,10 +81,10 @@ export const ToolRegistryPanel = () => {
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Registered" value={toolRegistry?.registered_count ?? 0} />
-        <Stat label="Configured" value={toolRegistry?.configured_count ?? 0} />
-        <Stat label="Specs" value={toolRegistry?.spec_count ?? 0} />
-        <Stat label="Drift" value={toolRegistry?.status ?? 'idle'} />
+        <Stat label="Registered" value={toolRegistry ? toolRegistry.registered_count : 'Unavailable'} />
+        <Stat label="Configured" value={toolRegistry ? toolRegistry.configured_count : 'Unavailable'} />
+        <Stat label="Specs" value={toolRegistry ? toolRegistry.spec_count : 'Unavailable'} />
+        <Stat label="Drift" value={toolRegistry?.status ?? 'Unavailable'} />
       </div>
 
       <div className="flex flex-wrap gap-2">

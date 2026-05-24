@@ -88,10 +88,10 @@ export const AppRegistryPanel = () => {
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Configured" value={appRegistry?.configured_count ?? 0} />
-        <Stat label="Discovered" value={appRegistry?.discovered_count ?? 0} />
-        <Stat label="Visible" value={entries.length} />
-        <Stat label="Read Only" value={appRegistry?.read_only === false ? 'No' : 'Yes'} />
+        <Stat label="Configured" value={appRegistry ? appRegistry.configured_count : 'Unavailable'} />
+        <Stat label="Discovered" value={appRegistry ? appRegistry.discovered_count : 'Unavailable'} />
+        <Stat label="Visible" value={appRegistry ? entries.length : 'Unavailable'} />
+        <Stat label="Read Only" value={appRegistry ? (appRegistry.read_only === false ? 'No' : 'Yes') : 'Unavailable'} />
       </div>
 
       <div className="flex flex-wrap gap-2">
