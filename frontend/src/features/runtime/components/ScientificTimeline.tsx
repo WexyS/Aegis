@@ -9,12 +9,12 @@ export const ScientificTimeline = () => {
   const { steps } = useRuntimeStore();
 
   return (
-    <div className="space-y-4 p-4 glass-card rounded-lg relative overflow-hidden flex flex-col min-h-[280px]">
+    <div className="space-y-3 p-3.5 glass-card rounded-lg relative overflow-hidden flex flex-col min-h-[260px]">
       <div className="flex justify-between items-center relative z-10">
         <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent">Execution Timeline</h3>
         <span className="text-[9px] font-mono text-foreground/40">{steps.length} steps</span>
       </div>
-      <div className="relative space-y-4 pt-2 flex-1 overflow-y-auto custom-scrollbar pr-2">
+      <div className="relative space-y-3 pt-2 flex-1 overflow-y-auto custom-scrollbar pr-2">
         {/* Connection Line */}
         <div className="absolute left-[7px] top-4 bottom-4 w-px bg-white/10" />
         
@@ -39,12 +39,12 @@ const TimelineItem = React.memo(({ step }: { step: any }) => {
       initial={{ opacity: 0, x: -15 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.16 }}
-      className="flex items-start gap-5 relative z-10 group"
+      className="flex items-start gap-3 relative z-10 group"
     >
       <div className={`mt-2 w-4 h-4 rounded-full border-2 border-background flex items-center justify-center bg-surface relative z-10`}>
         <div className={`w-2 h-2 rounded-full ${statusColors[step.status as RuntimeStatus]}`} />
       </div>
-      <div className="flex-1 bg-black/20 hover:bg-black/35 p-3 rounded-md border border-white/10 hover:border-accent/30 transition-colors duration-150 relative overflow-hidden">
+      <div className="flex-1 min-w-0 bg-black/20 hover:bg-black/35 p-3 rounded-md border border-white/10 hover:border-accent/30 transition-colors duration-150 relative overflow-hidden">
         <div className="flex justify-between items-center mb-1.5 relative z-10">
           <span className="text-[11px] font-bold text-white uppercase tracking-wider">{step.component}</span>
           <span className="text-[9px] font-mono text-foreground/40">{step.timestamp}</span>

@@ -20,7 +20,7 @@ export const ChatPanel = () => {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-transparent relative h-full">
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 lg:p-6 space-y-5 custom-scrollbar">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6 space-y-4 lg:space-y-5 custom-scrollbar">
         <AnimatePresence initial={false}>
           {messages.map((msg) => (
             <ChatMessage key={msg.id} msg={msg} />
@@ -38,14 +38,14 @@ const ChatMessage = React.memo(({ msg }: { msg: any }) => (
   <motion.div
     initial={{ opacity: 0, y: 15 }}
     animate={{ opacity: 1, y: 0 }}
-    className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+    className={`flex gap-3 sm:gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
   >
-    <div className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 relative ${msg.role === 'user' ? 'bg-secondary/10 border border-secondary/25' : 'bg-accent/10 border border-accent/25'}`}>
+    <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-md flex items-center justify-center shrink-0 relative ${msg.role === 'user' ? 'bg-secondary/10 border border-secondary/25' : 'bg-accent/10 border border-accent/25'}`}>
       {msg.role === 'user' ? <User size={16} className="text-secondary-light" /> : <Zap size={16} className="text-accent fill-current" />}
     </div>
     
-    <div className={`flex-1 max-w-[85%] space-y-2 flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-      <div className={`p-4 rounded-lg ${msg.role === 'user' ? 'bg-secondary/10 border border-secondary/20 rounded-tr-sm' : 'bg-white/[0.03] border border-white/10 rounded-tl-sm'}`}>
+    <div className={`flex-1 max-w-[92%] sm:max-w-[85%] space-y-2 flex flex-col min-w-0 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+      <div className={`p-3 sm:p-4 rounded-lg min-w-0 ${msg.role === 'user' ? 'bg-secondary/10 border border-secondary/20 rounded-tr-sm' : 'bg-white/[0.03] border border-white/10 rounded-tl-sm'}`}>
         <p className="text-[13px] leading-relaxed text-foreground/90 whitespace-pre-wrap selection:bg-accent/30 font-medium">
           {msg.content}
         </p>
@@ -88,7 +88,7 @@ const ChatInput = () => {
   };
 
   return (
-    <div className="p-5 lg:p-6 pt-0 mt-auto">
+    <div className="p-3 sm:p-4 lg:p-6 pt-0 mt-auto">
       <div className="relative group glass-panel rounded-lg p-2 transition-colors focus-within:border-accent/50 bg-surface-secondary/80">
         <textarea 
           ref={textareaRef}
@@ -97,7 +97,7 @@ const ChatInput = () => {
           onKeyDown={handleKeyDown}
           placeholder={canSend ? (mode === 'auto' ? "Command Aegis Runtime..." : "Execute raw command...") : "Backend socket unavailable..."}
           disabled={!canSend}
-          className="w-full bg-transparent border-none rounded-md p-4 pr-16 text-[13px] font-medium placeholder:text-foreground/30 focus:outline-none transition-all resize-none min-h-[58px] max-h-[180px] custom-scrollbar disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full bg-transparent border-none rounded-md p-3 pr-14 sm:p-4 sm:pr-16 text-[13px] font-medium placeholder:text-foreground/30 focus:outline-none transition-all resize-none min-h-[54px] max-h-[180px] custom-scrollbar disabled:cursor-not-allowed disabled:opacity-60"
           rows={1}
         />
         <div className="absolute right-4 bottom-4 flex items-center gap-3">
@@ -111,8 +111,8 @@ const ChatInput = () => {
           </button>
         </div>
       </div>
-      <div className="mt-3 flex items-center justify-between gap-4 px-1">
-        <div className="flex gap-5">
+      <div className="mt-3 flex flex-col items-start justify-between gap-2 px-1 sm:flex-row sm:items-center sm:gap-4">
+        <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-2 sm:gap-5">
           <QuickAction 
             icon={<Terminal size={14}/>} 
             label="Raw Execute" 
@@ -126,7 +126,7 @@ const ChatInput = () => {
             onClick={() => setMode('auto')}
           />
         </div>
-        <span className="text-[10px] font-mono uppercase tracking-widest text-foreground/35">socket {connectionState}</span>
+        <span className="max-w-full truncate text-[9px] sm:text-[10px] font-mono uppercase tracking-widest text-foreground/35">socket {connectionState}</span>
       </div>
     </div>
   );

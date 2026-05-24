@@ -36,7 +36,7 @@ export const SystemOverview = () => {
   });
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-accent">
           <Activity size={12} /> System Overview
@@ -44,11 +44,11 @@ export const SystemOverview = () => {
         <StatusBadge label={overviewStatus.label} tone={overviewStatus.tone} icon={statusIcon(overviewStatus.tone)} />
       </div>
 
-      <div className="rounded-lg border border-white/10 bg-black/20 p-4">
+      <div className="rounded-lg border border-white/10 bg-black/20 p-3.5">
         <div className="text-[10px] font-mono leading-relaxed text-foreground/45">
           {overviewStatus.reason}
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-2">
           <OverviewMetric label="FSM" value={currentState ?? 'unknown'} tone={stateTone(currentState)} />
           <OverviewMetric label="Socket" value={connectionState} tone={connectionState === 'connected' ? 'info' : 'unknown'} />
           <OverviewMetric label="Approvals" value={String(pendingApprovals.length)} tone={pendingApprovals.length > 0 ? 'warning' : 'info'} />

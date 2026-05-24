@@ -48,9 +48,9 @@ export default function AegisDashboard() {
 
   return (
     <AppShell>
-      <div className="flex-1 flex overflow-hidden p-4 lg:p-5 gap-5 relative z-10">
+      <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden p-2 sm:p-3 lg:p-4 xl:flex-row xl:p-5 gap-3 lg:gap-4 xl:gap-5 relative z-10">
         {/* CENTER CONTENT */}
-        <div className="flex-1 flex flex-col min-w-0 glass-panel rounded-lg overflow-hidden relative">
+        <div className="flex-1 min-h-0 min-w-0 flex flex-col glass-panel rounded-lg overflow-hidden relative">
           {activeTab === 'chat' && <ChatPanel />}
           {activeTab === 'Agent Graph' && <AgentGraphPanel />}
           {activeTab === 'Vision Lab' && <VisionLabPanel />}
@@ -66,15 +66,15 @@ export default function AegisDashboard() {
         </div>
 
         {/* SCIENTIFIC INSPECTOR (Right Panel) */}
-        <aside className="hidden xl:flex w-96 flex-col space-y-6 overflow-y-auto custom-scrollbar pr-2">
+        <aside className="hidden xl:flex w-[22rem] 2xl:w-96 shrink-0 flex-col gap-4 overflow-y-auto custom-scrollbar pr-1 2xl:pr-2">
           <SystemOverview />
 
           {/* SECTION: REAL-TIME METRICS */}
-          <section className="space-y-4">
+          <section className="space-y-3">
             <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent flex items-center gap-2">
               <Activity size={12} /> System Telemetry
             </h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <MetricCard 
                 label="Determinism" 
                 value={determinismLabel}
@@ -88,7 +88,7 @@ export default function AegisDashboard() {
                 icon={<ShieldAlert size={14} className="text-secondary" />}
               />
             </div>
-            <div className="p-4 glass-card rounded-lg space-y-3 relative overflow-hidden group">
+            <div className="p-3.5 glass-card rounded-lg space-y-3 relative overflow-hidden group">
               <div className="flex justify-between items-center relative z-10">
                 <span className="text-[10px] font-bold text-foreground/50 uppercase tracking-widest">Memory Pressure</span>
                 <span className="text-[11px] font-mono font-bold text-accent">{memoryPressureLabel}</span>
@@ -114,7 +114,7 @@ export default function AegisDashboard() {
           <ScientificTimeline />
 
           {/* SECTION: VISION CONTEXT */}
-          <section className="space-y-4">
+          <section className="space-y-3">
             <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent flex items-center gap-2">
               <Eye size={12} /> Vision Context
             </h3>
@@ -138,9 +138,9 @@ export default function AegisDashboard() {
                 </div>
               </div>
             </div>
-            <div className="flex justify-between items-center px-2">
-              <span className="text-[10px] font-mono text-foreground/50"><span className="text-foreground/30">Focus:</span> {activeApp}</span>
-              <span className="text-[10px] font-mono text-foreground/40 font-bold">FOCUS FROM TELEMETRY</span>
+            <div className="flex min-w-0 items-center justify-between gap-3 px-2">
+              <span className="min-w-0 truncate text-[10px] font-mono text-foreground/50"><span className="text-foreground/30">Focus:</span> {activeApp}</span>
+              <span className="shrink-0 text-[10px] font-mono text-foreground/40 font-bold">TELEMETRY</span>
             </div>
           </section>
         </aside>
@@ -157,14 +157,14 @@ type MetricCardProps = {
 };
 
 const MetricCard = React.memo(({ label, value, context, icon }: MetricCardProps) => (
-  <div className="p-4 glass-card rounded-lg space-y-2 hover:border-accent/30 transition-all cursor-default group relative overflow-hidden">
+  <div className="p-3.5 glass-card rounded-lg space-y-2 hover:border-accent/30 transition-all cursor-default group relative overflow-hidden">
     <div className="flex items-center justify-between text-foreground/45 group-hover:text-foreground/80 transition-colors">
       {icon}
       <span className="max-w-[110px] truncate text-[9px] font-bold uppercase tracking-widest text-foreground/45">{context}</span>
     </div>
     <div className="relative z-10">
       <p className="text-[10px] font-bold text-foreground/50 uppercase tracking-widest">{label}</p>
-      <p className="text-2xl font-bold text-white mt-1">{value}</p>
+      <p className="truncate text-xl 2xl:text-2xl font-bold text-white mt-1">{value}</p>
     </div>
   </div>
 ));
