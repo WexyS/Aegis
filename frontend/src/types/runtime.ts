@@ -116,6 +116,7 @@ export interface CommandRecord {
   risk_level: RiskLevel;
   trace_id?: string | null;
   approval_required: boolean;
+  clarification_required?: boolean;
   approved: boolean;
   rejected: boolean;
   active: boolean;
@@ -124,6 +125,10 @@ export interface CommandRecord {
   warnings: string[];
   created_at?: number;
   updated_at?: number;
+  approved_at?: number | null;
+  rejected_at?: number | null;
+  cancelled_at?: number | null;
+  completed_at?: number | null;
   metadata?: Record<string, unknown>;
 }
 

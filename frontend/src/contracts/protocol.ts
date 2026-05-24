@@ -444,14 +444,17 @@ export const CommandWaitingForClarificationPayload = z.object({
 }).strict();
 
 export const ApprovalResolvedPayload = z.object({
-  approval_id: z.string(),
   command_id: z.string(),
-  trace_id: z.string(),
-  approval_status: z.enum(['approved', 'denied', 'expired', 'cancelled']),
-  resolver: z.string(),
-  resolved_at: z.union([z.string(), z.number()]),
-  not_executed: z.literal(true),
-}).strict();
+  approval_id: z.string().nullable().optional(),
+  decision: z.string().optional(),
+  approval_status: z.string().optional(),
+  command_status: z.string().optional(),
+  reason: z.string().optional(),
+  not_executed: z.boolean().optional(),
+  executed: z.literal(false).optional(),
+  mutation_performed: z.literal(false).optional(),
+  command: z.record(z.string(), z.unknown()).optional(),
+}).catchall(z.unknown());
 
 export const ApprovalExpiredPayload = z.object({
   approval_id: z.string(),
@@ -463,13 +466,18 @@ export const ApprovalExpiredPayload = z.object({
 }).strict();
 
 export const ClarificationResolvedPayload = z.object({
-  clarification_id: z.string(),
   command_id: z.string(),
-  trace_id: z.string(),
-  response: z.unknown(),
-  resolved_at: z.union([z.string(), z.number()]),
+  clarification_id: z.string().nullable().optional(),
+  clarification_status: z.string().optional(),
+  answer: z.unknown().optional(),
+  command_status: z.string().optional(),
+  reason: z.string().optional(),
   not_executed: z.literal(true),
-}).strict();
+  executed: z.literal(false).optional(),
+  mutation_performed: z.literal(false).optional(),
+  completed_without_execution: z.literal(true).optional(),
+  command: z.record(z.string(), z.unknown()).optional(),
+}).catchall(z.unknown());
 
 export const CommandRecordPayload = z.object({
   command_id: z.string(),
@@ -478,6 +486,7 @@ export const CommandRecordPayload = z.object({
   risk_level: z.enum(['none', 'low', 'medium', 'high', 'critical']).default('none'),
   trace_id: z.string().optional().nullable(),
   approval_required: z.boolean().default(false),
+  clarification_required: z.boolean().default(false),
   approved: z.boolean().default(false),
   rejected: z.boolean().default(false),
   active: z.boolean().default(false),

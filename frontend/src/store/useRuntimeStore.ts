@@ -16,6 +16,7 @@ export interface RuntimeStoreState extends TelemetryData {
   systemLogs: SystemLog[];
   commandRecords: CommandRecord[];
   pendingApprovals: CommandRecord[];
+  pendingClarifications: CommandRecord[];
   activeCommand: CommandRecord | null;
   lastMaintenanceScan: Record<string, unknown> | null;
   appRegistry: AppRegistrySnapshot | null;
@@ -81,6 +82,7 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
   systemLogs: [],
   commandRecords: [],
   pendingApprovals: [],
+  pendingClarifications: [],
   activeCommand: null,
   lastMaintenanceScan: null,
   appRegistry: null,
@@ -161,6 +163,7 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
     return {
       commandRecords: records,
       pendingApprovals: records.filter((item) => item.status === 'pending_approval'),
+      pendingClarifications: records.filter((item) => item.status === 'waiting_for_clarification'),
       activeCommand: command.active ? command : records.find((item) => item.active) ?? null,
     };
   }),
@@ -169,10 +172,12 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
     if (!commands || typeof commands !== 'object') return;
     const records = Array.isArray(commands.records) ? commands.records as CommandRecord[] : [];
     const pending = Array.isArray(commands.pending_approvals) ? commands.pending_approvals as CommandRecord[] : [];
+    const pendingClarifications = Array.isArray(commands.pending_clarifications) ? commands.pending_clarifications as CommandRecord[] : [];
     const active = commands.active_command as CommandRecord | null | undefined;
     set({
       commandRecords: records,
       pendingApprovals: pending,
+      pendingClarifications,
       activeCommand: active ?? null,
     });
   },

@@ -428,6 +428,32 @@ function registerEventHandlers() {
     }
   });
 
+  on('APPROVAL_RESOLVED', (event) => {
+    const payload = event.payload as any;
+    if (payload.command) {
+      getRuntimeStore().upsertCommand(payload.command);
+    }
+    const nonExecuted = payload.not_executed === true;
+    const status = payload.approval_status || payload.decision || payload.command_status || 'resolved';
+    getRuntimeStore().addLog({
+      level: nonExecuted ? 'WARN' : 'OK',
+      message: `Approval ${status}${nonExecuted ? ' without execution' : ''}`,
+      color: nonExecuted ? 'text-warning' : 'text-success',
+    });
+  });
+
+  on('CLARIFICATION_RESOLVED', (event) => {
+    const payload = event.payload as any;
+    if (payload.command) {
+      getRuntimeStore().upsertCommand(payload.command);
+    }
+    getRuntimeStore().addLog({
+      level: 'WARN',
+      message: `Clarification ${payload.clarification_status || 'resolved'} without execution`,
+      color: 'text-warning',
+    });
+  });
+
   on('COMMAND_STATUS_CHANGED', (event) => {
     const payload = event.payload as any;
     if (payload.command) {
