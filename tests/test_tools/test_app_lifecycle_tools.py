@@ -6,7 +6,7 @@ import pytest
 
 from aegis.tools.desktop_tools import CloseAppTool, FocusTool, OpenAppTool, TypeTool
 from aegis.tools.registry import get_tool, list_tools
-from aegis.orchestrator.orchestrator import VERIFIED_TOOLS
+from aegis.orchestrator.orchestrator import DISPATCHABLE_TOOLS
 
 
 class FakeWindow:
@@ -289,10 +289,10 @@ def test_search_web_is_registered_because_parser_can_emit_it() -> None:
     assert get_tool("search_web") is not None
 
 
-def test_verified_executable_tools_are_registered() -> None:
-    non_executable_verified = {"general_chat"}
+def test_dispatchable_tools_are_registered() -> None:
+    non_executable_dispatchable = {"general_chat"}
     registered = set(list_tools())
-    missing = set(VERIFIED_TOOLS) - registered - non_executable_verified
+    missing = set(DISPATCHABLE_TOOLS) - registered - non_executable_dispatchable
 
     assert missing == set()
 

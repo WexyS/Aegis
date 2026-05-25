@@ -2003,7 +2003,7 @@ async def test_approval_granted_does_not_bypass_default_generic_click_quarantine
 async def test_approved_unverified_side_effect_still_blocks_at_execution_gate() -> None:
     orchestrator = build_orchestrator(intent_result("open_app", RiskLevel.MEDIUM, {"app": "notepad"}))
     manager = get_approval_manager()
-    orchestrator_module.VERIFIED_TOOLS.discard("open_app")
+    orchestrator_module.DISPATCHABLE_TOOLS.discard("open_app")
 
     try:
         pending = await orchestrator.process(CommandRequest(text="open notepad"))
@@ -2019,7 +2019,7 @@ async def test_approved_unverified_side_effect_still_blocks_at_execution_gate() 
             },
         ))
     finally:
-        orchestrator_module.VERIFIED_TOOLS.add("open_app")
+        orchestrator_module.DISPATCHABLE_TOOLS.add("open_app")
 
     snapshot = manager.snapshot()
     assert pending.status == CommandStatus.PENDING_APPROVAL

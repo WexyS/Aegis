@@ -396,7 +396,8 @@ def test_frontend_vision_stream_uses_configured_backend_url() -> None:
 def test_frontend_maintenance_actions_are_backend_proposal_driven() -> None:
     socket_source = FRONTEND_SOCKET.read_text(encoding="utf-8")
     runtime_types = (ROOT / "frontend" / "src" / "types" / "runtime.ts").read_text(encoding="utf-8")
-    panel_source = (ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "PendingApprovalPanel.tsx").read_text(encoding="utf-8")
+    maintenance_panel_source = (ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "MaintenanceScanPanel.tsx").read_text(encoding="utf-8")
+    pending_panel_source = (ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "PendingApprovalPanel.tsx").read_text(encoding="utf-8")
     protocol_source = FRONTEND_PROTOCOL.read_text(encoding="utf-8")
 
     assert "export interface MaintenanceActionProposal" in runtime_types
@@ -406,14 +407,14 @@ def test_frontend_maintenance_actions_are_backend_proposal_driven() -> None:
     assert "dry_run_preview?: Record<string, unknown>" in runtime_types
     assert "metadata?: Record<string, unknown>" in runtime_types
     assert "metadata: z.record(z.string(), z.unknown()).optional()" in protocol_source
-    assert "function getMaintenanceActionProposals" in panel_source
-    assert "getMaintenanceProposalFromCommand(command)" in panel_source
-    assert "const ProposalPreviewDetails" in panel_source
-    assert "proposal.dry_run_preview" in panel_source
-    assert "dry-run preview" in panel_source
-    assert "disabled={proposal.status !== 'proposed'}" in panel_source
-    assert "requestMaintenanceAction(proposal.proposal_id)" in panel_source
+    assert "function getMaintenanceActionProposals" in maintenance_panel_source
+    assert "getMaintenanceProposalFromCommand(command)" in pending_panel_source
+    assert "const ProposalPreviewDetails" in maintenance_panel_source
+    assert "proposal.dry_run_preview" in maintenance_panel_source
+    assert "dry-run preview" in maintenance_panel_source
+    assert "disabled={proposal.status !== 'proposed'}" in maintenance_panel_source
+    assert "requestMaintenanceAction(proposal.proposal_id)" in maintenance_panel_source
     assert "socket.emit('request_maintenance_action', { proposal_id: proposalId })" in socket_source
-    assert "action_proposals" in panel_source
+    assert "action_proposals" in maintenance_panel_source
     assert "maintenance_action_rescan" in (ROOT / "src" / "aegis" / "api" / "ws_bridge.py").read_text(encoding="utf-8")
     assert "maintenance_action_approval_requested" in (ROOT / "src" / "aegis" / "api" / "ws_bridge.py").read_text(encoding="utf-8")

@@ -1,5 +1,6 @@
 # src/aegis/orchestrator/orchestrator.py
 
+import asyncio
 import time
 import json
 import logging
@@ -12,6 +13,13 @@ from aegis.core.commands import CancellationToken, get_approval_manager
 from aegis.core.constants import ActionStatus, CommandStatus, EventType, ExecutionMode, RiskLevel
 from aegis.core.evidence_audit import audit_action_evidence
 from aegis.core.guard_policy import classify_intent_risk
+from aegis.core.policy_boundary import (
+    POLICY_DISPATCHABLE_TOOL_NAMES,
+    SIDE_EFFECTING_TOOL_NAMES,
+    approval_resolution_can_resume,
+    evaluate_policy_boundary,
+    side_effects_missing_dispatch_contract,
+)
 from aegis.core.schemas import (
     ActionResult,
     CommandRequest,
@@ -36,29 +44,8 @@ from aegis.tools.registry import get_tool_spec, list_tools
 logger = logging.getLogger(__name__)
 
 RISK_RANK = {"none": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
-VERIFIED_TOOLS = {
-    "read_file",
-    "list_directory",
-    "search_files",
-    "grep_in_files",
-    "file_info",
-    "write_file",
-    "create_file",
-    "edit_file",
-    "read_page",
-    "scroll",
-    "search_web",
-    "open_url",
-    "click",
-    "type",
-    "open_app",
-    "focus_app",
-    "close_app",
-    "run_command",
-    "git_action",
-    "general_chat",
-}
-SIDE_EFFECTING_TOOLS = {"click", "type", "write_file", "create_file", "edit_file", "git_action", "open_url", "open_app", "close_app", "focus_app"}
+DISPATCHABLE_TOOLS = POLICY_DISPATCHABLE_TOOL_NAMES
+SIDE_EFFECTING_TOOLS = SIDE_EFFECTING_TOOL_NAMES
 PROCESS_WINDOW_EVIDENCE_TOOLS = {"open_app", "close_app", "focus_app"}
 SIDE_EFFECT_PROOF_KEYS = {
     "browser_evidence",
@@ -112,17 +99,15 @@ def _highest_risk_from_guards(guard_events: list[Dict[str, Any]]) -> RiskLevel:
 def _verification_state_for_plan(plan: list[IntentResult]) -> str:
     if not plan:
         return "verified"
-    return "verified" if all(intent.intent in VERIFIED_TOOLS for intent in plan) else "unverified"
+    return "verified" if all(intent.intent in DISPATCHABLE_TOOLS for intent in plan) else "unverified"
 
 
 def _unverified_side_effects(plan: list[IntentResult]) -> list[str]:
-    unverified = []
-    for intent in plan:
-        spec = get_tool_spec(intent.intent)
-        side_effecting = bool(spec.side_effecting) if spec else intent.intent in SIDE_EFFECTING_TOOLS
-        if side_effecting and intent.intent not in VERIFIED_TOOLS:
-            unverified.append(intent.intent)
-    return unverified
+    return side_effects_missing_dispatch_contract(
+        plan,
+        tool_spec_lookup=get_tool_spec,
+        dispatchable_tool_names=DISPATCHABLE_TOOLS,
+    )
 
 
 def _action_audit_event(action: ActionResult, action_id: str, *, sequence_num: int = 1) -> dict[str, Any]:
@@ -335,13 +320,11 @@ class Orchestrator:
                     "approval_granted": approval_granted,
                 },
             )
-            if guard_decision.decision_status == DecisionStatus.READY:
-                return None
-            if (
-                guard_decision.decision_status == DecisionStatus.APPROVAL_REQUIRED
-                and approval_granted
-                and _approval_resolution_can_resume(guard_decision)
-            ):
+            policy_boundary = evaluate_policy_boundary(
+                guard_decision,
+                approval_granted=approval_granted,
+            )
+            if policy_boundary.dispatch_allowed:
                 return None
 
             non_executable_guard_event = {
@@ -353,6 +336,9 @@ class Orchestrator:
                 "blocked": guard_decision.blocked,
                 "decision_status": guard_decision.decision_status.value,
                 "policy_rule": guard_decision.policy_rule,
+                "policy_boundary_version": policy_boundary.boundary_version,
+                "dispatch_allowed": policy_boundary.dispatch_allowed,
+                "resume_allowed": policy_boundary.resume_allowed,
             }
             guard_events.append(non_executable_guard_event)
             non_executable_journal = request.context.get("non_executable_journal")
@@ -974,15 +960,4 @@ def _register_non_executable_command_lifecycle(
 
 
 def _approval_resolution_can_resume(guard_decision) -> bool:
-    request = guard_decision.approval_request
-    tool = ""
-    if request is not None:
-        tool = str(request.proposed_action.tool or "")
-    policy_rule = str(guard_decision.policy_rule or "")
-    if tool in {"click", "browser_click", "desktop_click"}:
-        return False
-    if "generic_click.quarantined" in policy_rule:
-        return False
-    if "target_resolution_missing" in policy_rule:
-        return False
-    return True
+    return approval_resolution_can_resume(guard_decision)
