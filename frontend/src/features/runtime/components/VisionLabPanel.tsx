@@ -52,6 +52,7 @@ export const VisionLabPanel = () => {
           <div className="flex-1 bg-black/60 relative flex items-center justify-center overflow-hidden">
             {visionFeedEnabled && !feedFailed ? (
               <>
+                {/* eslint-disable-next-line @next/next/no-img-element -- Live runtime vision stream must preserve native img streaming and feed failure handling. */}
                 <img 
                   src={visionStreamUrl}
                   alt="Live Vision Feed" 

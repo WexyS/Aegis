@@ -122,6 +122,7 @@ export default function AegisDashboard() {
             </h3>
             <div className="aspect-video rounded-lg bg-black/30 border border-white/10 flex flex-col items-center justify-center overflow-hidden relative group">
               {visionFeedEnabled && (
+                // eslint-disable-next-line @next/next/no-img-element -- Live runtime vision stream must preserve native img streaming and fallback behavior.
                 <img
                   src={visionStreamUrl}
                   alt="Live Vision Feed"
