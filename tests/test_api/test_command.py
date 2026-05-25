@@ -247,6 +247,18 @@ class TestMaintenanceEndpoint:
             assert data["checks"]["app_registry"]["scan_version"] == "app-registry/1"
             assert data["checks"]["app_registry"]["read_only"] is True
             assert data["checks"]["app_registry"]["entry_count"] >= 1
+            assert "app_discovery" in data["checks"]
+            assert data["checks"]["app_discovery"]["scan_version"] == "app-discovery-smoke/1"
+            assert data["checks"]["app_discovery"]["read_only"] is True
+            assert data["checks"]["app_discovery"]["actions_performed"] == []
+            app_discovery_entries = {
+                entry["app_id"]: entry
+                for entry in data["checks"]["app_discovery"]["entries"]
+            }
+            assert "antigravity" in app_discovery_entries
+            assert "antigravity_agent_manager" in app_discovery_entries
+            assert "success" not in app_discovery_entries["antigravity"]
+            assert "verification_state" not in app_discovery_entries["antigravity"]
             assert data["checks"]["tool_registry"]["registry"]["scan_version"] == "tool-registry/1"
             assert data["checks"]["tool_registry"]["registry"]["read_only"] is True
             assert data["checks"]["tool_registry"]["registry"]["status"] == "ok"

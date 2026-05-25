@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from aegis.core.config import PROJECT_ROOT, get_settings
+from aegis.core.app_discovery_smoke import build_configured_app_discovery_smoke
 from aegis.core.app_map import get_app_registry_snapshot
 from aegis.core.action_timeline import project_action_timeline
 from aegis.core.commands import get_approval_manager
@@ -223,6 +224,7 @@ def _read_only_contract() -> dict[str, Any]:
             "recent_event_tail",
             "tool_registry_snapshot",
             "app_registry_snapshot",
+            "app_discovery_smoke",
             "environment_version_checks",
             "system_resource_snapshot",
             "process_resource_snapshot",
@@ -585,6 +587,7 @@ def run_read_only_maintenance_scan(
     app_registry = get_app_registry_snapshot()
     app_registry["read_only"] = True
     app_registry["status"] = "ok"
+    app_discovery = build_configured_app_discovery_smoke()
     log_dir = Path(settings.logging.directory)
     commands = get_approval_manager().snapshot()
     command_lifecycle = _command_lifecycle_snapshot(commands)
@@ -632,6 +635,7 @@ def run_read_only_maintenance_scan(
         "event_journal": event_journal,
         "evidence_audit": evidence_audit,
         "app_registry": app_registry,
+        "app_discovery": app_discovery,
         "environment": environment,
         "logging": logging_check,
         "safety": safety,

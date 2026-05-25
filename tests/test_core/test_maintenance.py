@@ -3,6 +3,7 @@ from __future__ import annotations
 from aegis.core import app_map
 from aegis.core import maintenance
 from aegis.core import maintenance_actions
+from aegis.tools.desktop_tools import FocusTool, OpenAppTool
 
 
 REQUIRED_FINDING_FIELDS = {
@@ -67,6 +68,7 @@ def test_maintenance_scan_read_only_contract_has_no_observed_mutations() -> None
     assert "process_resource_snapshot" in contract["allowed_observations"]
     assert "network_port_snapshot" in contract["allowed_observations"]
     assert "workspace_directory_snapshot" in contract["allowed_observations"]
+    assert "app_discovery_smoke" in contract["allowed_observations"]
     assert contract["allowed_ephemeral_state"] == ["last_maintenance_scan_cache"]
 
 
@@ -128,3 +130,66 @@ def test_maintenance_scan_does_not_mutate_discovered_app_registry() -> None:
         }
     finally:
         app_map._discovered_registry = before
+
+
+def test_maintenance_scan_includes_read_only_app_discovery_diagnostics() -> None:
+    report = maintenance.run_read_only_maintenance_scan()
+    app_discovery = report["checks"]["app_discovery"]
+    entries = {entry["app_id"]: entry for entry in app_discovery["entries"]}
+
+    assert app_discovery["scan_version"] == "app-discovery-smoke/1"
+    assert app_discovery["read_only"] is True
+    assert app_discovery["actions_performed"] == []
+    assert "antigravity" in entries
+    assert "antigravity_agent_manager" in entries
+    assert entries["antigravity"]["process_name_candidates"] == ["Antigravity IDE.exe"]
+    assert entries["antigravity_agent_manager"]["process_name_candidates"] == ["Antigravity.exe"]
+    assert "success" not in entries["antigravity"]
+    assert "verification_state" not in entries["antigravity"]
+    assert "execution_evidence" not in entries["antigravity"]
+
+
+def test_maintenance_scan_app_discovery_does_not_call_desktop_actions(monkeypatch) -> None:
+    calls = {"open": 0, "focus": 0}
+
+    async def forbidden_open(*args, **kwargs):
+        calls["open"] += 1
+        raise AssertionError("maintenance app discovery must not launch apps")
+
+    async def forbidden_focus(*args, **kwargs):
+        calls["focus"] += 1
+        raise AssertionError("maintenance app discovery must not focus windows")
+
+    monkeypatch.setattr(OpenAppTool, "run", forbidden_open)
+    monkeypatch.setattr(FocusTool, "run", forbidden_focus)
+    monkeypatch.setattr("aegis.core.app_discovery_smoke.gw.getAllWindows", lambda: [])
+    monkeypatch.setattr("aegis.core.app_discovery_smoke.get_running_pids", lambda process_name: [])
+
+    report = maintenance.run_read_only_maintenance_scan()
+
+    assert report["checks"]["app_discovery"]["actions_performed"] == []
+    assert calls == {"open": 0, "focus": 0}
+
+
+def test_maintenance_scan_preserves_app_discovery_missing_and_ambiguous_states(monkeypatch, tmp_path) -> None:
+    class FakeWindow:
+        title = "Antigravity IDE"
+        _hWnd = 101
+        visible = True
+        isMinimized = False
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr("aegis.core.app_discovery_smoke.gw.getAllWindows", lambda: [FakeWindow()])
+    monkeypatch.setattr("aegis.core.app_discovery_smoke.get_window_pid", lambda hwnd: None)
+    monkeypatch.setattr("aegis.core.app_discovery_smoke.get_running_pids", lambda process_name: [])
+
+    report = maintenance.run_read_only_maintenance_scan()
+    entries = {entry["app_id"]: entry for entry in report["checks"]["app_discovery"]["entries"]}
+    antigravity = entries["antigravity"]
+
+    assert antigravity["executable_candidates"][0]["path_exists"] is False
+    assert antigravity["matching_window_count"] == 1
+    assert antigravity["deterministic_verification_possible"] is False
+    assert antigravity["ambiguity_status"] == "ambiguous"
+    assert "running_process_not_observed" in antigravity["verification_blockers"]
+    assert "ambiguous_title_matches_multiple_configured_apps" in antigravity["verification_blockers"]
