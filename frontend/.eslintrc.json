@@ -1,0 +1,19 @@
+{
+  "root": true,
+  "extends": ["next/core-web-vitals"],
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2022": true
+  },
+  "ignorePatterns": [
+    ".next/",
+    "node_modules/",
+    "test-results/",
+    "logs/",
+    "dist/",
+    "out/",
+    "coverage/",
+    "tsconfig.tsbuildinfo"
+  ]
+}

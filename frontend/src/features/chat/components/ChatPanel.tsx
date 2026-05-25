@@ -55,6 +55,8 @@ const ChatMessage = React.memo(({ msg }: { msg: any }) => (
   </motion.div>
 ));
 
+ChatMessage.displayName = 'ChatMessage';
+
 const ChatInput = () => {
   const [input, setInput] = React.useState("");
   const [mode, setMode] = React.useState<'auto' | 'raw'>('auto');

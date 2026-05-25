@@ -7,7 +7,7 @@
     "dev": "next dev --webpack -H 127.0.0.1",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http-get://127.0.0.1:3000 && electron .\"",
     "electron:build": "npm run build && electron-builder"
   },

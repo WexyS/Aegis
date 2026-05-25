@@ -63,6 +63,8 @@ const TimelineItem = React.memo(({ step }: { step: any }) => {
   );
 });
 
+TimelineItem.displayName = 'TimelineItem';
+
 const EvidenceSummary = ({ evidence }: { evidence: ExecutionEvidence }) => {
   const isVerified = evidence.verification_state === 'verified';
   const observed = evidence.observed || {};
