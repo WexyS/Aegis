@@ -70,6 +70,12 @@ def _payload_registry_keys(source: str) -> set[str]:
     return set(re.findall(r"\b([A-Z_]+):\s*[A-Za-z]", match.group(1)))
 
 
+def _frontend_schema_body(source: str, schema_name: str) -> str:
+    match = re.search(rf"{schema_name}\s*=\s*z\.object\(\{{(.*?)\n\}}\)(?:\.strict\(\))?;", source, re.DOTALL)
+    assert match, f"{schema_name} schema not found"
+    return match.group(1)
+
+
 def test_protocol_v11_envelope_hash_chain() -> None:
     first = create_event(
         ProtocolEventType.STATE_CHANGE,
@@ -245,6 +251,97 @@ def test_non_executable_payload_registry_uses_new_explicit_schemas() -> None:
 
     for event_name, schema_name in expected_mappings.items():
         assert f"{event_name}: {schema_name}" in protocol_source
+
+
+def test_frontend_non_executable_schemas_accept_backend_lifecycle_fields_without_passthrough() -> None:
+    protocol_source = FRONTEND_PROTOCOL.read_text(encoding="utf-8")
+
+    command_classified = _frontend_schema_body(protocol_source, "CommandClassifiedPayload")
+    for field in [
+        "guard_decision: z.record(z.string(), z.unknown()).optional()",
+        "requires_approval: z.boolean().optional()",
+        "requires_clarification: z.boolean().optional()",
+        "blocked: z.boolean().optional()",
+        "evidence_refs: z.array(z.record(z.string(), z.unknown())).default([])",
+        "action_id: z.string().nullable().optional()",
+    ]:
+        assert field in command_classified
+
+    approval_requested = _frontend_schema_body(protocol_source, "ApprovalRequestedPayload")
+    for field in [
+        "approval_request: z.record(z.string(), z.unknown()).optional()",
+        "decision_status: DecisionStatusPayload.optional()",
+        "policy_rule: z.string().optional()",
+        "action_id: z.string().nullable().optional()",
+    ]:
+        assert field in approval_requested
+
+    for schema_name, id_field in [
+        ("CommandWaitingForApprovalPayload", "approval_id: z.string()"),
+        ("CommandWaitingForClarificationPayload", "clarification_id: z.string()"),
+    ]:
+        body = _frontend_schema_body(protocol_source, schema_name)
+        assert id_field in body
+        for field in [
+            "blocked_execution: z.literal(true).optional()",
+            "executed: z.literal(false).optional()",
+            "decision_status: DecisionStatusPayload.optional()",
+            "risk_level: RiskLevelPayload.optional()",
+            "policy_rule: z.string().optional()",
+            "reason: z.string().optional()",
+            "evidence_refs: z.array(z.record(z.string(), z.unknown())).default([])",
+            "action_id: z.string().nullable().optional()",
+        ]:
+            assert field in body
+
+    assert "CommandClassifiedPayload = z.object({" in protocol_source
+    assert "}).strict();" in protocol_source
+    assert ".catchall(z.unknown())" not in command_classified + approval_requested
+
+
+def test_frontend_action_verification_method_details_are_nullable_without_implying_success() -> None:
+    protocol_source = FRONTEND_PROTOCOL.read_text(encoding="utf-8")
+
+    for schema_name in ["ActionCompletedPayload", "ActionFailedPayload", "VerificationPayload"]:
+        body = _frontend_schema_body(protocol_source, schema_name)
+        assert "passed: z.boolean()" in body
+        assert "method: z.string().nullable().optional()" in body
+        assert "details: z.string().nullable().optional()" in body
+        assert "passed: z.literal(true)" not in body
+
+
+def test_frontend_timeline_snapshot_mapping_handles_non_executed_ids_and_wording() -> None:
+    protocol_source = FRONTEND_PROTOCOL.read_text(encoding="utf-8")
+    runtime_types_source = FRONTEND_RUNTIME_TYPES.read_text(encoding="utf-8")
+    store_source = FRONTEND_RUNTIME_STORE.read_text(encoding="utf-8")
+    timeline_source = FRONTEND_TIMELINE.read_text(encoding="utf-8")
+
+    action_timeline_body = _frontend_schema_body(protocol_source, "ActionTimelineItemPayload")
+    for field in [
+        "action_id: z.string().nullable().optional()",
+        "timeline_id: z.string().nullable().optional()",
+        "approval_id: z.string().nullable().optional()",
+        "clarification_id: z.string().nullable().optional()",
+        "blocked_id: z.string().nullable().optional()",
+        "not_executed: z.literal(true).optional()",
+        "executed: z.literal(false).optional()",
+        "terminal_non_executed: z.literal(true).optional()",
+    ]:
+        assert field in action_timeline_body
+        assert field.replace(": z.", "?: ").split("?: ")[0] in runtime_types_source
+
+    assert "function timelineStepId" in store_source
+    assert "item.action_id" in store_source
+    assert "item.timeline_id" in store_source
+    assert "item.approval_id" in store_source
+    assert "item.clarification_id" in store_source
+    assert "item.blocked_id" in store_source
+    assert "Executing ${item.tool || 'executor'}" not in store_source
+    assert "Approval granted; waiting for backend policy-gated resume." in store_source
+    assert "Clarification resolved as state-only; command was not executed." in store_source
+    assert "if (status === RuntimeStatus.ACTIVE) return `Executing ${tool}`;" in store_source
+    assert "uniqueTimelineKeys(steps.slice(-20))" in timeline_source
+    assert "key={key}" in timeline_source
 
 
 def test_frontend_action_completed_payload_carries_execution_evidence_to_timeline() -> None:

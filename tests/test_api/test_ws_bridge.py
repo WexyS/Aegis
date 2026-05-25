@@ -816,6 +816,42 @@ async def test_approve_command_reports_queue_full_instead_of_silently_dropping(m
 
 
 @pytest.mark.asyncio
+async def test_approved_command_resume_helper_queues_policy_gated_command_without_execution_event(monkeypatch) -> None:
+    manager = get_approval_manager()
+    manager.reset_for_tests()
+    manager.register_pending(
+        command_id="cmd-resume-helper",
+        text="open notepad",
+        trace_id="11111111-1111-4111-8111-111111111112",
+        risk_level=RiskLevel.MEDIUM,
+        reason="approval required",
+    )
+    record = manager.resolve_approval("cmd-resume-helper", approved=True)
+    queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+    emitted: list[tuple[ProtocolEventType, dict]] = []
+
+    async def fake_emit_event(event_type, payload, **kwargs):
+        emitted.append((event_type, payload))
+
+    monkeypatch.setattr(ws_bridge, "_command_queue", queue)
+    monkeypatch.setattr(ws_bridge, "_command_queue_capacity", 4)
+    monkeypatch.setattr(ws_bridge, "emit_event", fake_emit_event)
+
+    assert await ws_bridge.enqueue_approved_command_for_resume(record) is True
+
+    queued = queue.get_nowait()
+    assert queued.command_id == "cmd-resume-helper"
+    assert queued.approval_granted is True
+    updated = manager.get("cmd-resume-helper")
+    assert updated is not None
+    assert updated.metadata["approval_resume_status"] == "queued_for_execution"
+    assert updated.metadata["approval_resume_queue_depth"] == 1
+    assert any(event[0] == ProtocolEventType.COMMAND_STATUS_CHANGED for event in emitted)
+    assert all(event[0] != ProtocolEventType.ACTION_STARTED for event in emitted)
+    assert all(event[0] != ProtocolEventType.ACTION_COMPLETED for event in emitted)
+
+
+@pytest.mark.asyncio
 async def test_action_failed_event_carries_execution_evidence(monkeypatch) -> None:
     emitted: list[tuple[ProtocolEventType, dict]] = []
 

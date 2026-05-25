@@ -211,8 +211,8 @@ export const ActionCompletedPayload = z.object({
   retries: z.number().default(0),
   verification: z.object({
     passed: z.boolean(),
-    method: z.string().optional(),
-    details: z.string().optional(),
+    method: z.string().nullable().optional(),
+    details: z.string().nullable().optional(),
   }).optional(),
   execution_evidence: ExecutionEvidencePayload.optional(),
 });
@@ -226,23 +226,39 @@ export const ActionFailedPayload = z.object({
   max_retries: z.number().default(3),
   verification: z.object({
     passed: z.boolean(),
-    method: z.string().optional(),
-    details: z.string().optional(),
+    method: z.string().nullable().optional(),
+    details: z.string().nullable().optional(),
   }).optional(),
   execution_evidence: ExecutionEvidencePayload.optional(),
 });
 
 export const ActionTimelineItemPayload = z.object({
-  action_id: z.string(),
-  tool: z.string(),
-  status: z.enum(['pending', 'active', 'success', 'error']),
+  action_id: z.string().nullable().optional(),
+  timeline_id: z.string().nullable().optional(),
+  kind: z.string().nullable().optional(),
+  command_id: z.string().nullable().optional(),
+  tool: z.string().nullable().optional(),
+  status: z.string(),
   target: z.string().nullable().optional(),
   started_at: z.number().nullable().optional(),
   completed_at: z.number().nullable().optional(),
+  timestamp: z.number().nullable().optional(),
   latency_ms: z.number().nullable().optional(),
   execution_evidence: ExecutionEvidencePayload.nullable().optional(),
   trace_id: z.string().nullable().optional(),
   sequence_num: z.number().int().nonnegative().nullable().optional(),
+  approval_id: z.string().nullable().optional(),
+  clarification_id: z.string().nullable().optional(),
+  blocked_id: z.string().nullable().optional(),
+  decision: z.string().nullable().optional(),
+  command_status: z.string().nullable().optional(),
+  risk_level: z.string().nullable().optional(),
+  policy_rule: z.string().nullable().optional(),
+  reason: z.string().nullable().optional(),
+  not_executed: z.literal(true).optional(),
+  executed: z.literal(false).optional(),
+  terminal_non_executed: z.literal(true).optional(),
+  terminal: z.boolean().optional(),
 });
 
 export const ToolSpecPayload = z.object({
@@ -378,15 +394,24 @@ export const CommandClassifiedPayload = z.object({
   policy_rule: z.string(),
   reason: z.string(),
   not_executed: z.literal(true),
+  guard_decision: z.record(z.string(), z.unknown()).optional(),
+  requires_approval: z.boolean().optional(),
+  requires_clarification: z.boolean().optional(),
+  blocked: z.boolean().optional(),
+  evidence_refs: z.array(z.record(z.string(), z.unknown())).default([]),
+  action_id: z.string().nullable().optional(),
 }).strict();
 
 export const ApprovalRequestedPayload = z.object({
   approval_id: z.string(),
   command_id: z.string(),
   trace_id: z.string(),
+  approval_request: z.record(z.string(), z.unknown()).optional(),
   proposed_action: z.record(z.string(), z.unknown()),
   normalized_params: z.record(z.string(), z.unknown()),
+  decision_status: DecisionStatusPayload.optional(),
   risk_level: RiskLevelPayload,
+  policy_rule: z.string().optional(),
   reason: z.string(),
   required_confirmation_mode: z.enum(['ui', 'voice', 'typed_phrase', 'both']),
   approval_scope: z.enum(['single_action', 'command_step', 'full_plan']),
@@ -397,6 +422,7 @@ export const ApprovalRequestedPayload = z.object({
   evidence_refs: z.array(z.record(z.string(), z.unknown())).default([]),
   expires_at: z.string().nullable().optional(),
   not_executed: z.literal(true),
+  action_id: z.string().nullable().optional(),
 }).strict();
 
 export const ClarificationRequestedPayload = z.object({
@@ -432,6 +458,14 @@ export const CommandWaitingForApprovalPayload = z.object({
   trace_id: z.string(),
   approval_id: z.string(),
   command_status: z.literal('waiting_for_approval'),
+  blocked_execution: z.literal(true).optional(),
+  executed: z.literal(false).optional(),
+  decision_status: DecisionStatusPayload.optional(),
+  risk_level: RiskLevelPayload.optional(),
+  policy_rule: z.string().optional(),
+  reason: z.string().optional(),
+  evidence_refs: z.array(z.record(z.string(), z.unknown())).default([]),
+  action_id: z.string().nullable().optional(),
   not_executed: z.literal(true),
 }).strict();
 
@@ -440,6 +474,14 @@ export const CommandWaitingForClarificationPayload = z.object({
   trace_id: z.string(),
   clarification_id: z.string(),
   command_status: z.literal('waiting_for_clarification'),
+  blocked_execution: z.literal(true).optional(),
+  executed: z.literal(false).optional(),
+  decision_status: DecisionStatusPayload.optional(),
+  risk_level: RiskLevelPayload.optional(),
+  policy_rule: z.string().optional(),
+  reason: z.string().optional(),
+  evidence_refs: z.array(z.record(z.string(), z.unknown())).default([]),
+  action_id: z.string().nullable().optional(),
   not_executed: z.literal(true),
 }).strict();
 
@@ -523,8 +565,8 @@ export const IntentParsedPayload = z.object({
 export const VerificationPayload = z.object({
   action_id: z.string().optional(),
   passed: z.boolean().optional(),
-  method: z.string().optional(),
-  details: z.string().optional(),
+  method: z.string().nullable().optional(),
+  details: z.string().nullable().optional(),
   verification_state: z.string().optional(),
   verifier: z.string().nullable().optional(),
   error: z.string().optional(),

@@ -401,6 +401,9 @@ def test_approval_manager_restores_pending_approval_snapshot() -> None:
     assert len(snapshot["pending_approvals"]) == 1
     assert snapshot["pending_approvals"][0]["command_id"] == "22222222-2222-4222-8222-222222222222"
     assert snapshot["pending_approvals"][0]["risk_level"] == RiskLevel.MEDIUM.value
+    assert snapshot["pending_approvals"][0]["metadata"]["restored_from_journal"] is True
+    assert snapshot["pending_approvals"][0]["metadata"]["restored_source"] == "runtime_snapshot"
+    assert isinstance(snapshot["pending_approvals"][0]["metadata"]["restored_at"], int)
 
     approved = restored.approve("22222222-2222-4222-8222-222222222222")
     assert approved.status == CommandStatus.APPROVED
@@ -458,6 +461,9 @@ def test_approval_manager_restores_pending_clarification_snapshot() -> None:
     assert record.active is False
     assert len(snapshot["pending_clarifications"]) == 1
     assert snapshot["pending_clarifications"][0]["command_id"] == record.command_id
+    assert snapshot["pending_clarifications"][0]["metadata"]["restored_from_journal"] is True
+    assert snapshot["pending_clarifications"][0]["metadata"]["restored_source"] == "runtime_snapshot"
+    assert isinstance(snapshot["pending_clarifications"][0]["metadata"]["restored_at"], int)
 
 
 def test_approval_manager_denies_pending_approval_by_decision_id_without_execution() -> None:

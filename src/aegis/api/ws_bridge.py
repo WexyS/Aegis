@@ -393,6 +393,104 @@ def _assert_non_executable_payload_shape(value: Any) -> None:
         for nested in value:
             _assert_non_executable_payload_shape(nested)
 
+
+async def enqueue_approved_command_for_resume(
+    record,
+    *,
+    sid: str | None = None,
+    mode: str = "auto",
+) -> bool:
+    """Queue an approved command for the normal worker/orchestrator policy path."""
+    if record.status != CommandStatus.APPROVED:
+        return False
+    if is_maintenance_action_record(record):
+        record.metadata["approval_resume_status"] = "maintenance_action_not_queued"
+        record.metadata["approval_resume_reason"] = "maintenance actions use the dedicated approval execution path"
+        record.touch()
+        await emit_command_status(
+            command_id=record.command_id,
+            status=record.status,
+            trace_id=record.trace_id,
+            risk_level=record.risk_level,
+            reason=record.reason,
+            verification_state=record.verification_state,
+        )
+        if sid:
+            await _emit_snapshot(to=sid)
+        return False
+
+    command = QueuedCommand(
+        sid=sid or "",
+        text=record.text,
+        mode=str(mode or "auto"),
+        received_at=time.time(),
+        command_id=record.command_id,
+        approval_granted=True,
+    )
+    try:
+        _command_queue.put_nowait(command)
+    except asyncio.QueueFull:
+        reason = "Approved command queue full; command was not enqueued"
+        blocked = get_approval_manager().mark_blocked(
+            record.command_id,
+            trace_id=record.trace_id or "",
+            risk_level=record.risk_level,
+            reason=reason,
+            verification_state="unverified",
+        )
+        blocked.metadata["approval_resume_status"] = "queue_full"
+        blocked.metadata["approval_resume_queue_depth"] = _command_queue.qsize()
+        blocked.metadata["approval_resume_queue_capacity"] = _command_queue_capacity
+        blocked.metadata["mutation_performed"] = False
+        blocked.touch()
+        await emit_command_status(
+            command_id=blocked.command_id,
+            status=blocked.status,
+            trace_id=blocked.trace_id,
+            risk_level=blocked.risk_level,
+            reason=blocked.reason,
+            verification_state=blocked.verification_state,
+        )
+        await emit_event(
+            ProtocolEventType.DETERMINISM_BREACH,
+            {
+                "reason": reason,
+                "queue_depth": _command_queue.qsize(),
+                "queue_capacity": _command_queue_capacity,
+                "command_id": blocked.command_id,
+                "trace_id": blocked.trace_id,
+            },
+            trace_id=blocked.trace_id,
+            source=Component.SYSTEM,
+            severity=Severity.WARNING,
+            runtime_phase=get_runtime_authority(_session_id).current_state(),
+        )
+        if sid:
+            await _emit_snapshot(to=sid)
+        return False
+
+    record.metadata["approval_resume_status"] = "queued_for_execution"
+    record.metadata["approval_resume_mode"] = str(mode or "auto")
+    record.metadata["approval_resume_queued_at"] = int(time.time() * 1000)
+    record.metadata["approval_resume_queue_depth"] = _command_queue.qsize()
+    record.metadata["approval_resume_queue_capacity"] = _command_queue_capacity
+    record.touch()
+    get_runtime_authority(_session_id, queue_capacity=_command_queue_capacity).set_queue(
+        depth=_command_queue.qsize(),
+        capacity=_command_queue_capacity,
+    )
+    await emit_command_status(
+        command_id=record.command_id,
+        status=record.status,
+        trace_id=record.trace_id,
+        risk_level=record.risk_level,
+        reason="Approved command queued for policy-gated execution",
+        verification_state=record.verification_state,
+    )
+    if sid:
+        await _emit_snapshot(to=sid)
+    return True
+
 # ─── LIFECYCLE ──────────────────────────────────────────────────────
 
 @sio.event
@@ -490,51 +588,7 @@ async def approve_command(sid: str, data: dict):
         if is_maintenance_action_record(record):
             await execute_maintenance_action_record(record, sid=sid)
             return
-        command = QueuedCommand(
-            sid=sid,
-            text=record.text,
-            mode=payload.get("mode", "auto"),
-            received_at=time.time(),
-            command_id=record.command_id,
-            approval_granted=True,
-        )
-        try:
-            _command_queue.put_nowait(command)
-        except asyncio.QueueFull:
-            reason = "Approved command queue full; command was not enqueued"
-            blocked = get_approval_manager().mark_blocked(
-                record.command_id,
-                trace_id=record.trace_id or "",
-                risk_level=record.risk_level,
-                reason=reason,
-                verification_state="unverified",
-            )
-            await emit_command_status(
-                command_id=blocked.command_id,
-                status=CommandStatus.BLOCKED,
-                trace_id=blocked.trace_id,
-                risk_level=blocked.risk_level,
-                reason=reason,
-                verification_state=blocked.verification_state,
-            )
-            await emit_event(
-                ProtocolEventType.DETERMINISM_BREACH,
-                {
-                    "reason": reason,
-                    "command_id": record.command_id,
-                    "queue_depth": _command_queue.qsize(),
-                    "queue_capacity": _command_queue_capacity,
-                },
-                trace_id=record.trace_id,
-                source=Component.SYSTEM,
-                severity=Severity.WARNING,
-                runtime_phase=get_runtime_authority(_session_id).current_state(),
-            )
-            return
-        get_runtime_authority(_session_id, queue_capacity=_command_queue_capacity).set_queue(
-            depth=_command_queue.qsize(),
-            capacity=_command_queue_capacity,
-        )
+        await enqueue_approved_command_for_resume(record, sid=sid, mode=payload.get("mode", "auto"))
     except Exception as e:
         logger.error("[WS] Failed to approve command: %s", e)
 
@@ -604,34 +658,10 @@ async def resolve_approval(sid: str, data: dict):
             reason=str(payload.get("reason") or ""),
         )
         await emit_approval_resolved(record, decision="granted" if approved else "denied")
+        resume_attempted = False
         if approved and record.status == CommandStatus.APPROVED:
-            command = QueuedCommand(
-                sid=sid,
-                text=record.text,
-                mode=payload.get("mode", "auto"),
-                received_at=time.time(),
-                command_id=record.command_id,
-                approval_granted=True,
-            )
-            try:
-                _command_queue.put_nowait(command)
-            except asyncio.QueueFull:
-                reason = "Approved command queue full; command was not enqueued"
-                blocked = get_approval_manager().mark_blocked(
-                    record.command_id,
-                    trace_id=record.trace_id or "",
-                    risk_level=record.risk_level,
-                    reason=reason,
-                    verification_state="unverified",
-                )
-                await emit_command_status(
-                    command_id=blocked.command_id,
-                    status=CommandStatus.BLOCKED,
-                    trace_id=blocked.trace_id,
-                    risk_level=blocked.risk_level,
-                    reason=reason,
-                    verification_state=blocked.verification_state,
-                )
+            resume_attempted = True
+            await enqueue_approved_command_for_resume(record, sid=sid, mode=payload.get("mode", "auto"))
         elif not approved:
             await emit_event(
                 ProtocolEventType.COMMAND_REJECTED,
@@ -640,7 +670,7 @@ async def resolve_approval(sid: str, data: dict):
                 source=Component.GUARD,
                 runtime_phase=get_runtime_authority(_session_id).current_state(),
             )
-        if record.status != CommandStatus.APPROVED:
+        if record.status != CommandStatus.APPROVED and not resume_attempted:
             await emit_command_status(
                 command_id=record.command_id,
                 status=record.status,

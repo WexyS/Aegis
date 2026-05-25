@@ -324,7 +324,15 @@ class ApprovalManager:
                 "active_command": active[-1] if active else None,
             }
 
-    def restore_from_snapshot(self, snapshot: dict[str, Any], *, replace: bool = True) -> None:
+    def restore_from_snapshot(
+        self,
+        snapshot: dict[str, Any],
+        *,
+        replace: bool = True,
+        restored_source: str = "runtime_snapshot",
+        source_snapshot_sequence: int | None = None,
+        restored_at: int | None = None,
+    ) -> None:
         """Restore command lifecycle state from a runtime snapshot.
 
         Pending approvals are safe to preserve across restarts. Running commands are not:
@@ -336,6 +344,7 @@ class ApprovalManager:
                 self._records.clear()
                 self._tokens.clear()
 
+            restore_time = restored_at if restored_at is not None else now_ms()
             for record_data in self._iter_snapshot_records(snapshot):
                 record = self._record_from_dict(record_data)
                 if record is None:
@@ -355,6 +364,16 @@ class ApprovalManager:
                     token._cancelled = True
                     token.cancelled_reason = record.reason or "cancelled"
                     token.cancelled_at = record.cancelled_at
+
+                if record.status in {
+                    CommandStatus.PENDING_APPROVAL,
+                    CommandStatus.WAITING_FOR_CLARIFICATION,
+                }:
+                    record.metadata["restored_from_journal"] = True
+                    record.metadata["restored_source"] = restored_source
+                    record.metadata["restored_at"] = restore_time
+                    if source_snapshot_sequence is not None:
+                        record.metadata["source_snapshot_sequence"] = source_snapshot_sequence
 
                 self._records[record.command_id] = record
                 self._tokens[record.command_id] = token
@@ -541,7 +560,12 @@ def _restore_approval_manager_from_events(events: list[dict[str, Any]], manager:
         runtime = payload.get("runtime") if isinstance(payload, dict) else None
         command_snapshot = runtime.get("commands") if isinstance(runtime, dict) else None
         if isinstance(command_snapshot, dict):
-            manager.restore_from_snapshot(command_snapshot)
+            sequence = event.get("sequence_num")
+            manager.restore_from_snapshot(
+                command_snapshot,
+                restored_source="runtime_snapshot",
+                source_snapshot_sequence=sequence if isinstance(sequence, int) else None,
+            )
             return True
 
     records_by_id: dict[str, dict[str, Any]] = {}
@@ -555,6 +579,15 @@ def _restore_approval_manager_from_events(events: list[dict[str, Any]], manager:
             records_by_id[command_id] = command
 
     if records_by_id:
-        manager.restore_from_snapshot({"records": list(records_by_id.values())})
+        sequences = [
+            event.get("sequence_num")
+            for event in events
+            if isinstance(event.get("sequence_num"), int)
+        ]
+        manager.restore_from_snapshot(
+            {"records": list(records_by_id.values())},
+            restored_source="command_event_replay",
+            source_snapshot_sequence=max(sequences) if sequences else None,
+        )
         return True
     return False

@@ -7,6 +7,7 @@ import { ExecutionEvidence, RuntimeComponent, RuntimeStatus } from '@/types/runt
 
 export const ScientificTimeline = () => {
   const { steps } = useRuntimeStore();
+  const visibleSteps = uniqueTimelineKeys(steps.slice(-20));
 
   return (
     <div className="space-y-3 p-3.5 glass-card rounded-lg relative overflow-hidden flex flex-col min-h-[260px]">
@@ -18,13 +19,28 @@ export const ScientificTimeline = () => {
         {/* Connection Line */}
         <div className="absolute left-[7px] top-4 bottom-4 w-px bg-white/10" />
         
-        {steps.slice(-20).map((step) => (
-          <TimelineItem key={step.id} step={step} />
+        {visibleSteps.map(({ key, step }) => (
+          <TimelineItem key={key} step={step} />
         ))}
       </div>
     </div>
   );
 };
+
+function uniqueTimelineKeys(steps: Array<{ id?: unknown; component?: unknown; timestamp?: unknown; detail?: unknown }>) {
+  const seen = new Map<string, number>();
+  return steps.map((step, index) => {
+    const stable = stringish(step.id)
+      || [stringish(step.component), stringish(step.timestamp), stringish(step.detail)].filter(Boolean).join(':')
+      || `timeline-render-fallback-${index}`;
+    const count = seen.get(stable) ?? 0;
+    seen.set(stable, count + 1);
+    return {
+      key: count === 0 ? stable : `${stable}:${count}`,
+      step,
+    };
+  });
+}
 
 const TimelineItem = React.memo(({ step }: { step: any }) => {
   const statusColors = {

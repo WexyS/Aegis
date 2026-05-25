@@ -4,10 +4,12 @@ API smoke tests for the stabilized command pipeline.
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from aegis.api import routes_command
+from aegis.api import routes_command, ws_bridge
 from aegis.core import maintenance_actions
 from aegis.core.commands import get_approval_manager
 from aegis.main import app
@@ -168,6 +170,49 @@ class TestCommandEndpoint:
         assert data["metadata"]["completed_without_execution"] is True
         assert data["metadata"]["mutation_performed"] is False
         assert emitted[0][0] == "APPROVAL_RESOLVED"
+
+    @pytest.mark.asyncio
+    async def test_http_approval_decision_grant_queues_resumable_command_without_inline_execution(self, monkeypatch) -> None:
+        from aegis.core.constants import RiskLevel
+
+        manager = get_approval_manager()
+        manager.reset_for_tests()
+        manager.register_pending(
+            command_id="cmd-http-resume",
+            text="open notepad",
+            trace_id="trace-http-resume",
+            risk_level=RiskLevel.MEDIUM,
+            reason="medium risk command requires approval",
+            metadata={"approval_id": "approval-http-resume"},
+        )
+        queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+        emitted: list[tuple[str, dict]] = []
+
+        async def fake_emit_event(event_type, payload, **kwargs):
+            emitted.append((event_type.value, payload))
+
+        monkeypatch.setattr(ws_bridge, "_command_queue", queue)
+        monkeypatch.setattr(ws_bridge, "_command_queue_capacity", 4)
+        monkeypatch.setattr(ws_bridge, "emit_event", fake_emit_event)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post("/command/approvals/approval-http-resume/resolve", json={"decision": "grant"})
+
+        data = r.json()["command"]
+        assert r.status_code == 200
+        assert data["status"] == "approved"
+        assert data["metadata"]["approval_resolution_status"] == "approval_granted"
+        assert data["metadata"]["approval_resume_status"] == "queued_for_execution"
+        assert queue.qsize() == 1
+        queued = queue.get_nowait()
+        assert queued.command_id == "cmd-http-resume"
+        assert queued.approval_granted is True
+        emitted_types = [event[0] for event in emitted]
+        assert "APPROVAL_RESOLVED" in emitted_types
+        assert "COMMAND_STATUS_CHANGED" in emitted_types
+        assert "ACTION_STARTED" not in emitted_types
+        assert "ACTION_COMPLETED" not in emitted_types
 
     @pytest.mark.asyncio
     async def test_http_clarification_decision_cancel_remains_non_executed(self, monkeypatch) -> None:

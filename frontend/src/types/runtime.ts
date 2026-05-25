@@ -169,16 +169,32 @@ export interface ExecutionEvidence {
 }
 
 export interface ActionTimelineItem {
-  action_id: string;
-  tool: string;
+  action_id?: string | null;
+  timeline_id?: string | null;
+  kind?: string | null;
+  command_id?: string | null;
+  tool?: string | null;
   status: RuntimeStatus | string;
   target?: string | null;
   started_at?: number | null;
   completed_at?: number | null;
+  timestamp?: number | null;
   latency_ms?: number | null;
   execution_evidence?: ExecutionEvidence | null;
   trace_id?: string | null;
   sequence_num?: number | null;
+  approval_id?: string | null;
+  clarification_id?: string | null;
+  blocked_id?: string | null;
+  decision?: string | null;
+  command_status?: string | null;
+  risk_level?: string | null;
+  policy_rule?: string | null;
+  reason?: string | null;
+  not_executed?: true;
+  executed?: false;
+  terminal_non_executed?: true;
+  terminal?: boolean;
 }
 
 export interface AppRegistrySnapshot {

@@ -227,6 +227,11 @@ async def resolve_approval(
     from aegis.api import ws_bridge
 
     await ws_bridge.emit_approval_resolved(record, decision="granted" if approved else "denied")
+    if approved and record.status == CommandStatus.APPROVED:
+        await ws_bridge.enqueue_approved_command_for_resume(
+            record,
+            mode=str(payload.get("mode") or "auto"),
+        )
     return {"command": record.to_dict()}
 
 

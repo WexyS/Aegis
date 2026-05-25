@@ -77,6 +77,80 @@ function getStatePatch(newState: RuntimeState): Partial<RuntimeStoreState> {
   return patch;
 }
 
+function stringValue(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function timelineStatus(item: ActionTimelineItem): RuntimeStatus {
+  const status = String(item.status || '').toLowerCase();
+  if (Object.values(RuntimeStatus).includes(status as RuntimeStatus)) {
+    return status as RuntimeStatus;
+  }
+  if (['blocked', 'failed', 'error', 'rejected', 'cancelled', 'approval_denied'].includes(status)) {
+    return RuntimeStatus.ERROR;
+  }
+  return RuntimeStatus.PENDING;
+}
+
+function timelineStepId(item: ActionTimelineItem, index: number): string {
+  const kind = stringValue(item.kind);
+  const candidates = [
+    item.action_id,
+    item.timeline_id,
+    item.approval_id,
+    item.clarification_id,
+    item.blocked_id,
+    item.sequence_num === null || item.sequence_num === undefined ? null : `seq-${item.sequence_num}`,
+    item.command_id && kind ? `${item.command_id}-${kind}` : item.command_id,
+  ];
+  const raw = candidates.map(stringValue).find(Boolean);
+  if (raw) return kind && !raw.startsWith(`${kind}:`) ? `${kind}:${raw}` : raw;
+  return `timeline-fallback-${index}`;
+}
+
+function timelineComponent(item: ActionTimelineItem): string {
+  if (item.not_executed || item.kind || item.terminal_non_executed) {
+    return 'guard';
+  }
+  return stringValue(item.tool) || 'executor';
+}
+
+function timelineLabel(item: ActionTimelineItem): string {
+  if (item.kind) return item.kind.replace(/_/g, ' ');
+  return stringValue(item.tool) || 'executor';
+}
+
+function timelineDetail(item: ActionTimelineItem, status: RuntimeStatus): string {
+  const target = stringValue(item.target);
+  if (target) return target;
+
+  const reason = stringValue(item.reason);
+  const kind = stringValue(item.kind);
+  const state = String(item.status || item.command_status || item.decision || '').toLowerCase();
+  if (item.not_executed || item.terminal_non_executed || kind) {
+    if (kind === 'approval_requested') return reason || 'Approval requested; execution is paused.';
+    if (kind === 'approval_resolved') {
+      if (state.includes('denied') || state.includes('rejected')) return reason || 'Approval denied; command was not executed.';
+      if (state.includes('granted')) return reason || 'Approval granted; waiting for backend policy-gated resume.';
+      return reason || 'Approval resolved as lifecycle state; execution is not implied.';
+    }
+    if (kind === 'clarification_requested') return reason || 'Clarification requested; execution is paused.';
+    if (kind === 'clarification_resolved') return reason || 'Clarification resolved as state-only; command was not executed.';
+    if (kind === 'blocked_by_policy') return reason || 'Blocked by policy; command was not executed.';
+    return reason || 'Lifecycle state recorded without execution.';
+  }
+
+  const tool = stringValue(item.tool) || 'executor';
+  if (status === RuntimeStatus.ACTIVE) return `Executing ${tool}`;
+  if (status === RuntimeStatus.SUCCESS) return `${tool} completed`;
+  if (status === RuntimeStatus.ERROR) return `${tool} failed or unverified`;
+  return `${tool} pending`;
+}
+
 export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
   steps: [],
   systemLogs: [],
@@ -184,11 +258,9 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
 
   syncActionTimelineSnapshot: (timeline) => {
     if (!Array.isArray(timeline)) return;
-    const steps = timeline.map((item: ActionTimelineItem): RuntimeStep => {
-      const status = Object.values(RuntimeStatus).includes(item.status as RuntimeStatus)
-        ? item.status as RuntimeStatus
-        : RuntimeStatus.PENDING;
-      const eventTime = item.completed_at ?? item.started_at;
+    const steps = timeline.map((item: ActionTimelineItem, index): RuntimeStep => {
+      const status = timelineStatus(item);
+      const eventTime = numberValue(item.completed_at) ?? numberValue(item.started_at) ?? numberValue(item.timestamp);
       const metrics = ((item.latency_ms !== null && item.latency_ms !== undefined) || item.execution_evidence)
         ? {
             latency_ms: item.latency_ms ?? undefined,
@@ -197,11 +269,11 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
           }
         : undefined;
       return {
-        id: item.action_id,
-        component: item.tool || 'executor',
+        id: timelineStepId(item, index),
+        component: timelineComponent(item),
         status,
-        label: item.tool || 'executor',
-        detail: item.target || `Executing ${item.tool || 'executor'}`,
+        label: timelineLabel(item),
+        detail: timelineDetail(item, status),
         timestamp: typeof eventTime === 'number' ? new Date(eventTime).toLocaleTimeString() : '',
         executionEvidence: item.execution_evidence ?? undefined,
         metrics,

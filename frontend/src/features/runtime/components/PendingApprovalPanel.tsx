@@ -83,7 +83,9 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
   const resources = Array.isArray(proposal?.affected_resources) ? proposal.affected_resources : [];
   const evidenceRefs = Array.isArray(proposal?.evidence_refs) ? proposal.evidence_refs : [];
   const approvalId = getMetadataString(command, 'approval_id') || command.command_id;
+  const restored = getRestoredDecisionLabel(command);
   const resumeAllowed = command.metadata?.resume_allowed === true;
+  const resumeStatus = getMetadataString(command, 'approval_resume_status');
   const nonExecutable = command.metadata?.resume_allowed === false || isQuarantinedClickDecision(command);
   const isPending = command.status === 'pending_approval';
   const controlsDisabled = resolving !== null || !isPending;
@@ -124,13 +126,22 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
           <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${riskBadgeStyle(command.risk_level)}`}>{command.risk_level} risk</span>
           <span className="text-[9px] font-mono text-foreground/35">{command.verification_state}</span>
         </div>
+        {restored && (
+          <div className="inline-flex rounded-md border border-warning/25 bg-warning/10 px-2 py-0.5 text-[9px] font-mono uppercase tracking-widest text-warning">
+            {restored}
+          </div>
+        )}
         <p className="text-[12px] font-medium leading-relaxed text-foreground/85">{command.text}</p>
         {command.reason && <p className="text-[10px] font-mono text-foreground/45">{command.reason}</p>}
         <div className="rounded-md border border-white/10 bg-black/15 px-2 py-1.5 text-[9px] font-mono leading-relaxed text-foreground/45">
           <div className="flex items-center justify-between gap-2">
             <span className="truncate">approval id: {approvalId}</span>
             <span className={resumeAllowed ? 'text-warning' : 'text-foreground/45'}>
-              {resumeAllowed ? 'backend-gated state update' : 'state-only / non-executing'}
+              {resumeStatus === 'queued_for_execution'
+                ? 'queued for backend policy gate'
+                : resumeAllowed
+                  ? 'backend-gated state update'
+                  : 'state-only / non-executing'}
             </span>
           </div>
           {nonExecutable && (
@@ -202,6 +213,7 @@ const ClarificationItem = React.memo(({ command }: { command: CommandRecord }) =
   const [error, setError] = useState<string | null>(null);
   const inFlightRef = useRef(false);
   const clarificationId = getMetadataString(command, 'clarification_id') || command.command_id;
+  const restored = getRestoredDecisionLabel(command);
   const isPending = command.status === 'waiting_for_clarification';
   const hasAnswer = answer.trim().length > 0;
 
@@ -246,6 +258,11 @@ const ClarificationItem = React.memo(({ command }: { command: CommandRecord }) =
           <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${riskBadgeStyle(command.risk_level)}`}>{command.risk_level} risk</span>
           <span className="text-[9px] font-mono text-warning">clarification</span>
         </div>
+        {restored && (
+          <div className="inline-flex rounded-md border border-warning/25 bg-warning/10 px-2 py-0.5 text-[9px] font-mono uppercase tracking-widest text-warning">
+            {restored}
+          </div>
+        )}
         <p className="text-[12px] font-medium leading-relaxed text-foreground/85">{command.text}</p>
         {command.reason && <p className="text-[10px] font-mono text-foreground/45">{command.reason}</p>}
         <div className="rounded-md border border-warning/20 bg-warning/[0.04] px-2 py-1.5 text-[9px] font-mono leading-relaxed text-warning/80">
@@ -303,6 +320,7 @@ ClarificationItem.displayName = 'ClarificationItem';
 const ResolvedDecisionItem = ({ command }: { command: CommandRecord }) => {
   const approvalStatus = getMetadataString(command, 'approval_resolution_status');
   const clarificationStatus = getMetadataString(command, 'clarification_resolution_status');
+  const resumeStatus = getMetadataString(command, 'approval_resume_status');
   const status = approvalStatus || clarificationStatus || command.status;
   const tone = command.status === 'rejected' || command.status === 'cancelled' || command.status === 'blocked' ? 'text-warning' : 'text-foreground/70';
   const mutationLabel = Object.prototype.hasOwnProperty.call(command.metadata ?? {}, 'mutation_performed')
@@ -316,7 +334,7 @@ const ResolvedDecisionItem = ({ command }: { command: CommandRecord }) => {
         <span className={tone}>{status}</span>
       </div>
       <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">
-        {command.status} / mutation={mutationLabel} / {command.command_id}
+        {command.status} / mutation={mutationLabel}{resumeStatus ? ` / resume=${resumeStatus}` : ''} / {command.command_id}
       </p>
     </div>
   );
@@ -416,6 +434,14 @@ function getMaintenanceProposalFromCommand(command: CommandRecord): MaintenanceA
 function getMetadataString(command: CommandRecord, key: string): string | null {
   const value = command.metadata?.[key];
   return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function getRestoredDecisionLabel(command: CommandRecord): string | null {
+  if (command.metadata?.restored_from_journal !== true) return null;
+  const source = getMetadataString(command, 'restored_source') || 'journal';
+  const sequence = command.metadata?.source_snapshot_sequence;
+  const sequenceText = typeof sequence === 'number' ? ` seq ${sequence}` : '';
+  return `restored unresolved ${source}${sequenceText}`;
 }
 
 function hasResolutionMetadata(command: CommandRecord): boolean {
