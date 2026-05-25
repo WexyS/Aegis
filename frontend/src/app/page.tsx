@@ -14,6 +14,7 @@ import { VisionLabPanel } from '@/features/runtime/components/VisionLabPanel';
 import { RuntimeStatsPanel } from '@/features/runtime/components/RuntimeStatsPanel';
 import { ChaosShieldPanel } from '@/features/runtime/components/ChaosShieldPanel';
 import { PendingApprovalPanel } from '@/features/runtime/components/PendingApprovalPanel';
+import { MaintenanceScanPanel } from '@/features/runtime/components/MaintenanceScanPanel';
 import { AppRegistryPanel } from '@/features/runtime/components/AppRegistryPanel';
 import { ToolRegistryPanel } from '@/features/runtime/components/ToolRegistryPanel';
 import { SystemOverview } from '@/features/dashboard/components/SystemOverview';
@@ -109,6 +110,7 @@ export default function AegisDashboard() {
           </section>
 
           <PendingApprovalPanel />
+          <MaintenanceScanPanel />
 
           {/* SECTION: SCIENTIFIC TIMELINE */}
           <ScientificTimeline />
