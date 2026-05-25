@@ -10,6 +10,8 @@ import { cancelCommand, requestMaintenanceAction, runMaintenanceScan } from '@/l
 import { useRuntimeStore } from '@/store/useRuntimeStore';
 import {
   ActionTimelineDiagnostics,
+  AppDiscoveryDiagnostics,
+  AppDiscoveryEntry,
   CommandLifecycleDiagnostics,
   CommandRecord,
   EnvironmentDiagnostics,
@@ -42,6 +44,7 @@ export const PendingApprovalPanel = () => {
   const systemResources = getSystemResources(lastMaintenanceScan);
   const processResources = getProcessResources(lastMaintenanceScan);
   const networkPorts = getNetworkPorts(lastMaintenanceScan);
+  const appDiscovery = getAppDiscoveryDiagnostics(lastMaintenanceScan);
   const environment = getEnvironmentDiagnostics(lastMaintenanceScan);
   const evidenceAudit = getEvidenceAudit(lastMaintenanceScan);
   const findings = getMaintenanceFindings(lastMaintenanceScan);
@@ -125,6 +128,7 @@ export const PendingApprovalPanel = () => {
               actionTimeline={actionTimeline}
             />
           )}
+          <AppDiscoverySummary diagnostics={appDiscovery} />
           {(systemResources || processResources || networkPorts) && (
             <ResourceDiagnosticsSummary
               systemResources={systemResources}
@@ -341,6 +345,108 @@ const ResourceDiagnosticsSummary = ({
         <p className="mt-1 truncate text-[9px] font-mono text-foreground/45">
           listening: {listeningPorts.map((port) => `${port.port}:${port.listeners[0]?.process_name ?? port.listeners[0]?.pid ?? 'unknown'}`).join(', ')}
         </p>
+      )}
+    </div>
+  );
+};
+
+const AppDiscoverySummary = ({ diagnostics }: { diagnostics: AppDiscoveryDiagnostics | null }) => {
+  const entries = diagnostics?.entries ?? [];
+  const visibleEntries = orderAppDiscoveryEntries(entries).slice(0, 4);
+  const ambiguousCount = entries.filter((entry) => appDiscoveryState(entry) === 'ambiguous').length;
+  const missingPathCount = entries.filter((entry) => hasMissingExecutablePath(entry)).length;
+  const windowOnlyCount = entries.filter((entry) => isWindowOnlyAppDiscovery(entry)).length;
+  const possibleCount = entries.filter((entry) => entry.deterministic_verification_possible === true).length;
+
+  return (
+    <div className="mt-3 border-t border-white/10 pt-3">
+      <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest">
+        <span className="text-foreground/40">App Discovery</span>
+        <StatusBadge
+          label={diagnostics?.read_only === true ? 'READ ONLY' : 'UNAVAILABLE'}
+          tone={diagnostics?.read_only === true ? 'info' : 'unknown'}
+        />
+      </div>
+      {!diagnostics ? (
+        <p className="mt-2 text-[9px] font-mono text-foreground/35">App discovery diagnostics unavailable.</p>
+      ) : (
+        <>
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
+            <AuditMetric label="entries" value={entries.length} />
+            <AuditMetric label="possible" value={possibleCount} tone="default" />
+            <AuditMetric label="ambiguous" value={ambiguousCount} tone={ambiguousCount > 0 ? 'warning' : 'default'} />
+            <AuditMetric label="missing path" value={missingPathCount} tone={missingPathCount > 0 ? 'warning' : 'default'} />
+            <AuditMetric label="window-only" value={windowOnlyCount} tone={windowOnlyCount > 0 ? 'warning' : 'default'} />
+            <AuditMetric label="actions" value={diagnostics.actions_performed.length} tone={diagnostics.actions_performed.length > 0 ? 'danger' : 'default'} />
+          </div>
+          <p className="mt-2 text-[9px] font-mono text-foreground/40">Discovery only; not launch proof.</p>
+          <div className="mt-2 space-y-1.5">
+            {visibleEntries.length > 0 ? (
+              visibleEntries.map((entry) => (
+                <AppDiscoveryEntryRow key={entry.app_id} entry={entry} />
+              ))
+            ) : (
+              <p className="rounded-md border border-white/10 bg-white/[0.02] px-2 py-1.5 text-[9px] font-mono text-foreground/35">
+                No configured app discovery entries were reported.
+              </p>
+            )}
+          </div>
+          {Array.isArray(diagnostics.observation_errors) && diagnostics.observation_errors.length > 0 && (
+            <p className="mt-2 line-clamp-2 text-[9px] font-mono text-warning/80">
+              observation: {diagnostics.observation_errors.join(', ')}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+const AppDiscoveryEntryRow = ({ entry }: { entry: AppDiscoveryEntry }) => {
+  const state = appDiscoveryState(entry);
+  const blockers = Array.isArray(entry.verification_blockers) ? entry.verification_blockers : [];
+  const processCandidates = Array.isArray(entry.process_name_candidates) ? entry.process_name_candidates : [];
+  const aliases = Array.isArray(entry.aliases) ? entry.aliases : [];
+  const matchingWindowCount = numberish(entry.matching_window_count) ?? 0;
+  const pidMatchedWindowCount = numberish(entry.pid_matched_window_count) ?? 0;
+  const pathLabel = executablePathLabel(entry);
+  const processLabel = entry.process_alive === true
+    ? `running ${formatPidList(entry.running_processes)}`
+    : entry.process_alive === false
+      ? 'process not observed'
+      : 'process unknown';
+  const windowLabel = matchingWindowCount > 0
+    ? `${matchingWindowCount} window${matchingWindowCount === 1 ? '' : 's'} / ${pidMatchedWindowCount} pid matched`
+    : 'no matching window';
+
+  return (
+    <div className={`rounded-md border px-2 py-1.5 ${appDiscoveryBorder(state)}`}>
+      <div className="flex items-center justify-between gap-2 text-[9px] font-mono">
+        <span className="truncate text-foreground/70">{entry.display_name ?? entry.app_id}</span>
+        <StatusBadge label={appDiscoveryLabel(entry)} tone={appDiscoveryBadgeTone(state)} />
+      </div>
+      <div className="mt-1 grid grid-cols-1 gap-1 text-[8px] font-mono text-foreground/45">
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate">path</span>
+          <span className={pathLabel.tone}>{pathLabel.label}</span>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate">process</span>
+          <span className={entry.process_alive === true ? 'text-foreground/65' : 'text-warning/80'}>{processLabel}</span>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate">window</span>
+          <span className={isWindowOnlyAppDiscovery(entry) ? 'text-warning/80' : 'text-foreground/55'}>{windowLabel}</span>
+        </div>
+      </div>
+      {processCandidates.length > 0 && (
+        <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">process: {processCandidates.join(', ')}</p>
+      )}
+      {aliases.length > 0 && (
+        <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">aliases: {aliases.slice(0, 4).join(', ')}</p>
+      )}
+      {blockers.length > 0 && (
+        <p className="mt-1 line-clamp-2 text-[8px] font-mono text-warning/80">blocked: {blockers.join(', ')}</p>
       )}
     </div>
   );
@@ -767,6 +873,13 @@ function getNetworkPorts(report: Record<string, unknown> | null): NetworkPortsDi
   return ports as NetworkPortsDiagnostics;
 }
 
+function getAppDiscoveryDiagnostics(report: Record<string, unknown> | null): AppDiscoveryDiagnostics | null {
+  const discovery = getCheck(report, 'app_discovery') as Partial<AppDiscoveryDiagnostics> | null;
+  if (!discovery || discovery.scan_version !== 'app-discovery-smoke/1' || discovery.read_only !== true) return null;
+  if (!Array.isArray(discovery.entries) || !Array.isArray(discovery.actions_performed)) return null;
+  return discovery as AppDiscoveryDiagnostics;
+}
+
 const EnvironmentSummary = ({ diagnostics }: { diagnostics: EnvironmentDiagnostics }) => {
   const checks = ['python', 'git', 'node', 'npm', 'playwright']
     .map((name) => ({ name, status: String(diagnostics.checks?.[name]?.status ?? 'unknown') }));
@@ -901,6 +1014,83 @@ function numberish(value: unknown): number | null {
 
 function countLabel(value: number | null): string {
   return value === null ? 'Unavailable' : String(value);
+}
+
+function appDiscoveryState(entry: AppDiscoveryEntry): 'possible' | 'ambiguous' | 'missing' | 'window-only' | 'unknown' {
+  const blockers = Array.isArray(entry.verification_blockers) ? entry.verification_blockers : [];
+  if (entry.ambiguity_status === 'ambiguous' || blockers.some((blocker) => blocker.startsWith('ambiguous_'))) return 'ambiguous';
+  if (isWindowOnlyAppDiscovery(entry)) return 'window-only';
+  if (hasMissingExecutablePath(entry) || blockers.includes('running_process_not_observed') || blockers.includes('matching_window_not_observed')) return 'missing';
+  if (entry.deterministic_verification_possible === true) return 'possible';
+  return 'unknown';
+}
+
+function appDiscoveryLabel(entry: AppDiscoveryEntry): string {
+  const state = appDiscoveryState(entry);
+  if (state === 'possible') return 'possible';
+  if (state === 'ambiguous') return 'ambiguous';
+  if (state === 'window-only') return 'window-only';
+  if (state === 'missing') return 'unavailable';
+  return 'unknown';
+}
+
+function appDiscoveryBadgeTone(state: ReturnType<typeof appDiscoveryState>): 'info' | 'warning' | 'unknown' {
+  if (state === 'possible') return 'info';
+  if (state === 'unknown') return 'unknown';
+  return 'warning';
+}
+
+function appDiscoveryBorder(state: ReturnType<typeof appDiscoveryState>): string {
+  if (state === 'possible') return 'border-accent/20 bg-accent/[0.03]';
+  if (state === 'unknown') return 'border-white/10 bg-white/[0.02]';
+  return 'border-warning/20 bg-warning/[0.03]';
+}
+
+function hasMissingExecutablePath(entry: AppDiscoveryEntry): boolean {
+  const candidates = Array.isArray(entry.executable_candidates) ? entry.executable_candidates : [];
+  return candidates.some((candidate) => candidate.path_exists === false || candidate.resolved_read_only === false);
+}
+
+function isWindowOnlyAppDiscovery(entry: AppDiscoveryEntry): boolean {
+  const matchingWindowCount = numberish(entry.matching_window_count) ?? 0;
+  const pidMatchedWindowCount = numberish(entry.pid_matched_window_count) ?? 0;
+  return matchingWindowCount > 0 && pidMatchedWindowCount === 0;
+}
+
+function executablePathLabel(entry: AppDiscoveryEntry): { label: string; tone: string } {
+  const candidates = Array.isArray(entry.executable_candidates) ? entry.executable_candidates : [];
+  if (candidates.length === 0) return { label: 'Unavailable', tone: 'text-foreground/45' };
+  if (candidates.some((candidate) => candidate.path_exists === false || candidate.resolved_read_only === false)) {
+    return { label: 'missing', tone: 'text-warning/80' };
+  }
+  if (candidates.some((candidate) => candidate.path_exists === true || candidate.resolved_read_only === true)) {
+    return { label: 'present', tone: 'text-foreground/65' };
+  }
+  return { label: 'unknown', tone: 'text-foreground/45' };
+}
+
+function formatPidList(processes: AppDiscoveryEntry['running_processes']): string {
+  const pids = (Array.isArray(processes) ? processes : []).flatMap((process) => (
+    Array.isArray(process.pids) ? process.pids : []
+  ));
+  return pids.length > 0 ? pids.slice(0, 3).join(',') : 'observed';
+}
+
+function orderAppDiscoveryEntries(entries: AppDiscoveryEntry[]): AppDiscoveryEntry[] {
+  const priority = new Set(['antigravity', 'antigravity_agent_manager']);
+  return [...entries].sort((a, b) => {
+    const priorityDelta = Number(priority.has(b.app_id)) - Number(priority.has(a.app_id));
+    if (priorityDelta !== 0) return priorityDelta;
+    return appDiscoveryStateRank(appDiscoveryState(b)) - appDiscoveryStateRank(appDiscoveryState(a));
+  });
+}
+
+function appDiscoveryStateRank(state: ReturnType<typeof appDiscoveryState>): number {
+  if (state === 'ambiguous') return 4;
+  if (state === 'window-only') return 3;
+  if (state === 'missing') return 2;
+  if (state === 'unknown') return 1;
+  return 0;
 }
 
 function formatBytes(value: number): string {

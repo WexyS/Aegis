@@ -287,6 +287,62 @@ export interface NetworkPortsDiagnostics {
   error?: string;
 }
 
+export interface AppDiscoveryExecutableCandidate {
+  configured: string;
+  expanded: string;
+  path_exists?: boolean | null;
+  resolved_read_only?: boolean | null;
+  resolved_path?: string | null;
+}
+
+export interface AppDiscoveryRunningProcess {
+  process_name: string;
+  pids: number[];
+  process_alive: boolean;
+}
+
+export interface AppDiscoveryWindowCandidate {
+  title?: string | null;
+  hwnd?: number | null;
+  pid?: number | null;
+  visible?: boolean | null;
+  is_minimized?: boolean | null;
+  pid_matches_process?: boolean | null;
+  matching_configured_app_ids: string[];
+}
+
+export interface AppDiscoveryEntry {
+  app_id: string;
+  known: boolean;
+  read_only: boolean;
+  display_name?: string;
+  source?: string;
+  aliases?: string[];
+  executable_candidates?: AppDiscoveryExecutableCandidate[];
+  process_name_candidates?: string[];
+  running_processes?: AppDiscoveryRunningProcess[];
+  process_alive?: boolean | null;
+  window_keywords?: string[];
+  matching_windows?: AppDiscoveryWindowCandidate[];
+  matching_window_count?: number;
+  pid_matched_window_count?: number;
+  ambiguous_title_windows?: AppDiscoveryWindowCandidate[];
+  ambiguity_status?: string;
+  deterministic_verification_possible: boolean;
+  verification_blockers: string[];
+  diagnostic_state: string;
+  actions_performed?: unknown[];
+}
+
+export interface AppDiscoveryDiagnostics {
+  scan_version: string;
+  read_only: boolean;
+  actions_performed: unknown[];
+  entry_count: number;
+  entries: AppDiscoveryEntry[];
+  observation_errors?: string[];
+}
+
 export interface MaintenanceFinding {
   finding_id: string;
   category: 'telemetry' | 'runtime' | 'config' | 'dependency' | 'security' | 'test' | 'documentation' | string;
