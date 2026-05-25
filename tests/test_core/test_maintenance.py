@@ -72,6 +72,73 @@ def test_maintenance_scan_read_only_contract_has_no_observed_mutations() -> None
     assert contract["allowed_ephemeral_state"] == ["last_maintenance_scan_cache"]
 
 
+def test_maintenance_scan_surfaces_read_only_replay_diagnostics(monkeypatch, tmp_path) -> None:
+    journal_path = tmp_path / "runtime_events.jsonl"
+    journal_path.write_text(
+        '{"type":"COMMAND_RECEIVED","sequence_num":5,"event_hash":"hash-5","payload":{}}\n'
+        '{"type":"SNAPSHOT_CREATED","sequence_num":7,"event_hash":"hash-7","previous_hash":"hash-5","payload":{"missed_events":[]}}\n',
+        encoding="utf-8",
+    )
+    before = journal_path.read_bytes()
+
+    class FakeJournal:
+        def snapshot(self) -> dict:
+            return {
+                "journal_path": str(journal_path),
+                "event_count": 2,
+                "last_sequence_num": 7,
+                "last_event_hash": "hash-7",
+                "integrity_status": "hash-chain",
+                "historical_integrity_status": "ok",
+                "historical_integrity_breaks": 0,
+            }
+
+        def recent_events(self) -> list[dict]:
+            return []
+
+    monkeypatch.setattr(maintenance, "get_runtime_journal", lambda: FakeJournal())
+    monkeypatch.setattr(
+        maintenance,
+        "build_configured_app_discovery_smoke",
+        lambda: {
+            "scan_version": "app-discovery-smoke/1",
+            "read_only": True,
+            "status": "ok",
+            "entries": [],
+            "actions_performed": [],
+            "observation_errors": [],
+        },
+    )
+
+    report = maintenance.run_read_only_maintenance_scan(
+        runtime_snapshot={
+            "session_id": "test-replay-diagnostics",
+            "last_event_sequence": 7,
+            "queue_depth": 0,
+            "queue_capacity": 1,
+            "recovery_depth": 0,
+        },
+        websocket_clients=None,
+    )
+
+    replay = report["checks"]["replay_diagnostics"]
+    replay_finding = next(
+        finding for finding in report["findings"]
+        if finding["finding_id"] == "runtime.replay_gap.diagnostics_attention"
+    )
+
+    assert journal_path.read_bytes() == before
+    assert replay["read_only"] is True
+    assert replay["mutated"] is False
+    assert replay["status"] == "fail"
+    assert replay["sequence"]["gap_count"] == 1
+    assert replay["replay_boundary"]["cleanup_execution_blocked"] is True
+    assert report["summary"]["component_statuses"]["replay_diagnostics"] == "fail"
+    assert "runtime_replay_gap_diagnostics" in report["checks"]["read_only_contract"]["allowed_observations"]
+    assert replay_finding["read_only"] is True
+    assert replay_finding["evidence"]["gap_count"] == 1
+
+
 def test_workspace_directory_report_is_read_only_and_evidence_backed(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(maintenance, "PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(maintenance_actions, "PROJECT_ROOT", tmp_path)

@@ -20,6 +20,7 @@ BOUNDARY_STATUS_BOUNDARY_CANDIDATE = "boundary_candidate"
 BOUNDARY_STATUS_BOUNDARY_CANDIDATE_WITH_WARNINGS = "boundary_candidate_with_warnings"
 BOUNDARY_STATUS_MIXED_SEQUENCE_ERAS_BLOCKED = "mixed_sequence_eras_blocked"
 BOUNDARY_STATUS_SEQUENCE_GAP_BLOCKED = "sequence_gap_blocked"
+BOUNDARY_STATUS_DUPLICATE_SEQUENCE_BLOCKED = "duplicate_sequence_blocked"
 BOUNDARY_STATUS_HASH_CHAIN_BOUNDARY_REQUIRED = "hash_chain_boundary_required"
 BOUNDARY_STATUS_MALFORMED_JOURNAL_BLOCKED = "malformed_journal_blocked"
 BOUNDARY_STATUS_MISSING_JOURNAL_BLOCKED = "missing_journal_blocked"
@@ -39,9 +40,12 @@ EXECUTION_STATUS_BLOCKED_MISSING_BACKUP = "execution_blocked_missing_backup"
 EXECUTION_STATUS_BLOCKED_MISSING_RESTORE_PLAN = "execution_blocked_missing_restore_plan"
 EXECUTION_STATUS_BLOCKED_SEQUENCE_GAP = "execution_blocked_sequence_gap"
 EXECUTION_STATUS_BLOCKED_MIXED_SEQUENCE_ERAS = "execution_blocked_mixed_sequence_eras"
+EXECUTION_STATUS_BLOCKED_DUPLICATE_SEQUENCE = "execution_blocked_duplicate_sequence"
 EXECUTION_STATUS_BLOCKED_HASH_CHAIN_RISK = "execution_blocked_hash_chain_risk"
 EXECUTION_STATUS_BLOCKED_MALFORMED_JOURNAL = "execution_blocked_malformed_journal"
 EXECUTION_STATUS_BLOCKED_MISSING_JOURNAL = "execution_blocked_missing_journal"
+
+REPLAY_DIAGNOSTICS_VERSION = "runtime-replay-gap-diagnostics/1"
 
 REQUIRED_OPERATOR_CONFIRMATIONS = [
     "confirm_original_journal_sha256_matches_manifest",
@@ -196,6 +200,181 @@ def scan_runtime_journal_snapshot_bloat(journal_path: str | Path) -> dict[str, A
     return report
 
 
+def build_runtime_replay_gap_diagnostics(
+    journal_path: str | Path,
+    *,
+    sample_limit: int = 20,
+) -> dict[str, Any]:
+    """Explain replay sequence hazards without mutating journal history."""
+
+    path = Path(journal_path)
+    limit = max(0, int(sample_limit))
+    diagnostics: dict[str, Any] = {
+        "scan_version": REPLAY_DIAGNOSTICS_VERSION,
+        "journal_path": str(path),
+        "exists": path.exists(),
+        "read_only": True,
+        "mutated": False,
+        "status": "ok",
+        "event_count": 0,
+        "total_bytes": 0,
+        "parse_error_count": 0,
+        "sequence": {
+            "first_sequence_num": None,
+            "last_sequence_num": None,
+            "min_sequence_num": None,
+            "max_sequence_num": None,
+            "monotonic": True,
+            "gap_count": 0,
+            "gaps": [],
+            "decrease_count": 0,
+            "decreases": [],
+            "duplicate_occurrence_count": 0,
+            "duplicate_sequence_count": 0,
+            "duplicate_sequences": [],
+            "mixed_sequence_eras_suspected": False,
+        },
+        "control_plane": {
+            "event_count": 0,
+            "snapshot_created_count": 0,
+            "system_online_count": 0,
+            "recursive_snapshot_risk_count": 0,
+            "recursive_snapshot_sequences": [],
+            "block_count": 0,
+            "interleaved_with_runtime_events": False,
+        },
+        "hash_chain": {
+            "checked_links": 0,
+            "mismatch_count": 0,
+            "mismatches": [],
+            "risk": False,
+        },
+        "replay_boundary": {
+            "classification": "no_replay_gap_detected",
+            "snapshot_resync_fallback_risk": False,
+            "cleanup_execution_blocked": False,
+            "archive_or_compaction_requires_explicit_boundary": False,
+        },
+        "relationships": {
+            "restored_pending_approvals": (
+                "Replay discontinuities can affect historical restore scope; restored approvals must remain "
+                "visible until resolved through backend lifecycle state."
+            ),
+            "unverified_completed": (
+                "Replay diagnostics can explain historical command-lifecycle ambiguity but do not convert "
+                "unverified completed commands into verified evidence."
+            ),
+            "evidence_audit": (
+                "Replay diagnostics may help classify historical evidence gaps; current missing or failed "
+                "evidence remains non-success unless explicit verifier evidence exists."
+            ),
+        },
+        "operator_guidance": [
+            "No mutation was performed by this diagnostic.",
+            "Do not delete, rewrite, truncate, resequence, archive, or compact the journal from this report.",
+            "Archive or compaction execution still requires explicit boundary approval, backup, restore plan, replay validation, and evidence validation.",
+            "Do not hide restored pending approvals or mark unverified completed commands as verified.",
+        ],
+        "warnings": [],
+        "blockers": [],
+    }
+
+    if not path.exists():
+        diagnostics["status"] = "warning"
+        diagnostics["blockers"].append("journal_missing")
+        diagnostics["warnings"].append("Journal file does not exist; replay diagnostics are unavailable.")
+        diagnostics["replay_boundary"].update(
+            {
+                "classification": "journal_missing",
+                "cleanup_execution_blocked": True,
+            }
+        )
+        return diagnostics
+
+    seen_sequences: dict[int, int] = {}
+    duplicate_sequence_numbers: set[int] = set()
+    control_lines: list[int] = []
+    previous_sequence: int | None = None
+    previous_hash: str | None = None
+    previous_line: int | None = None
+    sequence = diagnostics["sequence"]
+    control = diagnostics["control_plane"]
+    hash_chain = diagnostics["hash_chain"]
+
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            diagnostics["total_bytes"] += len(line.encode("utf-8"))
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                diagnostics["parse_error_count"] += 1
+                continue
+
+            diagnostics["event_count"] += 1
+            event_type = str(event.get("type") or event.get("event_type") or "")
+            sequence_num = _coerce_sequence(event.get("sequence_num"))
+            _record_boundary_sequence(sequence, sequence_num, line_number, previous_sequence, sample_limit=limit)
+            if sequence_num is not None:
+                if sequence["min_sequence_num"] is None or sequence_num < sequence["min_sequence_num"]:
+                    sequence["min_sequence_num"] = sequence_num
+                if sequence["max_sequence_num"] is None or sequence_num > sequence["max_sequence_num"]:
+                    sequence["max_sequence_num"] = sequence_num
+                seen_count = seen_sequences.get(sequence_num, 0)
+                seen_sequences[sequence_num] = seen_count + 1
+                if seen_count:
+                    sequence["duplicate_occurrence_count"] += 1
+                    duplicate_sequence_numbers.add(sequence_num)
+                    if len(sequence["duplicate_sequences"]) < limit:
+                        sequence["duplicate_sequences"].append(
+                            {
+                                "line": line_number,
+                                "sequence_num": sequence_num,
+                                "occurrence": seen_count + 1,
+                            }
+                        )
+                previous_sequence = sequence_num
+
+            if previous_hash is not None:
+                current_previous_hash = event.get("previous_hash")
+                if isinstance(current_previous_hash, str):
+                    hash_chain["checked_links"] += 1
+                    if current_previous_hash != previous_hash:
+                        hash_chain["mismatch_count"] += 1
+                        if len(hash_chain["mismatches"]) < limit:
+                            hash_chain["mismatches"].append(
+                                {
+                                    "line": line_number,
+                                    "sequence_num": sequence_num,
+                                    "expected_previous_hash": previous_hash,
+                                    "observed_previous_hash": current_previous_hash,
+                                    "previous_line": previous_line,
+                                }
+                            )
+            event_hash = event.get("event_hash")
+            if isinstance(event_hash, str) and event_hash:
+                previous_hash = event_hash
+                previous_line = line_number
+
+            if event_type in CONTROL_PLANE_EVENT_TYPES:
+                control_lines.append(line_number)
+                control["event_count"] += 1
+                if event_type == "SNAPSHOT_CREATED":
+                    control["snapshot_created_count"] += 1
+                    if _has_recursive_snapshot_risk(event):
+                        control["recursive_snapshot_risk_count"] += 1
+                        if len(control["recursive_snapshot_sequences"]) < limit:
+                            control["recursive_snapshot_sequences"].append(sequence_num or line_number)
+                elif event_type == "SYSTEM_ONLINE":
+                    control["system_online_count"] += 1
+
+    sequence["duplicate_sequence_count"] = len(duplicate_sequence_numbers)
+    _record_control_blocks(control, control_lines)
+    _classify_replay_gap_diagnostics(diagnostics)
+    return diagnostics
+
+
 def validate_runtime_journal_compaction_boundary(journal_path: str | Path) -> dict[str, Any]:
     """Classify journal compaction boundary readiness without mutating history."""
 
@@ -228,6 +407,9 @@ def validate_runtime_journal_compaction_boundary(journal_path: str | Path) -> di
             "gaps": [],
             "decrease_count": 0,
             "decreases": [],
+            "duplicate_occurrence_count": 0,
+            "duplicate_sequence_count": 0,
+            "duplicate_sequences": [],
             "mixed_sequence_eras_suspected": False,
         },
         "hash_chain": {
@@ -250,6 +432,8 @@ def validate_runtime_journal_compaction_boundary(journal_path: str | Path) -> di
         return validation
 
     control_lines: list[int] = []
+    seen_sequences: dict[int, int] = {}
+    duplicate_sequence_numbers: set[int] = set()
     previous_sequence: int | None = None
     previous_hash: str | None = None
     previous_line: int | None = None
@@ -269,6 +453,19 @@ def validate_runtime_journal_compaction_boundary(journal_path: str | Path) -> di
             sequence_num = _coerce_sequence(event.get("sequence_num"))
             _record_boundary_sequence(validation["sequence"], sequence_num, line_number, previous_sequence)
             if sequence_num is not None:
+                seen_count = seen_sequences.get(sequence_num, 0)
+                seen_sequences[sequence_num] = seen_count + 1
+                if seen_count:
+                    validation["sequence"]["duplicate_occurrence_count"] += 1
+                    duplicate_sequence_numbers.add(sequence_num)
+                    if len(validation["sequence"]["duplicate_sequences"]) < 20:
+                        validation["sequence"]["duplicate_sequences"].append(
+                            {
+                                "line": line_number,
+                                "sequence_num": sequence_num,
+                                "occurrence": seen_count + 1,
+                            }
+                        )
                 previous_sequence = sequence_num
 
             if previous_hash is not None:
@@ -307,6 +504,7 @@ def validate_runtime_journal_compaction_boundary(journal_path: str | Path) -> di
                     evidence["sequences"].append(sequence_num)
 
     _record_control_blocks(validation["control_plane"], control_lines)
+    validation["sequence"]["duplicate_sequence_count"] = len(duplicate_sequence_numbers)
     _classify_boundary_validation(validation)
     return validation
 
@@ -536,6 +734,8 @@ def evaluate_runtime_journal_compaction_execution_readiness(manifest: dict[str, 
         return block(EXECUTION_STATUS_BLOCKED_SEQUENCE_GAP, "sequence_gaps")
     if boundary_status == BOUNDARY_STATUS_MIXED_SEQUENCE_ERAS_BLOCKED or "mixed_sequence_eras" in blockers:
         return block(EXECUTION_STATUS_BLOCKED_MIXED_SEQUENCE_ERAS, "mixed_sequence_eras")
+    if boundary_status == BOUNDARY_STATUS_DUPLICATE_SEQUENCE_BLOCKED or "duplicate_sequences" in blockers:
+        return block(EXECUTION_STATUS_BLOCKED_DUPLICATE_SEQUENCE, "duplicate_sequences")
     if boundary_status == BOUNDARY_STATUS_HASH_CHAIN_BOUNDARY_REQUIRED:
         readiness["requires_explicit_boundary_approval"] = True
         return block(EXECUTION_STATUS_BLOCKED_HASH_CHAIN_RISK, "hash_chain_boundary_required")
@@ -645,6 +845,8 @@ def _record_boundary_sequence(
     sequence_num: int | None,
     line_number: int,
     previous_sequence: int | None,
+    *,
+    sample_limit: int = 20,
 ) -> None:
     if sequence_num is None:
         return
@@ -657,23 +859,25 @@ def _record_boundary_sequence(
         sequence["monotonic"] = False
         sequence["decrease_count"] += 1
         sequence["mixed_sequence_eras_suspected"] = True
-        sequence["decreases"].append(
-            {
-                "line": line_number,
-                "previous_sequence_num": previous_sequence,
-                "sequence_num": sequence_num,
-            }
-        )
+        if len(sequence["decreases"]) < sample_limit:
+            sequence["decreases"].append(
+                {
+                    "line": line_number,
+                    "previous_sequence_num": previous_sequence,
+                    "sequence_num": sequence_num,
+                }
+            )
     elif sequence_num > previous_sequence + 1:
         sequence["gap_count"] += 1
-        sequence["gaps"].append(
-            {
-                "line": line_number,
-                "after_sequence_num": previous_sequence,
-                "sequence_num": sequence_num,
-                "missing_count": sequence_num - previous_sequence - 1,
-            }
-        )
+        if len(sequence["gaps"]) < sample_limit:
+            sequence["gaps"].append(
+                {
+                    "line": line_number,
+                    "after_sequence_num": previous_sequence,
+                    "sequence_num": sequence_num,
+                    "missing_count": sequence_num - previous_sequence - 1,
+                }
+            )
 
 
 def _record_control_blocks(control: dict[str, Any], control_lines: list[int]) -> None:
@@ -687,6 +891,52 @@ def _record_control_blocks(control: dict[str, Any], control_lines: list[int]) ->
     first_line = control_lines[0]
     last_line = control_lines[-1]
     control["interleaved_with_runtime_events"] = (last_line - first_line + 1) != len(control_lines)
+
+
+def _classify_replay_gap_diagnostics(diagnostics: dict[str, Any]) -> None:
+    sequence = diagnostics["sequence"]
+    control = diagnostics["control_plane"]
+    hash_chain = diagnostics["hash_chain"]
+    replay_boundary = diagnostics["replay_boundary"]
+
+    if diagnostics["parse_error_count"]:
+        diagnostics["status"] = "fail"
+        diagnostics["blockers"].append("journal_parse_errors")
+        diagnostics["warnings"].append("Malformed journal lines block trustworthy replay diagnostics.")
+        replay_boundary["classification"] = "malformed_journal"
+    elif sequence["decrease_count"]:
+        diagnostics["status"] = "fail"
+        diagnostics["blockers"].append("mixed_sequence_eras")
+        diagnostics["warnings"].append("Sequence decreases indicate mixed historical sequence eras or reset boundaries.")
+        replay_boundary["classification"] = "historical_mixed_sequence_eras_or_reset_boundaries"
+        replay_boundary["snapshot_resync_fallback_risk"] = True
+    elif sequence["gap_count"]:
+        diagnostics["status"] = "fail"
+        diagnostics["blockers"].append("sequence_gaps")
+        diagnostics["warnings"].append("Sequence gaps require explicit replay analysis before cleanup planning.")
+        replay_boundary["classification"] = "sequence_gap_or_snapshot_resync_boundary"
+        replay_boundary["snapshot_resync_fallback_risk"] = True
+    elif sequence["duplicate_occurrence_count"]:
+        diagnostics["status"] = "fail"
+        diagnostics["blockers"].append("duplicate_sequences")
+        diagnostics["warnings"].append("Duplicate sequence numbers can make replay cursor semantics ambiguous.")
+        replay_boundary["classification"] = "duplicate_sequence_numbers"
+        replay_boundary["snapshot_resync_fallback_risk"] = True
+    elif hash_chain["mismatch_count"]:
+        diagnostics["status"] = "warning"
+        diagnostics["blockers"].append("hash_chain_boundary_required")
+        diagnostics["warnings"].append("Hash-chain mismatches require an explicit boundary before cleanup execution.")
+        replay_boundary["classification"] = "hash_chain_boundary_required"
+    elif control["recursive_snapshot_risk_count"]:
+        diagnostics["status"] = "warning"
+        diagnostics["warnings"].append("Historical snapshots embed replay/control-plane events and should stay read-only until explicit cleanup planning.")
+        replay_boundary["classification"] = "historical_control_plane_bloat"
+
+    if control["event_count"]:
+        replay_boundary["archive_or_compaction_requires_explicit_boundary"] = True
+    if diagnostics["status"] == "fail" or diagnostics["blockers"]:
+        replay_boundary["cleanup_execution_blocked"] = True
+    hash_chain["risk"] = bool(hash_chain["mismatch_count"])
 
 
 def _classify_boundary_validation(validation: dict[str, Any]) -> None:
@@ -709,6 +959,12 @@ def _classify_boundary_validation(validation: dict[str, Any]) -> None:
         validation["compaction_readiness"] = COMPACTION_READINESS_BLOCKED
         validation["blockers"].append("sequence_gaps")
         validation["warnings"].append("Sequence gaps require explicit replay analysis before compaction.")
+        return
+    if sequence["duplicate_occurrence_count"]:
+        validation["status"] = BOUNDARY_STATUS_DUPLICATE_SEQUENCE_BLOCKED
+        validation["compaction_readiness"] = COMPACTION_READINESS_BLOCKED
+        validation["blockers"].append("duplicate_sequences")
+        validation["warnings"].append("Duplicate sequence numbers block archive/compaction planning.")
         return
 
     hash_chain = validation["hash_chain"]

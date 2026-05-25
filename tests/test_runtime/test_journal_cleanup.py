@@ -15,6 +15,7 @@ from aegis.core.journal_cleanup import (
     BOUNDARY_STATUS_MISSING_JOURNAL_BLOCKED,
     BOUNDARY_STATUS_MIXED_SEQUENCE_ERAS_BLOCKED,
     BOUNDARY_STATUS_NO_COMPACTION_NEEDED,
+    BOUNDARY_STATUS_DUPLICATE_SEQUENCE_BLOCKED,
     BOUNDARY_STATUS_SEQUENCE_GAP_BLOCKED,
     COMPACTION_READINESS_ARCHIVE_PLAN_ONLY,
     COMPACTION_READINESS_BLOCKED,
@@ -25,11 +26,13 @@ from aegis.core.journal_cleanup import (
     EXECUTION_STATUS_BLOCKED_MALFORMED_JOURNAL,
     EXECUTION_STATUS_BLOCKED_MISSING_JOURNAL,
     EXECUTION_STATUS_BLOCKED_MIXED_SEQUENCE_ERAS,
+    EXECUTION_STATUS_BLOCKED_DUPLICATE_SEQUENCE,
     EXECUTION_STATUS_BLOCKED_SEQUENCE_GAP,
     EXECUTION_STATUS_COMPACTION_REQUIRES_BOUNDARY_APPROVAL,
     EXECUTION_STATUS_NOT_NEEDED,
     MANIFEST_SCHEMA_VERSION,
     build_runtime_journal_compaction_manifest,
+    build_runtime_replay_gap_diagnostics,
     evaluate_runtime_journal_compaction_execution_readiness,
     scan_runtime_journal_snapshot_bloat,
     validate_runtime_journal_compaction_boundary,
@@ -581,6 +584,76 @@ def test_boundary_validation_sequence_gap_and_mixed_sequence_eras_block_compacti
     assert mixed["compaction_readiness"] == COMPACTION_READINESS_BLOCKED
     assert "mixed_sequence_eras" in mixed["blockers"]
     assert mixed["sequence"]["mixed_sequence_eras_suspected"] is True
+
+
+def test_replay_gap_diagnostics_reports_discontinuities_without_mutating_journal(tmp_path) -> None:
+    journal_path = tmp_path / "runtime_events.jsonl"
+    _write_jsonl(
+        journal_path,
+        [
+            {"type": "COMMAND_RECEIVED", "sequence_num": 10, "event_hash": "hash-10", "payload": {}},
+            {
+                "type": "SNAPSHOT_CREATED",
+                "sequence_num": 12,
+                "event_hash": "hash-12",
+                "previous_hash": "hash-10",
+                "payload": {"missed_events": [{"type": "SYSTEM_ONLINE", "sequence_num": 9}]},
+            },
+            {
+                "type": "ACTION_FAILED",
+                "sequence_num": 12,
+                "event_hash": "hash-12b",
+                "previous_hash": "hash-12",
+                "payload": {"success": False, "execution_evidence": {"verification_state": "failed"}},
+            },
+            {"type": "SYSTEM_ONLINE", "sequence_num": 3, "event_hash": "hash-3", "previous_hash": "hash-12b", "payload": {}},
+        ],
+    )
+    before = journal_path.read_bytes()
+
+    diagnostics = build_runtime_replay_gap_diagnostics(journal_path)
+
+    assert journal_path.read_bytes() == before
+    assert diagnostics["read_only"] is True
+    assert diagnostics["mutated"] is False
+    assert diagnostics["status"] == "fail"
+    assert diagnostics["replay_boundary"]["classification"] == "historical_mixed_sequence_eras_or_reset_boundaries"
+    assert diagnostics["replay_boundary"]["cleanup_execution_blocked"] is True
+    assert diagnostics["sequence"]["gap_count"] == 1
+    assert diagnostics["sequence"]["decrease_count"] == 1
+    assert diagnostics["sequence"]["duplicate_occurrence_count"] == 1
+    assert diagnostics["sequence"]["duplicate_sequence_count"] == 1
+    assert diagnostics["control_plane"]["snapshot_created_count"] == 1
+    assert diagnostics["control_plane"]["system_online_count"] == 1
+    assert diagnostics["control_plane"]["recursive_snapshot_risk_count"] == 1
+    assert "mixed_sequence_eras" in diagnostics["blockers"]
+    assert "restored approvals must remain visible" in diagnostics["relationships"]["restored_pending_approvals"]
+    assert "do not convert" in diagnostics["relationships"]["unverified_completed"]
+    assert "current missing or failed evidence remains non-success" in diagnostics["relationships"]["evidence_audit"]
+
+
+def test_boundary_validation_duplicate_sequences_block_compaction_execution(tmp_path) -> None:
+    journal_path = tmp_path / "duplicate_runtime_events.jsonl"
+    _write_jsonl(
+        journal_path,
+        [
+            {"type": "COMMAND_RECEIVED", "sequence_num": 1, "payload": {}},
+            {"type": "SNAPSHOT_CREATED", "sequence_num": 1, "payload": {"missed_events": []}},
+        ],
+    )
+
+    validation = validate_runtime_journal_compaction_boundary(journal_path)
+    manifest = build_runtime_journal_compaction_manifest(journal_path, operation_id="op-duplicate")
+
+    assert validation["status"] == BOUNDARY_STATUS_DUPLICATE_SEQUENCE_BLOCKED
+    assert validation["compaction_readiness"] == COMPACTION_READINESS_BLOCKED
+    assert validation["sequence"]["duplicate_occurrence_count"] == 1
+    assert validation["sequence"]["duplicate_sequence_count"] == 1
+    assert "duplicate_sequences" in validation["blockers"]
+    assert manifest["execution_readiness_status"] == EXECUTION_STATUS_BLOCKED_DUPLICATE_SEQUENCE
+    assert manifest["execution_readiness"]["execution_blocked"] is True
+    assert manifest["execution_readiness"]["mutation_performed"] is False
+    assert manifest["mutation_performed"] is False
 
 
 def test_boundary_validation_hash_chain_mismatch_requires_explicit_boundary(tmp_path) -> None:

@@ -12,6 +12,7 @@ from aegis.core.commands import get_approval_manager
 from aegis.core.environment import collect_environment_diagnostics
 from aegis.core.evidence_audit import audit_action_evidence
 from aegis.core.event_journal import get_runtime_journal
+from aegis.core.journal_cleanup import build_runtime_replay_gap_diagnostics
 from aegis.core.maintenance_actions import build_maintenance_action_proposals
 from aegis.core.runtime_authority import peek_runtime_authority
 from aegis.core.system_diagnostics import (
@@ -145,6 +146,7 @@ def _runtime_health_summary(checks: dict[str, Any]) -> dict[str, Any]:
         "environment": checks["environment"]["overall_status"],
         "command_lifecycle": checks["command_lifecycle"]["status"],
         "runtime_snapshot": checks["runtime_snapshot"]["status"],
+        "replay_diagnostics": checks["replay_diagnostics"]["status"],
         "websocket": checks["websocket"]["status"],
         "action_timeline": checks["action_timeline"]["status"],
         "system_resources": checks["system_resources"]["status"],
@@ -221,6 +223,7 @@ def _read_only_contract() -> dict[str, Any]:
         "allowed_observations": [
             "backend_snapshot",
             "event_journal_snapshot",
+            "runtime_replay_gap_diagnostics",
             "recent_event_tail",
             "tool_registry_snapshot",
             "app_registry_snapshot",
@@ -484,6 +487,39 @@ def _findings_from_checks(checks: dict[str, Any]) -> list[dict[str, Any]]:
             recommendation="Repair or rotate the journal only after preserving evidence for replay.",
         ))
 
+    replay_diagnostics = checks["replay_diagnostics"]
+    if replay_diagnostics.get("status") not in {"ok", "unknown"}:
+        sequence = replay_diagnostics.get("sequence") if isinstance(replay_diagnostics, dict) else {}
+        sequence = sequence if isinstance(sequence, dict) else {}
+        control_plane = replay_diagnostics.get("control_plane") if isinstance(replay_diagnostics, dict) else {}
+        control_plane = control_plane if isinstance(control_plane, dict) else {}
+        replay_boundary = replay_diagnostics.get("replay_boundary") if isinstance(replay_diagnostics, dict) else {}
+        replay_boundary = replay_boundary if isinstance(replay_boundary, dict) else {}
+        findings.append(_finding(
+            "runtime.replay_gap.diagnostics_attention",
+            category="runtime",
+            severity="fail" if replay_diagnostics.get("status") == "fail" else "warning",
+            source="checks.replay_diagnostics.status",
+            reason="Runtime replay diagnostics found journal sequence or replay-boundary attention.",
+            evidence={
+                "status": replay_diagnostics.get("status"),
+                "classification": replay_boundary.get("classification"),
+                "cleanup_execution_blocked": replay_boundary.get("cleanup_execution_blocked"),
+                "parse_error_count": replay_diagnostics.get("parse_error_count"),
+                "decrease_count": sequence.get("decrease_count"),
+                "gap_count": sequence.get("gap_count"),
+                "duplicate_occurrence_count": sequence.get("duplicate_occurrence_count"),
+                "duplicate_sequence_count": sequence.get("duplicate_sequence_count"),
+                "snapshot_created_count": control_plane.get("snapshot_created_count"),
+                "system_online_count": control_plane.get("system_online_count"),
+                "recursive_snapshot_risk_count": control_plane.get("recursive_snapshot_risk_count"),
+            },
+            recommendation=(
+                "Treat replay diagnostics as read-only planning input; do not archive, compact, resequence, "
+                "or hide restored decisions without an explicit operator-approved cleanup sprint."
+            ),
+        ))
+
     tool_registry = checks["tool_registry"]
     if tool_registry.get("status") != "ok":
         findings.append(_finding(
@@ -578,6 +614,8 @@ def run_read_only_maintenance_scan(
     settings = get_settings()
     runtime_journal = get_runtime_journal()
     journal = runtime_journal.snapshot()
+    journal_path = journal.get("journal_path") or (Path(settings.logging.directory) / "runtime_events.jsonl")
+    replay_diagnostics = build_runtime_replay_gap_diagnostics(journal_path)
     recent_events = runtime_journal.recent_events()
     if runtime_snapshot is None:
         authority = peek_runtime_authority()
@@ -633,6 +671,7 @@ def run_read_only_maintenance_scan(
     checks = {
         "tool_registry": tool_registry,
         "event_journal": event_journal,
+        "replay_diagnostics": replay_diagnostics,
         "evidence_audit": evidence_audit,
         "app_registry": app_registry,
         "app_discovery": app_discovery,
