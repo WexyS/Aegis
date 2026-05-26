@@ -14,6 +14,7 @@ from aegis.core.evidence_audit import audit_action_evidence
 from aegis.core.event_journal import get_runtime_journal
 from aegis.core.journal_cleanup import build_runtime_replay_gap_diagnostics
 from aegis.core.maintenance_actions import build_maintenance_action_proposals
+from aegis.core.pending_decision_hygiene import build_pending_decision_hygiene_report
 from aegis.core.runtime_authority import peek_runtime_authority
 from aegis.core.system_diagnostics import (
     collect_network_port_snapshot,
@@ -145,6 +146,7 @@ def _runtime_health_summary(checks: dict[str, Any]) -> dict[str, Any]:
         "app_registry": checks["app_registry"].get("status", "ok"),
         "environment": checks["environment"]["overall_status"],
         "command_lifecycle": checks["command_lifecycle"]["status"],
+        "pending_decision_hygiene": checks["pending_decision_hygiene"]["status"],
         "runtime_snapshot": checks["runtime_snapshot"]["status"],
         "replay_diagnostics": checks["replay_diagnostics"]["status"],
         "websocket": checks["websocket"]["status"],
@@ -224,6 +226,7 @@ def _read_only_contract() -> dict[str, Any]:
             "backend_snapshot",
             "event_journal_snapshot",
             "runtime_replay_gap_diagnostics",
+            "pending_decision_hygiene_diagnostics",
             "recent_event_tail",
             "tool_registry_snapshot",
             "app_registry_snapshot",
@@ -340,6 +343,29 @@ def _findings_from_checks(checks: dict[str, Any]) -> list[dict[str, Any]]:
             reason="At least one executed command is not backed by verified evidence.",
             evidence={"unverified_completed_count": command_lifecycle.get("unverified_completed_count")},
             recommendation="Route completed commands through evidence audit before displaying success.",
+        ))
+
+    pending_decision_hygiene = checks["pending_decision_hygiene"]
+    if int(pending_decision_hygiene.get("restored_unresolved_count") or 0) > 0:
+        findings.append(_finding(
+            "runtime.pending_decision_hygiene.restored_unresolved",
+            category="runtime",
+            severity="warning",
+            source="checks.pending_decision_hygiene.restored_unresolved_count",
+            reason="Backend command lifecycle contains restored unresolved pending decisions.",
+            evidence={
+                "pending_count": pending_decision_hygiene.get("pending_count"),
+                "restored_unresolved_count": pending_decision_hygiene.get("restored_unresolved_count"),
+                "stale_restored_unresolved_count": pending_decision_hygiene.get("stale_restored_unresolved_count"),
+                "unknown_age_count": pending_decision_hygiene.get("unknown_age_count"),
+                "approval_count": pending_decision_hygiene.get("approval_count"),
+                "clarification_count": pending_decision_hygiene.get("clarification_count"),
+                "top_command_texts": pending_decision_hygiene.get("top_command_texts", []),
+            },
+            recommendation=(
+                "Review restored decisions through backend lifecycle controls; do not hide, delete, "
+                "or bulk-resolve them without a future explicit operator-confirmed hygiene flow."
+            ),
         ))
 
     evidence_audit = checks["evidence_audit"]
@@ -629,6 +655,7 @@ def run_read_only_maintenance_scan(
     log_dir = Path(settings.logging.directory)
     commands = get_approval_manager().snapshot()
     command_lifecycle = _command_lifecycle_snapshot(commands)
+    pending_decision_hygiene = build_pending_decision_hygiene_report(commands)
     runtime_snapshot_check = _runtime_snapshot_report(runtime_snapshot, journal)
     websocket = _websocket_report(
         session_id=effective_session_id,
@@ -682,6 +709,7 @@ def run_read_only_maintenance_scan(
         "workspace_directories": workspace_directories,
         "read_only_contract": read_only_contract,
         "command_lifecycle": command_lifecycle,
+        "pending_decision_hygiene": pending_decision_hygiene,
         "runtime_snapshot": runtime_snapshot_check,
         "websocket": websocket,
         "action_timeline": action_timeline,

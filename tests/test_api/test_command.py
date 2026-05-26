@@ -280,6 +280,10 @@ class TestMaintenanceEndpoint:
             assert data["checks"]["runtime_health"]["scan_version"] == "runtime-health/1"
             assert data["checks"]["runtime_snapshot"]["scan_version"] == "runtime-snapshot/1"
             assert data["checks"]["command_lifecycle"]["scan_version"] == "command-lifecycle/1"
+            assert data["checks"]["pending_decision_hygiene"]["scan_version"] == "pending-decision-hygiene/1"
+            assert data["checks"]["pending_decision_hygiene"]["read_only"] is True
+            assert data["checks"]["pending_decision_hygiene"]["mutation_performed"] is False
+            assert data["checks"]["pending_decision_hygiene"]["actions_performed"] == []
             assert data["checks"]["websocket"]["scan_version"] == "websocket-runtime/1"
             assert data["checks"]["action_timeline"]["scan_version"] == "action-timeline-health/1"
             assert data["checks"]["runtime_snapshot"]["sequence_aligned"] is True

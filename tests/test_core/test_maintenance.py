@@ -3,6 +3,8 @@ from __future__ import annotations
 from aegis.core import app_map
 from aegis.core import maintenance
 from aegis.core import maintenance_actions
+from aegis.core.commands import get_approval_manager
+from aegis.core.constants import RiskLevel
 from aegis.tools.desktop_tools import FocusTool, OpenAppTool
 
 
@@ -137,6 +139,63 @@ def test_maintenance_scan_surfaces_read_only_replay_diagnostics(monkeypatch, tmp
     assert "runtime_replay_gap_diagnostics" in report["checks"]["read_only_contract"]["allowed_observations"]
     assert replay_finding["read_only"] is True
     assert replay_finding["evidence"]["gap_count"] == 1
+
+
+def test_maintenance_scan_surfaces_read_only_pending_decision_hygiene() -> None:
+    manager = get_approval_manager()
+    manager.reset_for_tests()
+    try:
+        manager.register_pending(
+            command_id="cmd-maintenance-restored",
+            text="open notepad",
+            trace_id="trace-maintenance-restored",
+            risk_level=RiskLevel.MEDIUM,
+            reason="approval required",
+            metadata={
+                "approval_id": "approval-maintenance-restored",
+                "resume_allowed": True,
+                "restored_from_journal": True,
+                "restored_source": "command_event_replay",
+                "restored_at": 20_000,
+                "source_snapshot_sequence": 82251,
+            },
+        )
+
+        report = maintenance.run_read_only_maintenance_scan(
+            runtime_snapshot={
+                "session_id": "test-pending-decision-hygiene",
+                "last_event_sequence": 0,
+                "queue_depth": 0,
+                "queue_capacity": 1,
+                "recovery_depth": 0,
+            },
+            websocket_clients=None,
+        )
+    finally:
+        manager.reset_for_tests()
+
+    hygiene = report["checks"]["pending_decision_hygiene"]
+    finding = next(
+        item for item in report["findings"]
+        if item["finding_id"] == "runtime.pending_decision_hygiene.restored_unresolved"
+    )
+
+    assert hygiene["read_only"] is True
+    assert hygiene["status"] == "warning"
+    assert hygiene["pending_count"] == 1
+    assert hygiene["restored_unresolved_count"] == 1
+    assert hygiene["current_session_pending_count"] == 0
+    assert hygiene["approval_count"] == 1
+    assert hygiene["clarification_count"] == 0
+    assert hygiene["resumable_count"] == 1
+    assert hygiene["mutation_performed"] is False
+    assert hygiene["actions_performed"] == []
+    assert hygiene["safety"]["approval_grant_exposed"] is False
+    assert report["summary"]["component_statuses"]["pending_decision_hygiene"] == "warning"
+    assert "pending_decision_hygiene_diagnostics" in report["checks"]["read_only_contract"]["allowed_observations"]
+    assert finding["read_only"] is True
+    assert finding["evidence"]["restored_unresolved_count"] == 1
+    assert manager.snapshot()["pending_approvals"] == []
 
 
 def test_workspace_directory_report_is_read_only_and_evidence_backed(monkeypatch, tmp_path) -> None:
