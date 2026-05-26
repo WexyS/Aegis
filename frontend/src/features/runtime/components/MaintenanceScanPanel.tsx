@@ -16,6 +16,7 @@ import {
   MaintenanceActionProposal,
   MaintenanceFinding,
   NetworkPortsDiagnostics,
+  PendingDecisionHygieneDiagnostics,
   ProcessResourcesDiagnostics,
   RuntimeHealth,
   RuntimeSnapshotDiagnostics,
@@ -27,6 +28,7 @@ export const MaintenanceScanPanel = () => {
   const lastMaintenanceScan = useRuntimeStore((state) => state.lastMaintenanceScan);
   const runtimeHealth = getRuntimeHealth(lastMaintenanceScan);
   const commandLifecycle = getCommandLifecycle(lastMaintenanceScan);
+  const pendingDecisionHygiene = getPendingDecisionHygiene(lastMaintenanceScan);
   const runtimeSnapshot = getRuntimeSnapshot(lastMaintenanceScan);
   const websocket = getWebSocketDiagnostics(lastMaintenanceScan);
   const actionTimeline = getActionTimelineDiagnostics(lastMaintenanceScan);
@@ -78,6 +80,7 @@ export const MaintenanceScanPanel = () => {
               actionTimeline={actionTimeline}
             />
           )}
+          <PendingDecisionHygieneSummary diagnostics={pendingDecisionHygiene} />
           <AppDiscoverySummary diagnostics={appDiscovery} />
           {(systemResources || processResources || networkPorts) && (
             <ResourceDiagnosticsSummary
@@ -210,6 +213,85 @@ const RuntimeTruthSummary = ({
     )}
   </div>
 );
+
+const PendingDecisionHygieneSummary = ({ diagnostics }: { diagnostics: PendingDecisionHygieneDiagnostics | null }) => {
+  const currentSessionCount = numberish(diagnostics?.current_session_pending_count);
+  const restoredCount = numberish(diagnostics?.restored_unresolved_count);
+  const staleRestoredCount = numberish(diagnostics?.stale_restored_unresolved_count);
+  const unknownAgeCount = numberish(diagnostics?.unknown_age_count);
+  const approvalCount = numberish(diagnostics?.approval_count);
+  const clarificationCount = numberish(diagnostics?.clarification_count);
+  const resumableCount = numberish(diagnostics?.resumable_count);
+  const stateOnlyCount = numberish(diagnostics?.state_only_count);
+  const nonExecutingCount = numberish(diagnostics?.non_executing_count);
+  const topCommands = Array.isArray(diagnostics?.top_command_texts) ? diagnostics.top_command_texts : [];
+  const sources = diagnostics?.source_distribution && typeof diagnostics.source_distribution === 'object'
+    ? Object.entries(diagnostics.source_distribution).filter(([, value]) => typeof value === 'number')
+    : [];
+
+  return (
+    <div className="mt-3 border-t border-white/10 pt-3">
+      <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest">
+        <span className="text-foreground/40">Pending Decision Hygiene</span>
+        <span className={diagnostics ? statusTone(diagnostics.status) : 'text-foreground/45'}>
+          {diagnostics?.status ?? 'unavailable'}
+        </span>
+      </div>
+      {!diagnostics ? (
+        <p className="mt-2 text-[9px] font-mono text-foreground/35">
+          Pending decision hygiene diagnostics unavailable from this backend scan.
+        </p>
+      ) : (
+        <>
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
+            <AuditMetric label="current" value={countLabel(currentSessionCount)} />
+            <AuditMetric label="restored" value={countLabel(restoredCount)} tone={(restoredCount ?? 0) > 0 ? 'warning' : 'default'} />
+            <AuditMetric label="stale restored" value={countLabel(staleRestoredCount)} tone={(staleRestoredCount ?? 0) > 0 ? 'warning' : 'default'} />
+            <AuditMetric label="unknown age" value={countLabel(unknownAgeCount)} tone={(unknownAgeCount ?? 0) > 0 ? 'warning' : 'default'} />
+            <AuditMetric label="approvals" value={countLabel(approvalCount)} />
+            <AuditMetric label="clarifications" value={countLabel(clarificationCount)} />
+            <AuditMetric label="resumable" value={countLabel(resumableCount)} tone={(resumableCount ?? 0) > 0 ? 'warning' : 'default'} />
+            <AuditMetric label="state-only" value={countLabel(stateOnlyCount)} />
+            <AuditMetric label="non-executing" value={countLabel(nonExecutingCount)} />
+          </div>
+          <p className="mt-2 text-[9px] font-mono text-foreground/45">
+            {diagnostics.mutation_performed === false ? 'Read-only; no mutation performed.' : 'Mutation status unknown.'}
+          </p>
+          {diagnostics.recommendation && (
+            <p className="mt-1 line-clamp-2 text-[9px] font-mono leading-relaxed text-warning/80">
+              {diagnostics.recommendation}
+            </p>
+          )}
+          {resumableCount !== null && resumableCount > 0 && (
+            <p className="mt-1 text-[9px] font-mono text-warning/75">
+              Resumable means backend-gated if granted; it is not a recommendation.
+            </p>
+          )}
+          {topCommands.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {topCommands.slice(0, 3).map((item) => (
+                <div key={item.value} className="flex items-center justify-between gap-2 rounded-md border border-white/10 bg-white/[0.02] px-2 py-1 text-[9px] font-mono">
+                  <span className="truncate text-foreground/55">{item.value}</span>
+                  <span className="text-warning">{item.count}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {sources.length > 0 && (
+            <p className="mt-2 truncate text-[9px] font-mono text-foreground/35">
+              sources: {sources.map(([source, value]) => `${source}=${value}`).join(', ')}
+            </p>
+          )}
+          {diagnostics.safety?.approval_grant_exposed === false && (
+            <p className="mt-1 text-[9px] font-mono text-foreground/35">
+              Hygiene display exposes no approval grant action.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
 
 const ResourceDiagnosticsSummary = ({
   systemResources,
@@ -521,6 +603,12 @@ function getCommandLifecycle(report: Record<string, unknown> | null): CommandLif
   const lifecycle = getCheck(report, 'command_lifecycle') as Partial<CommandLifecycleDiagnostics> | null;
   if (!lifecycle || lifecycle.scan_version !== 'command-lifecycle/1') return null;
   return lifecycle as CommandLifecycleDiagnostics;
+}
+
+function getPendingDecisionHygiene(report: Record<string, unknown> | null): PendingDecisionHygieneDiagnostics | null {
+  const hygiene = getCheck(report, 'pending_decision_hygiene') as Partial<PendingDecisionHygieneDiagnostics> | null;
+  if (!hygiene || hygiene.scan_version !== 'pending-decision-hygiene/1' || hygiene.read_only !== true) return null;
+  return hygiene as PendingDecisionHygieneDiagnostics;
 }
 
 function getRuntimeSnapshot(report: Record<string, unknown> | null): RuntimeSnapshotDiagnostics | null {

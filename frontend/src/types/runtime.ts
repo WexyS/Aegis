@@ -473,6 +473,57 @@ export interface CommandLifecycleDiagnostics {
   latest_verification_state?: string | null;
 }
 
+export interface PendingDecisionHygieneCount {
+  value: string;
+  count: number;
+}
+
+export interface PendingDecisionHygieneDiagnostics {
+  scan_version: string;
+  read_only: boolean;
+  status: string;
+  source_of_truth?: string;
+  pending_count?: number;
+  approval_count?: number;
+  clarification_count?: number;
+  restored_unresolved_count?: number;
+  current_session_pending_count?: number;
+  stale_restored_unresolved_count?: number;
+  unknown_age_count?: number;
+  missing_decision_reference_count?: number;
+  already_resolved_conflict_count?: number;
+  blocked_non_executable_historical_count?: number;
+  resumable_count?: number;
+  state_only_count?: number;
+  non_executing_count?: number;
+  unknown_resume_count?: number;
+  policy_unknown_count?: number;
+  risk_unknown_count?: number;
+  decision_type_distribution?: Record<string, number>;
+  source_distribution?: Record<string, number>;
+  risk_distribution?: Record<string, number>;
+  resume_distribution?: Record<string, number>;
+  top_command_texts?: PendingDecisionHygieneCount[];
+  top_actions?: PendingDecisionHygieneCount[];
+  oldest_created_at?: number | null;
+  oldest_updated_at?: number | null;
+  recommendation?: string;
+  guidance?: string[];
+  mutation_performed?: boolean;
+  actions_performed?: unknown[];
+  safety?: {
+    no_mutation_performed?: boolean;
+    no_auto_resolution?: boolean;
+    no_auto_approval?: boolean;
+    no_auto_deny?: boolean;
+    bulk_action_available?: boolean;
+    frontend_delete_allowed?: boolean;
+    approval_grant_exposed?: boolean;
+    journal_mutated?: boolean;
+    operator_confirmation_required_for_bulk_hygiene?: boolean;
+  };
+}
+
 export interface RuntimeSnapshotDiagnostics {
   scan_version: string;
   read_only: boolean;

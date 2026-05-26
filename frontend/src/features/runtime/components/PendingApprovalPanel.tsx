@@ -17,6 +17,10 @@ export const PendingApprovalPanel = () => {
   const pendingClarifications = useRuntimeStore((state) => state.pendingClarifications);
   const commandRecords = useRuntimeStore((state) => state.commandRecords);
   const activeCommand = useRuntimeStore((state) => state.activeCommand);
+  const currentApprovals = pendingApprovals.filter((command) => !isRestoredDecision(command));
+  const restoredApprovals = pendingApprovals.filter(isRestoredDecision);
+  const currentClarifications = pendingClarifications.filter((command) => !isRestoredDecision(command));
+  const restoredClarifications = pendingClarifications.filter(isRestoredDecision);
   const resolvedDecisionRecords = commandRecords
     .filter((command) => hasResolutionMetadata(command))
     .slice(-4)
@@ -35,12 +39,26 @@ export const PendingApprovalPanel = () => {
           <EmptyState title="No backend pending decisions" detail="Approval and clarification state is shown only from backend command records." icon={<ShieldAlert size={14} />} />
         ) : (
           <>
-            {pendingApprovals.map((command) => (
-              <ApprovalItem key={command.command_id} command={command} />
-            ))}
-            {pendingClarifications.map((command) => (
-              <ClarificationItem key={command.command_id} command={command} />
-            ))}
+            <PendingDecisionGroup title="Current-session approvals" count={currentApprovals.length}>
+              {currentApprovals.map((command) => (
+                <ApprovalItem key={command.command_id} command={command} />
+              ))}
+            </PendingDecisionGroup>
+            <PendingDecisionGroup title="Restored unresolved approvals" count={restoredApprovals.length} restored>
+              {restoredApprovals.map((command) => (
+                <ApprovalItem key={command.command_id} command={command} />
+              ))}
+            </PendingDecisionGroup>
+            <PendingDecisionGroup title="Current-session clarifications" count={currentClarifications.length}>
+              {currentClarifications.map((command) => (
+                <ClarificationItem key={command.command_id} command={command} />
+              ))}
+            </PendingDecisionGroup>
+            <PendingDecisionGroup title="Restored unresolved clarifications" count={restoredClarifications.length} restored>
+              {restoredClarifications.map((command) => (
+                <ClarificationItem key={command.command_id} command={command} />
+              ))}
+            </PendingDecisionGroup>
           </>
         )}
       </div>
@@ -73,6 +91,34 @@ export const PendingApprovalPanel = () => {
   );
 };
 
+const PendingDecisionGroup = ({
+  title,
+  count,
+  restored = false,
+  children,
+}: {
+  title: string;
+  count: number;
+  restored?: boolean;
+  children: React.ReactNode;
+}) => {
+  if (count === 0) return null;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.02] px-2 py-1 text-[9px] font-mono">
+        <span className={restored ? 'text-warning/85' : 'text-foreground/45'}>{title}</span>
+        <span className={restored ? 'text-warning' : 'text-foreground/55'}>{count}</span>
+      </div>
+      {restored && (
+        <p className="px-1 text-[9px] font-mono leading-relaxed text-warning/70">
+          Backend-restored decisions remain visible until their backend lifecycle state changes.
+        </p>
+      )}
+      <div className="space-y-3">{children}</div>
+    </div>
+  );
+};
+
 const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
   const upsertCommand = useRuntimeStore((state) => state.upsertCommand);
   const addLog = useRuntimeStore((state) => state.addLog);
@@ -84,6 +130,7 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
   const evidenceRefs = Array.isArray(proposal?.evidence_refs) ? proposal.evidence_refs : [];
   const approvalId = getMetadataString(command, 'approval_id') || command.command_id;
   const restored = getRestoredDecisionLabel(command);
+  const ageLabel = getDecisionAgeLabel(command);
   const resumeAllowed = command.metadata?.resume_allowed === true;
   const resumeStatus = getMetadataString(command, 'approval_resume_status');
   const nonExecutable = command.metadata?.resume_allowed === false || isQuarantinedClickDecision(command);
@@ -130,6 +177,9 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
           <div className="inline-flex rounded-md border border-warning/25 bg-warning/10 px-2 py-0.5 text-[9px] font-mono uppercase tracking-widest text-warning">
             {restored}
           </div>
+        )}
+        {ageLabel && (
+          <p className="text-[9px] font-mono text-foreground/40">{ageLabel}</p>
         )}
         <p className="text-[12px] font-medium leading-relaxed text-foreground/85">{command.text}</p>
         {command.reason && <p className="text-[10px] font-mono text-foreground/45">{command.reason}</p>}
@@ -214,6 +264,7 @@ const ClarificationItem = React.memo(({ command }: { command: CommandRecord }) =
   const inFlightRef = useRef(false);
   const clarificationId = getMetadataString(command, 'clarification_id') || command.command_id;
   const restored = getRestoredDecisionLabel(command);
+  const ageLabel = getDecisionAgeLabel(command);
   const isPending = command.status === 'waiting_for_clarification';
   const hasAnswer = answer.trim().length > 0;
 
@@ -262,6 +313,9 @@ const ClarificationItem = React.memo(({ command }: { command: CommandRecord }) =
           <div className="inline-flex rounded-md border border-warning/25 bg-warning/10 px-2 py-0.5 text-[9px] font-mono uppercase tracking-widest text-warning">
             {restored}
           </div>
+        )}
+        {ageLabel && (
+          <p className="text-[9px] font-mono text-foreground/40">{ageLabel}</p>
         )}
         <p className="text-[12px] font-medium leading-relaxed text-foreground/85">{command.text}</p>
         {command.reason && <p className="text-[10px] font-mono text-foreground/45">{command.reason}</p>}
@@ -444,11 +498,40 @@ function getRestoredDecisionLabel(command: CommandRecord): string | null {
   return `restored unresolved ${source}${sequenceText}`;
 }
 
+function isRestoredDecision(command: CommandRecord): boolean {
+  return command.metadata?.restored_from_journal === true;
+}
+
+function getDecisionAgeLabel(command: CommandRecord): string | null {
+  const createdAt = typeof command.created_at === 'number' ? command.created_at : null;
+  const updatedAt = typeof command.updated_at === 'number' ? command.updated_at : null;
+  const restoredAtValue = command.metadata?.restored_at;
+  const restoredAt = typeof restoredAtValue === 'number' ? restoredAtValue : null;
+
+  if (createdAt !== null) return `age from created_at: ${formatAge(Date.now() - createdAt)}`;
+  if (updatedAt !== null) return `age from updated_at: ${formatAge(Date.now() - updatedAt)}`;
+  if (restoredAt !== null) return 'age unknown; restored_at is restore time only';
+  return isRestoredDecision(command) ? 'age unknown' : null;
+}
+
 function hasResolutionMetadata(command: CommandRecord): boolean {
   return Boolean(
     getMetadataString(command, 'approval_resolution_status')
     || getMetadataString(command, 'clarification_resolution_status')
   );
+}
+
+function formatAge(ageMs: number): string {
+  const bounded = Math.max(0, ageMs);
+  const minutes = Math.floor(bounded / 60_000);
+  if (minutes < 1) return '<1m';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (hours < 24) return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
 }
 
 function isQuarantinedClickDecision(command: CommandRecord): boolean {
