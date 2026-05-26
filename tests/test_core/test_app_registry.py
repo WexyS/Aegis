@@ -155,3 +155,4 @@ def test_antigravity_agent_manager_has_separate_process_identity() -> None:
 
     assert config["path"] == r"%LOCALAPPDATA%\Programs\Antigravity\Antigravity.exe"
     assert config["process_name"] == "Antigravity.exe"
+    assert config["window_keywords"] == ["Antigravity Agent Manager"]

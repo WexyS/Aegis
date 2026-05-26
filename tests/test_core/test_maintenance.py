@@ -240,7 +240,7 @@ def test_maintenance_scan_app_discovery_does_not_call_desktop_actions(monkeypatc
 
 def test_maintenance_scan_preserves_app_discovery_missing_and_ambiguous_states(monkeypatch, tmp_path) -> None:
     class FakeWindow:
-        title = "Antigravity IDE"
+        title = "Antigravity Agent Manager"
         _hWnd = 101
         visible = True
         isMinimized = False
@@ -260,3 +260,4 @@ def test_maintenance_scan_preserves_app_discovery_missing_and_ambiguous_states(m
     assert antigravity["ambiguity_status"] == "ambiguous"
     assert "running_process_not_observed" in antigravity["verification_blockers"]
     assert "ambiguous_title_matches_multiple_configured_apps" in antigravity["verification_blockers"]
+    assert "title_only_overlap_without_process_identity" in antigravity["verification_blockers"]

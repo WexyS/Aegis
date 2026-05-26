@@ -325,6 +325,15 @@ export interface AppDiscoveryWindowCandidate {
   is_minimized?: boolean | null;
   pid_matches_process?: boolean | null;
   matching_configured_app_ids: string[];
+  process_supported_configured_app_ids?: string[];
+  title_only_matching_configured_app_ids?: string[];
+}
+
+export interface AppDiscoveryIdentityDiagnostics {
+  process_pid_window_match_supports_this_app?: boolean;
+  title_only_overlap_without_process_identity?: boolean;
+  pid_supports_different_configured_app?: boolean;
+  process_supported_title_overlap?: boolean;
 }
 
 export interface AppDiscoveryEntry {
@@ -343,6 +352,10 @@ export interface AppDiscoveryEntry {
   matching_window_count?: number;
   pid_matched_window_count?: number;
   ambiguous_title_windows?: AppDiscoveryWindowCandidate[];
+  process_supported_title_overlap_windows?: AppDiscoveryWindowCandidate[];
+  title_only_overlap_windows?: AppDiscoveryWindowCandidate[];
+  pid_supported_other_app_windows?: AppDiscoveryWindowCandidate[];
+  identity_diagnostics?: AppDiscoveryIdentityDiagnostics;
   ambiguity_status?: string;
   deterministic_verification_possible: boolean;
   verification_blockers: string[];

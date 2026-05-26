@@ -73,7 +73,7 @@ APP_REGISTRY: dict[str, dict] = {
             "antigravity manager",
         ],
         "fallback": None,
-        "window_keywords": ["Antigravity Agent Manager", "Antigravity"],
+        "window_keywords": ["Antigravity Agent Manager"],
         "display_name": "Antigravity Agent Manager",
     }
 }

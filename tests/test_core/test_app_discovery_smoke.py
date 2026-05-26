@@ -96,8 +96,8 @@ def test_multiple_matching_windows_report_ambiguous(monkeypatch, tmp_path) -> No
     assert entry["deterministic_verification_possible"] is False
 
 
-def test_antigravity_ide_window_reports_cross_app_title_ambiguity(monkeypatch, tmp_path) -> None:
-    window = FakeWindow("Antigravity IDE", 101)
+def test_antigravity_ide_pid_match_is_not_confused_with_agent_manager(monkeypatch, tmp_path) -> None:
+    window = FakeWindow("Aegis - Antigravity IDE - context_compiler.py", 101)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setattr("aegis.core.app_discovery_smoke.gw.getAllWindows", lambda: [window])
     monkeypatch.setattr("aegis.core.app_discovery_smoke.get_window_pid", lambda hwnd: 4242)
@@ -106,16 +106,56 @@ def test_antigravity_ide_window_reports_cross_app_title_ambiguity(monkeypatch, t
         lambda process_name: [4242] if process_name == "Antigravity IDE.exe" else [],
     )
 
-    report = build_configured_app_discovery_smoke(["antigravity"])
-    entry = _entry(report, "antigravity")
+    report = build_configured_app_discovery_smoke(["antigravity", "antigravity_agent_manager"])
+    ide = _entry(report, "antigravity")
+    manager = _entry(report, "antigravity_agent_manager")
 
-    assert entry["matching_windows"][0]["matching_configured_app_ids"] == [
+    assert ide["matching_windows"][0]["matching_configured_app_ids"] == ["antigravity"]
+    assert ide["matching_windows"][0]["process_supported_configured_app_ids"] == ["antigravity"]
+    assert ide["matching_windows"][0]["title_only_matching_configured_app_ids"] == []
+    assert ide["identity_diagnostics"]["process_pid_window_match_supports_this_app"] is True
+    assert ide["identity_diagnostics"]["title_only_overlap_without_process_identity"] is False
+    assert ide["ambiguity_status"] == "not_ambiguous"
+    assert ide["deterministic_verification_possible"] is True
+
+    assert manager["matching_window_count"] == 0
+    assert manager["process_alive"] is False
+    assert manager["deterministic_verification_possible"] is False
+    assert "running_process_not_observed" in manager["verification_blockers"]
+    assert "matching_window_not_observed" in manager["verification_blockers"]
+
+
+def test_title_only_overlap_without_process_identity_is_distinguished(monkeypatch, tmp_path) -> None:
+    window = FakeWindow("Antigravity Agent Manager", 101)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr("aegis.core.app_discovery_smoke.gw.getAllWindows", lambda: [window])
+    monkeypatch.setattr("aegis.core.app_discovery_smoke.get_window_pid", lambda hwnd: 4242)
+    monkeypatch.setattr(
+        "aegis.core.app_discovery_smoke.get_running_pids",
+        lambda process_name: [4242] if process_name == "Antigravity IDE.exe" else [],
+    )
+
+    report = build_configured_app_discovery_smoke(["antigravity_agent_manager"])
+    manager = _entry(report, "antigravity_agent_manager")
+
+    assert manager["matching_window_count"] == 1
+    assert manager["matching_windows"][0]["matching_configured_app_ids"] == [
         "antigravity",
         "antigravity_agent_manager",
     ]
-    assert entry["ambiguity_status"] == "ambiguous"
-    assert "ambiguous_title_matches_multiple_configured_apps" in entry["verification_blockers"]
-    assert entry["deterministic_verification_possible"] is False
+    assert manager["matching_windows"][0]["process_supported_configured_app_ids"] == ["antigravity"]
+    assert manager["matching_windows"][0]["title_only_matching_configured_app_ids"] == [
+        "antigravity_agent_manager",
+    ]
+    assert manager["identity_diagnostics"]["process_pid_window_match_supports_this_app"] is False
+    assert manager["identity_diagnostics"]["title_only_overlap_without_process_identity"] is True
+    assert manager["identity_diagnostics"]["pid_supports_different_configured_app"] is True
+    assert manager["ambiguity_status"] == "ambiguous"
+    assert "running_process_not_observed" in manager["verification_blockers"]
+    assert "ambiguous_title_matches_multiple_configured_apps" in manager["verification_blockers"]
+    assert "title_only_overlap_without_process_identity" in manager["verification_blockers"]
+    assert "pid_supports_different_configured_app" in manager["verification_blockers"]
+    assert manager["deterministic_verification_possible"] is False
 
 
 def test_unknown_app_reports_unknown_safely(monkeypatch) -> None:

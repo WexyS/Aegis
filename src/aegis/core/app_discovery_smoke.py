@@ -15,8 +15,9 @@ def build_configured_app_discovery_smoke(app_ids: list[str] | None = None) -> di
     """Read-only desktop/app discovery diagnostics for configured registry entries."""
     requested = app_ids or sorted(APP_REGISTRY)
     windows, observation_errors = _read_window_candidates()
+    process_pid_cache: dict[str, list[int]] = {}
     entries = [
-        _diagnose_configured_app(app_id, windows)
+        _diagnose_configured_app(app_id, windows, process_pid_cache)
         for app_id in requested
     ]
     return {
@@ -29,7 +30,11 @@ def build_configured_app_discovery_smoke(app_ids: list[str] | None = None) -> di
     }
 
 
-def _diagnose_configured_app(app_id: str, windows: list[dict[str, Any]]) -> dict[str, Any]:
+def _diagnose_configured_app(
+    app_id: str,
+    windows: list[dict[str, Any]],
+    process_pid_cache: dict[str, list[int]],
+) -> dict[str, Any]:
     config = APP_REGISTRY.get(app_id)
     if not config:
         return {
@@ -43,7 +48,7 @@ def _diagnose_configured_app(app_id: str, windows: list[dict[str, Any]]) -> dict
         }
 
     process_names = _process_name_candidates(config)
-    running_processes = [_running_process_report(process_name) for process_name in process_names]
+    running_processes = [_running_process_report(process_name, process_pid_cache) for process_name in process_names]
     running_pids = sorted({
         pid
         for process in running_processes
@@ -52,7 +57,7 @@ def _diagnose_configured_app(app_id: str, windows: list[dict[str, Any]]) -> dict
     })
     window_keywords = [str(keyword) for keyword in config.get("window_keywords", []) if str(keyword).strip()]
     matching_windows = [
-        _window_match_report(window, running_pids)
+        _window_match_report(window, running_pids, process_pid_cache)
         for window in windows
         if _title_matches(window.get("title"), window_keywords)
     ]
@@ -62,12 +67,31 @@ def _diagnose_configured_app(app_id: str, windows: list[dict[str, Any]]) -> dict
         for window in matching_windows
         if len(window.get("matching_configured_app_ids", [])) > 1
     ]
+    process_supported_title_overlap_windows = [
+        window
+        for window in ambiguous_title_windows
+        if app_id in window.get("process_supported_configured_app_ids", [])
+    ]
+    title_only_overlap_windows = [
+        window
+        for window in ambiguous_title_windows
+        if app_id not in window.get("process_supported_configured_app_ids", [])
+    ]
+    pid_supported_other_app_windows = [
+        window
+        for window in ambiguous_title_windows
+        if app_id not in window.get("process_supported_configured_app_ids", [])
+        and bool(window.get("process_supported_configured_app_ids"))
+    ]
     blockers = _verification_blockers(
         process_names=process_names,
         running_pids=running_pids,
         matching_windows=matching_windows,
         pid_matched_windows=pid_matched_windows,
         ambiguous_title_windows=ambiguous_title_windows,
+        process_supported_title_overlap_windows=process_supported_title_overlap_windows,
+        title_only_overlap_windows=title_only_overlap_windows,
+        pid_supported_other_app_windows=pid_supported_other_app_windows,
     )
     deterministic_possible = not blockers
     ambiguity_status = "ambiguous" if any(
@@ -90,6 +114,15 @@ def _diagnose_configured_app(app_id: str, windows: list[dict[str, Any]]) -> dict
         "matching_window_count": len(matching_windows),
         "pid_matched_window_count": len(pid_matched_windows),
         "ambiguous_title_windows": ambiguous_title_windows,
+        "process_supported_title_overlap_windows": process_supported_title_overlap_windows,
+        "title_only_overlap_windows": title_only_overlap_windows,
+        "pid_supported_other_app_windows": pid_supported_other_app_windows,
+        "identity_diagnostics": {
+            "process_pid_window_match_supports_this_app": bool(pid_matched_windows),
+            "title_only_overlap_without_process_identity": bool(title_only_overlap_windows),
+            "pid_supports_different_configured_app": bool(pid_supported_other_app_windows),
+            "process_supported_title_overlap": bool(process_supported_title_overlap_windows),
+        },
         "ambiguity_status": ambiguity_status,
         "deterministic_verification_possible": deterministic_possible,
         "verification_blockers": blockers,
@@ -122,8 +155,14 @@ def _process_name_candidates(config: dict[str, Any]) -> list[str]:
     return [str(process_name)]
 
 
-def _running_process_report(process_name: str) -> dict[str, Any]:
-    pids = get_running_pids(process_name)
+def _running_pids_for_process(process_name: str, process_pid_cache: dict[str, list[int]]) -> list[int]:
+    if process_name not in process_pid_cache:
+        process_pid_cache[process_name] = list(get_running_pids(process_name))
+    return list(process_pid_cache[process_name])
+
+
+def _running_process_report(process_name: str, process_pid_cache: dict[str, list[int]]) -> dict[str, Any]:
+    pids = _running_pids_for_process(process_name, process_pid_cache)
     return {
         "process_name": process_name,
         "pids": list(pids),
@@ -159,8 +198,14 @@ def _read_window_candidates() -> tuple[list[dict[str, Any]], list[str]]:
     return windows, errors
 
 
-def _window_match_report(window: dict[str, Any], running_pids: list[int]) -> dict[str, Any]:
+def _window_match_report(
+    window: dict[str, Any],
+    running_pids: list[int],
+    process_pid_cache: dict[str, list[int]],
+) -> dict[str, Any]:
     pid = window.get("pid")
+    process_supported_ids = _process_supported_configured_app_ids(window, process_pid_cache)
+    matching_ids = list(window.get("matching_configured_app_ids", []))
     return {
         "title": window.get("title"),
         "hwnd": window.get("hwnd"),
@@ -168,8 +213,30 @@ def _window_match_report(window: dict[str, Any], running_pids: list[int]) -> dic
         "visible": window.get("visible"),
         "is_minimized": window.get("is_minimized"),
         "pid_matches_process": pid in running_pids if running_pids and pid is not None else None,
-        "matching_configured_app_ids": list(window.get("matching_configured_app_ids", [])),
+        "matching_configured_app_ids": matching_ids,
+        "process_supported_configured_app_ids": process_supported_ids,
+        "title_only_matching_configured_app_ids": [
+            app_id for app_id in matching_ids if app_id not in process_supported_ids
+        ],
     }
+
+
+def _process_supported_configured_app_ids(
+    window: dict[str, Any],
+    process_pid_cache: dict[str, list[int]],
+) -> list[str]:
+    pid = window.get("pid")
+    if pid is None:
+        return []
+    supported: list[str] = []
+    for app_id in window.get("matching_configured_app_ids", []):
+        config = APP_REGISTRY.get(str(app_id))
+        if not config:
+            continue
+        process_names = _process_name_candidates(config)
+        if any(pid in _running_pids_for_process(process_name, process_pid_cache) for process_name in process_names):
+            supported.append(str(app_id))
+    return supported
 
 
 def _matching_configured_app_ids(title: str) -> list[str]:
@@ -193,6 +260,9 @@ def _verification_blockers(
     matching_windows: list[dict[str, Any]],
     pid_matched_windows: list[dict[str, Any]],
     ambiguous_title_windows: list[dict[str, Any]],
+    process_supported_title_overlap_windows: list[dict[str, Any]],
+    title_only_overlap_windows: list[dict[str, Any]],
+    pid_supported_other_app_windows: list[dict[str, Any]],
 ) -> list[str]:
     blockers: list[str] = []
     if not process_names:
@@ -207,6 +277,12 @@ def _verification_blockers(
         blockers.append("ambiguous_pid_matched_windows")
     if ambiguous_title_windows:
         blockers.append("ambiguous_title_matches_multiple_configured_apps")
+    if process_supported_title_overlap_windows:
+        blockers.append("title_overlaps_other_configured_app")
+    if title_only_overlap_windows:
+        blockers.append("title_only_overlap_without_process_identity")
+    if pid_supported_other_app_windows:
+        blockers.append("pid_supports_different_configured_app")
     return blockers
 
 
