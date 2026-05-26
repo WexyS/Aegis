@@ -14,6 +14,16 @@ def passed_check(name: str) -> dict:
     }
 
 
+def failed_check(name: str) -> dict:
+    return {
+        "check_name": name,
+        "expected": "successful execution",
+        "observed": "failed execution",
+        "passed": False,
+        "reason": "negative evidence records a failed outcome",
+    }
+
+
 def test_evidence_audit_reports_verified_and_missing_evidence_counts() -> None:
     verified = create_event(
         ProtocolEventType.ACTION_COMPLETED,
@@ -76,6 +86,54 @@ def test_evidence_audit_reports_verified_and_missing_evidence_counts() -> None:
     assert report["critical_failure_count"] == 0
     assert report["verification_counts"] == {"missing": 1, "verified": 1}
     assert report["latest_sequence_num"] == missing["sequence_num"]
+
+
+def test_evidence_audit_counts_failed_negative_evidence_as_backed_not_missing() -> None:
+    failed = create_event(
+        ProtocolEventType.ACTION_FAILED,
+        {
+            "action_id": "action-negative",
+            "error": "Error: File already exists",
+            "execution_evidence": {
+                "action": "create_file",
+                "target": "scratch/new.txt",
+                "target_type": "file",
+                "method": "negative_result",
+                "verifier": "executor-negative-evidence/1",
+                "verification_state": "failed",
+                "verification_reason": "tool_returned_error: Error: File already exists",
+                "retry_count": 0,
+                "recovery_triggered": False,
+                "attempts": [],
+                "fallback_chain": [],
+                "observed": {
+                    "failure_kind": "tool_returned_error",
+                    "dispatch_attempted": True,
+                    "dispatch_succeeded": False,
+                    "verified_success": False,
+                },
+                "verification_checks": [
+                    passed_check("negative_evidence_recorded"),
+                    failed_check("dispatch_succeeded"),
+                    failed_check("verified_success"),
+                ],
+                "warnings": ["Error: File already exists"],
+            },
+        },
+    ).to_dict()
+
+    report = audit_action_evidence([failed])
+
+    assert report["status"] == "fail"
+    assert report["action_count"] == 1
+    assert report["error_count"] == 1
+    assert report["evidence_backed_count"] == 1
+    assert report["missing_evidence_count"] == 0
+    assert report["failed_evidence_count"] == 1
+    assert report["verified_action_count"] == 0
+    assert report["check_fail_count"] == 2
+    assert report["verification_counts"] == {"failed": 1}
+    assert report["verifier_counts"] == {"executor-negative-evidence/1": 1}
 
 
 def test_evidence_audit_is_ok_when_completed_actions_are_evidence_backed() -> None:

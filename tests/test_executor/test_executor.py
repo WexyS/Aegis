@@ -180,6 +180,8 @@ class TestDeterministicExecutorContracts:
         assert result.execution_evidence.method == "verified_existing_after_launch_error"
         assert result.execution_evidence.verification_state == "verified"
         assert any("Error launching" in warning for warning in result.execution_evidence.warnings)
+        assert result.execution_evidence.observed["dispatch_warning"] == "Error launching 'notepad': Error code from Windows: 0"
+        assert result.execution_evidence.observed["dispatch_warning_did_not_determine_verification"] is True
 
     @pytest.mark.asyncio
     async def test_tool_error_string_becomes_failed_action(self) -> None:
@@ -198,6 +200,140 @@ class TestDeterministicExecutorContracts:
         assert result.status == ActionStatus.FAILED
         assert result.success is False
         assert "File not found" in result.output
+        assert result.execution_evidence is not None
+        assert result.execution_evidence.verifier == "executor-negative-evidence/1"
+        assert result.execution_evidence.verification_state == "failed"
+        assert result.execution_evidence.observed["failure_kind"] == "tool_returned_error"
+        assert result.execution_evidence.observed["dispatch_succeeded"] is False
+
+    @pytest.mark.asyncio
+    async def test_open_app_verifier_failure_is_backed_by_failed_evidence(self, monkeypatch) -> None:
+        snapshot = AegisStateSnapshot(
+            version=1,
+            timestamp="2026-05-13T00:00:00Z",
+            active_app=None,
+            pid=None,
+            hwnd=None,
+            last_action=None,
+            last_status=None,
+            is_responsive=True,
+            focus_stable=True,
+        )
+
+        class FakeStateManager:
+            async def sync_with_os(self, trace_id, span_id) -> None:
+                return None
+
+            def get_state(self):
+                return snapshot
+
+            def update(self, trace_id, span_id, **kwargs):
+                return snapshot
+
+        class FakeOpenTool:
+            async def run(self, app: str, **kwargs) -> str:
+                return "Error launching 'steam': window did not manifest"
+
+        def fake_verify_desktop_action(**kwargs):
+            observation = DesktopObservation(
+                target=DesktopTarget(
+                    app_id="steam",
+                    display_name="Steam",
+                    process_name="steam.exe",
+                    window_keywords=["Steam"],
+                ),
+                pids=[4242],
+                process_alive=True,
+                active_window=None,
+                matching_windows=[],
+                focus_verified=False,
+            )
+            return DesktopVerificationResult(
+                action="open_app",
+                method="process_window",
+                observation=observation,
+                verification_state="failed",
+                reason="target process is alive but no matching window manifested",
+                checks=[
+                    {
+                        "check_name": "process_alive",
+                        "expected": True,
+                        "observed": True,
+                        "passed": True,
+                        "reason": "Target process is alive.",
+                    },
+                    {
+                        "check_name": "window_manifested",
+                        "expected": "matching HWND/title",
+                        "observed": None,
+                        "passed": False,
+                        "reason": "Open is window-verified only when a matching HWND/title is observed.",
+                    },
+                    {
+                        "check_name": "window_pid_matches_target_process",
+                        "expected": {"process_name": "steam.exe"},
+                        "observed": None,
+                        "passed": None,
+                        "reason": "Window PID cannot be checked without a matching window.",
+                    },
+                ],
+            )
+
+        executor = DeterministicExecutor()
+        executor.max_retries = 0
+        monkeypatch.setattr("aegis.executor.deterministic_executor.get_state_manager", lambda: FakeStateManager())
+        monkeypatch.setattr("aegis.executor.deterministic_executor.verify_desktop_action", fake_verify_desktop_action)
+        monkeypatch.setitem(deterministic_executor_module.TOOLS, "open_app", FakeOpenTool())
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="open_app",
+            confidence=1.0,
+            params={"app": "steam", "_process_name": "steam.exe", "_keywords": ["Steam"]},
+            risk=RiskLevel.MEDIUM,
+            raw_input="open steam",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.FAILED
+        assert result.success is False
+        assert result.execution_evidence is not None
+        assert result.execution_evidence.action == "open_app"
+        assert result.execution_evidence.verification_state == "failed"
+        checks = {check["check_name"]: check for check in result.execution_evidence.verification_checks}
+        assert checks["process_alive"]["passed"] is True
+        assert checks["window_manifested"]["passed"] is False
+        assert checks["window_pid_matches_target_process"]["passed"] is None
+
+    @pytest.mark.asyncio
+    async def test_create_file_existing_path_emits_failed_negative_evidence(self, tmp_path) -> None:
+        path = tmp_path / "already-exists.txt"
+        path.write_text("existing content\n", encoding="utf-8")
+        before_hash = hashlib.sha256(path.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+        executor = DeterministicExecutor()
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="create_file",
+            confidence=1.0,
+            params={"path": str(path), "content": "new content\n"},
+            risk=RiskLevel.MEDIUM,
+            raw_input="create file",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.FAILED
+        assert result.success is False
+        assert result.execution_evidence is not None
+        assert result.execution_evidence.action == "create_file"
+        assert result.execution_evidence.target_type == "file"
+        assert result.execution_evidence.verifier == "executor-negative-evidence/1"
+        assert result.execution_evidence.verification_state == "failed"
+        assert result.execution_evidence.observed["failure_kind"] == "tool_returned_error"
+        assert result.execution_evidence.observed["file"]["mutation_performed"] is False
+        assert result.execution_evidence.observed["file"]["before_sha256"] == before_hash
+        assert result.execution_evidence.observed["file"]["after_sha256"] == before_hash
+        assert path.read_text(encoding="utf-8") == "existing content\n"
 
     @pytest.mark.asyncio
     async def test_read_file_success_includes_read_only_evidence(self, tmp_path) -> None:
@@ -983,7 +1119,11 @@ class TestDeterministicExecutorContracts:
 
         assert result.status == ActionStatus.FAILED
         assert result.success is False
-        assert result.execution_evidence is None or result.execution_evidence.verification_state != "verified"
+        assert result.execution_evidence is not None
+        assert result.execution_evidence.verifier == "executor-negative-evidence/1"
+        assert result.execution_evidence.verification_state == "failed"
+        assert result.execution_evidence.observed["failure_kind"] == "dispatch_exception"
+        assert result.execution_evidence.observed["file"]["mutation_performed"] is False
         assert "write dispatch failed" in result.output
 
     @pytest.mark.asyncio
@@ -1142,8 +1282,53 @@ class TestDeterministicExecutorContracts:
 
         assert result.status == ActionStatus.FAILED
         assert result.success is False
-        assert result.execution_evidence is None or result.execution_evidence.verification_state != "verified"
+        assert result.execution_evidence is not None
+        assert result.execution_evidence.verifier == "executor-negative-evidence/1"
+        assert result.execution_evidence.verification_state == "failed"
+        assert result.execution_evidence.target_type == "focused_input"
+        assert result.execution_evidence.observed["failure_kind"] == "dispatch_exception"
+        assert result.execution_evidence.observed["verified_success"] is False
         assert "keyboard dispatch failed" in result.output
+
+    @pytest.mark.asyncio
+    async def test_type_precondition_failure_emits_non_executed_negative_evidence(self, monkeypatch) -> None:
+        class PreconditionFailureTransitionModel:
+            def validate_preconditions(self, intent, before_state):
+                return ["focus is unstable"]
+
+            def predict_next_state(self, before_state, intent, params):
+                raise AssertionError("precondition failure must stop before planning next state")
+
+        class ExplodingTypeTool:
+            async def run(self, text: str, **kwargs) -> str:
+                raise AssertionError("type tool must not run when preconditions fail")
+
+        executor = DeterministicExecutor()
+        executor.transition_model = PreconditionFailureTransitionModel()
+        monkeypatch.setattr(
+            "aegis.executor.deterministic_executor.get_state_manager",
+            lambda: TypeStateManager(_snapshot(hwnd=5678, focus_stable=False), _snapshot(hwnd=5678)),
+        )
+        monkeypatch.setitem(deterministic_executor_module.TOOLS, "type", ExplodingTypeTool())
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="type",
+            confidence=1.0,
+            params={"text": "secret text", "_require_focus": "notepad"},
+            risk=RiskLevel.MEDIUM,
+            raw_input="type secret text",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert result.status == ActionStatus.FAILED
+        assert result.success is False
+        assert result.execution_evidence is not None
+        assert result.execution_evidence.verification_state == "failed"
+        assert result.execution_evidence.verifier == "executor-negative-evidence/1"
+        assert result.execution_evidence.observed["failure_kind"] == "precondition_failed"
+        assert result.execution_evidence.observed["dispatch_attempted"] is False
+        assert result.execution_evidence.observed["dispatch_succeeded"] is False
 
     @pytest.mark.asyncio
     async def test_git_status_success_includes_git_evidence(self, monkeypatch) -> None:

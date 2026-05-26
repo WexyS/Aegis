@@ -715,6 +715,8 @@ def _shell_evidence(intent: str, params: Dict[str, Any], output_text: str) -> Di
 
 DESKTOP_EVIDENCE_TOOLS = {"open_app", "focus_app", "close_app"}
 PROOF_EVIDENCE_KEYS = ("read_only_evidence", "browser_evidence", "write_evidence", "type_evidence", "git_evidence", "shell_evidence")
+FILE_EVIDENCE_TOOLS = {"read_file", "write_file", "create_file", "edit_file", "delete_file", "move_file"}
+BROWSER_EVIDENCE_TOOLS = {"open_url", "search_web", "click", "scroll", "read_page"}
 
 
 def _close_evidence_updates(close_attempts: list[dict[str, Any]] | None) -> dict[str, Any]:
@@ -774,6 +776,180 @@ def _evidence_check(name: str, passed: bool | None, expected: Any, observed: Any
         "reason": reason,
         "detail": reason,
     }
+
+
+def _negative_evidence_target(intent: str, params: Dict[str, Any]) -> str:
+    if intent == "type":
+        return "focused_input"
+    for key in ("path", "app", "window", "url", "query", "selector", "command", "git_cmd"):
+        value = params.get(key)
+        if value:
+            return str(value)
+    if params.get("x") is not None and params.get("y") is not None:
+        return "coordinates"
+    return intent
+
+
+def _negative_evidence_target_type(intent: str) -> str:
+    if intent in FILE_EVIDENCE_TOOLS:
+        return "file"
+    if intent == "type":
+        return "focused_input"
+    if intent in DESKTOP_EVIDENCE_TOOLS:
+        return "application"
+    if intent in BROWSER_EVIDENCE_TOOLS:
+        return "browser"
+    if intent == "git_action":
+        return "git"
+    if intent == "run_command":
+        return "shell"
+    return "tool"
+
+
+def _file_failure_observation(before: Dict[str, Any] | None) -> dict[str, Any]:
+    if not before:
+        return {}
+
+    path = Path(before["path"])
+    observed: dict[str, Any] = {
+        "path": str(path),
+        "existed_before": bool(before.get("existed_before")),
+        "before_sha256": before.get("sha256"),
+        "before_bytes": before.get("bytes"),
+    }
+    try:
+        existed_after = path.exists()
+        after_content = path.read_text(encoding="utf-8") if existed_after else ""
+        after_sha256 = _sha256_text(after_content) if existed_after else None
+        mutation_performed = bool(
+            bool(before.get("existed_before")) != existed_after
+            or before.get("sha256") != after_sha256
+        )
+        observed.update({
+            "existed_after": existed_after,
+            "after_sha256": after_sha256,
+            "after_bytes": len(after_content.encode("utf-8")) if existed_after else 0,
+            "mutation_performed": mutation_performed,
+        })
+    except Exception as exc:
+        observed.update({
+            "existed_after": None,
+            "after_sha256": None,
+            "after_bytes": None,
+            "mutation_performed": None,
+            "mutation_observation_error": str(exc),
+        })
+    return observed
+
+
+def _negative_execution_evidence(
+    intent: str,
+    params: Dict[str, Any],
+    started_at_ms: int,
+    *,
+    failure_kind: str,
+    reason: str,
+    dispatch_attempted: bool,
+    dispatch_succeeded: bool,
+    tool_response_returned: bool = False,
+    before_write: Dict[str, Any] | None = None,
+    warnings: list[str] | None = None,
+) -> ExecutionEvidence:
+    observed: dict[str, Any] = {
+        "failure_kind": failure_kind,
+        "error": reason,
+        "error_sha256": _sha256_text(reason),
+        "dispatch_attempted": dispatch_attempted,
+        "dispatch_succeeded": dispatch_succeeded,
+        "tool_response_returned": tool_response_returned,
+        "verified_success": False,
+    }
+    expected: dict[str, Any] = {
+        "dispatch_succeeded": True,
+        "verified_success": True,
+    }
+    file_observation = _file_failure_observation(before_write)
+    if file_observation:
+        observed["file"] = file_observation
+        expected["mutation_performed"] = False
+
+    mutation_performed = file_observation.get("mutation_performed") if file_observation else None
+    checks = [
+        _evidence_check(
+            "negative_evidence_recorded",
+            True,
+            "explicit failed/unverified execution evidence",
+            failure_kind,
+            "Failed execution paths must emit evidence instead of appearing as missing evidence.",
+        ),
+        _evidence_check(
+            "dispatch_attempted",
+            True,
+            dispatch_attempted,
+            dispatch_attempted,
+            "Evidence records whether the tool dispatch boundary was reached.",
+        ),
+        _evidence_check(
+            "dispatch_succeeded",
+            dispatch_succeeded,
+            True,
+            dispatch_succeeded,
+            "Negative evidence is failed because dispatch or verification did not complete successfully.",
+        ),
+        _evidence_check(
+            "verified_success",
+            False,
+            True,
+            False,
+            "Negative evidence must not be interpreted as verified success.",
+        ),
+    ]
+    if file_observation:
+        checks.append(_evidence_check(
+            "no_unexpected_file_mutation_on_failure",
+            (mutation_performed is False) if mutation_performed is not None else None,
+            False,
+            mutation_performed,
+            "Failed file actions should record whether a mutation was observed.",
+        ))
+
+    return ExecutionEvidence(
+        action=intent,
+        target=_negative_evidence_target(intent, params),
+        target_type=_negative_evidence_target_type(intent),
+        method="negative_result",
+        verifier="executor-negative-evidence/1",
+        verification_state="failed",
+        verification_reason=f"{failure_kind}: {reason}",
+        started_at_ms=started_at_ms,
+        completed_at_ms=now_ms(),
+        expected=expected,
+        observed=observed,
+        verification_checks=checks,
+        warnings=list(warnings or []),
+    )
+
+
+def _with_dispatch_warning(
+    evidence: ExecutionEvidence,
+    warning: str,
+    *,
+    method: str,
+) -> ExecutionEvidence:
+    observed = dict(evidence.observed)
+    observed.update({
+        "dispatch_warning": warning,
+        "dispatch_warning_sha256": _sha256_text(warning),
+        "dispatch_warning_did_not_determine_verification": True,
+    })
+    return evidence.model_copy(update={
+        "method": method,
+        "observed": observed,
+        "warnings": [
+            *evidence.warnings,
+            f"Dispatch warning preserved separately from verifier result: {warning}",
+        ],
+    })
 
 
 def _focus_evidence_updates(focus_attempts: list[dict[str, Any]] | None) -> dict[str, Any]:
@@ -1194,12 +1370,23 @@ class DeterministicExecutor:
         desktop_started_at_ms = now_ms()
 
         if cancellation_token and cancellation_token.cancelled:
+            evidence = _negative_execution_evidence(
+                intent,
+                params,
+                desktop_started_at_ms,
+                failure_kind="cancelled_before_dispatch",
+                reason=cancellation_token.cancelled_reason or "Command cancelled before tool execution",
+                dispatch_attempted=False,
+                dispatch_succeeded=False,
+            )
             return ActionResult(
                 action=intent,
                 params=params,
                 status=ActionStatus.CANCELLED,
                 success=False,
                 output=cancellation_token.cancelled_reason or "Command cancelled before tool execution",
+                proof={"execution_evidence": evidence.model_dump()},
+                execution_evidence=evidence,
             )
         
         # 0. PRE-EXECUTION SNAPSHOT
@@ -1211,10 +1398,23 @@ class DeterministicExecutor:
         # 1. PRE-EXECUTION: Validate Formal Preconditions
         pre_errors = self.transition_model.validate_preconditions(intent, before_state)
         if pre_errors:
+            reason = f"Formal Precondition Failure: {', '.join(pre_errors)}"
+            evidence = _negative_execution_evidence(
+                intent,
+                params,
+                desktop_started_at_ms,
+                failure_kind="precondition_failed",
+                reason=reason,
+                dispatch_attempted=False,
+                dispatch_succeeded=False,
+            )
             return ActionResult(
                 action=intent, params=params, 
                 status=ActionStatus.FAILED, success=False,
-                output=f"Formal Precondition Failure: {', '.join(pre_errors)}",
+                output=reason,
+                recovery_hint="Executor stopped before tool dispatch because formal preconditions failed.",
+                proof={"execution_evidence": evidence.model_dump()},
+                execution_evidence=evidence,
                 metrics=ReliabilityMetrics(execution_time_ms=(time.perf_counter() - step_start)*1000)
             )
 
@@ -1223,11 +1423,21 @@ class DeterministicExecutor:
         
         for attempt in range(self.max_retries + 1):
             if attempt > 0: await asyncio.sleep(self.base_delay * (2 ** (attempt - 1)))
+            write_before: Dict[str, Any] | None = None
 
             try:
                 tool = TOOLS.get(intent)
                 tool_spec = get_tool_spec(intent)
                 if tool is None:
+                    evidence = _negative_execution_evidence(
+                        intent,
+                        params,
+                        desktop_started_at_ms,
+                        failure_kind="unknown_tool",
+                        reason=f"Unknown tool '{intent}'",
+                        dispatch_attempted=False,
+                        dispatch_succeeded=False,
+                    )
                     return ActionResult(
                         action=intent,
                         params=params,
@@ -1235,6 +1445,8 @@ class DeterministicExecutor:
                         success=False,
                         output=f"Unknown tool '{intent}'",
                         recovery_hint="Planner produced an intent with no registered deterministic tool.",
+                        proof={"execution_evidence": evidence.model_dump()},
+                        execution_evidence=evidence,
                         metrics=ReliabilityMetrics(
                             execution_time_ms=(time.perf_counter() - step_start) * 1000,
                             retries=attempt,
@@ -1268,12 +1480,24 @@ class DeterministicExecutor:
                 while not tool_task.done():
                     if cancellation_token and cancellation_token.cancelled:
                         tool_task.cancel()
+                        evidence = _negative_execution_evidence(
+                            intent,
+                            params,
+                            desktop_started_at_ms,
+                            failure_kind="cancelled_during_dispatch",
+                            reason=cancellation_token.cancelled_reason or "Command cancelled during tool execution",
+                            dispatch_attempted=True,
+                            dispatch_succeeded=False,
+                            before_write=write_before,
+                        )
                         return ActionResult(
                             action=intent,
                             params=params,
                             status=ActionStatus.CANCELLED,
                             success=False,
                             output=cancellation_token.cancelled_reason or "Command cancelled during tool execution",
+                            proof={"execution_evidence": evidence.model_dump()},
+                            execution_evidence=evidence,
                             metrics=ReliabilityMetrics(
                                 execution_time_ms=(time.perf_counter() - step_start) * 1000,
                                 retries=attempt,
@@ -1298,13 +1522,11 @@ class DeterministicExecutor:
                             focus_attempts=focus_attempts,
                         )
                         if verifier_result.verified and verified_existing_evidence is not None:
-                            verified_existing_evidence = verified_existing_evidence.model_copy(update={
-                                "method": "verified_existing_after_launch_error",
-                                "warnings": [
-                                    *verified_existing_evidence.warnings,
-                                    output_text,
-                                ],
-                            })
+                            verified_existing_evidence = _with_dispatch_warning(
+                                verified_existing_evidence,
+                                output_text,
+                                method="verified_existing_after_launch_error",
+                            )
                             return ActionResult(
                                 action=intent,
                                 params=params,
@@ -1366,7 +1588,20 @@ class DeterministicExecutor:
                                     retries=attempt,
                                 ),
                             )
-                    failure_proof = {"execution_evidence": failure_evidence.model_dump()} if failure_evidence else {}
+                    if failure_evidence is None:
+                        failure_evidence = _negative_execution_evidence(
+                            intent,
+                            params,
+                            desktop_started_at_ms,
+                            failure_kind="tool_returned_error",
+                            reason=output_text,
+                            dispatch_attempted=True,
+                            dispatch_succeeded=False,
+                            tool_response_returned=True,
+                            before_write=write_before,
+                            warnings=[output_text],
+                        )
+                    failure_proof = {"execution_evidence": failure_evidence.model_dump()}
                     return ActionResult(
                         action=intent,
                         params=params,
@@ -1552,14 +1787,40 @@ class DeterministicExecutor:
 
             except Exception as e:
                 if attempt == self.max_retries:
+                    evidence = _negative_execution_evidence(
+                        intent,
+                        params,
+                        desktop_started_at_ms,
+                        failure_kind="dispatch_exception",
+                        reason=str(e),
+                        dispatch_attempted=True,
+                        dispatch_succeeded=False,
+                        before_write=write_before,
+                        warnings=[str(e)],
+                    )
                     return ActionResult(
                         action=intent, params=params, status=ActionStatus.FAILED, success=False,
-                        output=str(e), metrics=ReliabilityMetrics(execution_time_ms=(time.perf_counter()-step_start)*1000)
+                        output=str(e),
+                        recovery_hint="Tool dispatch raised before producing verified evidence.",
+                        proof={"execution_evidence": evidence.model_dump()},
+                        execution_evidence=evidence,
+                        metrics=ReliabilityMetrics(execution_time_ms=(time.perf_counter()-step_start)*1000)
                     )
 
+        evidence = _negative_execution_evidence(
+            intent,
+            params,
+            desktop_started_at_ms,
+            failure_kind="max_retries_exceeded",
+            reason="Max retries exceeded or formal failure.",
+            dispatch_attempted=True,
+            dispatch_succeeded=False,
+        )
         return ActionResult(
             action=intent, params=params, status=ActionStatus.FAILED, success=False,
             output="Max retries exceeded or formal failure.",
+            proof={"execution_evidence": evidence.model_dump()},
+            execution_evidence=evidence,
             metrics=ReliabilityMetrics(execution_time_ms=(time.perf_counter()-step_start)*1000)
         )
 
