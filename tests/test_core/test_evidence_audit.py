@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 from aegis.core.evidence_audit import audit_action_evidence
 from aegis.core.protocol import ProtocolEventType, create_event
 
@@ -86,6 +88,10 @@ def test_evidence_audit_reports_verified_and_missing_evidence_counts() -> None:
     assert report["critical_failure_count"] == 0
     assert report["verification_counts"] == {"missing": 1, "verified": 1}
     assert report["latest_sequence_num"] == missing["sequence_num"]
+    assert report["current_missing_evidence_count"] == 1
+    assert report["historical_missing_evidence_count"] == 0
+    assert report["unknown_era_missing_evidence_count"] == 0
+    assert report["classification"]["class_counts"]["current_session_missing_evidence"] == 1
 
 
 def test_evidence_audit_counts_failed_negative_evidence_as_backed_not_missing() -> None:
@@ -132,6 +138,9 @@ def test_evidence_audit_counts_failed_negative_evidence_as_backed_not_missing() 
     assert report["failed_evidence_count"] == 1
     assert report["verified_action_count"] == 0
     assert report["check_fail_count"] == 2
+    assert report["negative_evidence_count"] == 1
+    assert report["classification"]["negative_evidence_count"] == 1
+    assert report["classification"]["class_counts"]["negative_evidence_present"] == 1
     assert report["verification_counts"] == {"failed": 1}
     assert report["verifier_counts"] == {"executor-negative-evidence/1": 1}
 
@@ -249,3 +258,125 @@ def test_evidence_audit_counts_verification_protocol_events() -> None:
     assert report["action_event_count"] == 1
     assert report["evidence_backed_count"] == 1
     assert report["status"] == "ok"
+
+
+def test_evidence_audit_classifies_current_historical_and_unknown_era_issues() -> None:
+    current_missing = create_event(
+        ProtocolEventType.ACTION_FAILED,
+        {"action_id": "action-current-missing", "error": "current missing evidence"},
+        session_id="session-current",
+    ).to_dict()
+    historical_failed = create_event(
+        ProtocolEventType.ACTION_FAILED,
+        {
+            "action_id": "action-historical-negative",
+            "error": "old failure with negative evidence",
+            "execution_evidence": {
+                "action": "create_file",
+                "target": "scratch/new.txt",
+                "target_type": "file",
+                "method": "negative_result",
+                "verifier": "executor-negative-evidence/1",
+                "verification_state": "failed",
+                "observed": {
+                    "failure_kind": "tool_returned_error",
+                    "verified_success": False,
+                },
+                "verification_checks": [
+                    passed_check("negative_evidence_recorded"),
+                    failed_check("verified_success"),
+                ],
+            },
+        },
+        session_id="session-old",
+    ).to_dict()
+    unknown_missing = create_event(
+        ProtocolEventType.ACTION_COMPLETED,
+        {"action_id": "action-unknown-missing", "success": True},
+    ).to_dict()
+
+    report = audit_action_evidence(
+        [current_missing, historical_failed, unknown_missing],
+        session_id="session-current",
+        include_historical=True,
+    )
+
+    classes = report["classification"]["class_counts"]
+    assert report["status"] == "fail"
+    assert report["action_event_count"] == 3
+    assert report["missing_evidence_count"] == 2
+    assert report["current_missing_evidence_count"] == 1
+    assert report["historical_missing_evidence_count"] == 0
+    assert report["unknown_era_missing_evidence_count"] == 1
+    assert report["historical_evidence_debt_count"] == 1
+    assert report["unknown_era_evidence_issue_count"] == 1
+    assert report["negative_evidence_count"] == 1
+    assert classes["current_session_missing_evidence"] == 1
+    assert classes["historical_failed_evidence"] == 1
+    assert classes["unknown_era_missing_evidence"] == 1
+    assert classes["negative_evidence_present"] == 1
+
+
+def test_evidence_audit_classifies_historical_unverified_completed_without_verifying_it() -> None:
+    commands_snapshot = {
+        "records": [
+            {
+                "command_id": "cmd-old-unverified",
+                "text": "open notepad",
+                "status": "executed",
+                "verification_state": "unverified",
+                "trace_id": "trace-old",
+                "metadata": {
+                    "restored_from_journal": True,
+                    "restored_source": "command_event_replay",
+                    "source_snapshot_sequence": 82251,
+                },
+            }
+        ]
+    }
+    before = deepcopy(commands_snapshot)
+
+    report = audit_action_evidence(
+        [],
+        session_id="session-current",
+        commands_snapshot=commands_snapshot,
+    )
+
+    assert commands_snapshot == before
+    assert report["status"] == "warning"
+    assert report["verified_action_count"] == 0
+    assert report["historical_unverified_completed_count"] == 1
+    assert report["current_unverified_completed_count"] == 0
+    assert report["unknown_era_unverified_completed_count"] == 0
+    assert report["historical_evidence_debt_count"] == 1
+    command_classes = report["classification"]["command_lifecycle_classifications"][0]["classes"]
+    assert "historical_unverified_completed" in command_classes
+
+
+def test_evidence_audit_does_not_guess_unknown_era_unverified_completed() -> None:
+    commands_snapshot = {
+        "records": [
+            {
+                "command_id": "cmd-unknown-unverified",
+                "text": "type text",
+                "status": "executed",
+                "verification_state": "unverified",
+                "trace_id": "trace-unknown",
+                "metadata": {},
+            }
+        ]
+    }
+
+    report = audit_action_evidence(
+        [],
+        session_id="session-current",
+        commands_snapshot=commands_snapshot,
+    )
+
+    assert report["status"] == "warning"
+    assert report["unknown_era_unverified_completed_count"] == 1
+    assert report["historical_unverified_completed_count"] == 0
+    assert report["current_unverified_completed_count"] == 0
+    command_classification = report["classification"]["command_lifecycle_classifications"][0]
+    assert command_classification["era"] == "unknown_era"
+    assert "unknown_era_unverified_completed" in command_classification["classes"]

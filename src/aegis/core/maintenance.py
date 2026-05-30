@@ -227,6 +227,7 @@ def _read_only_contract() -> dict[str, Any]:
             "event_journal_snapshot",
             "runtime_replay_gap_diagnostics",
             "pending_decision_hygiene_diagnostics",
+            "evidence_audit_classification",
             "recent_event_tail",
             "tool_registry_snapshot",
             "app_registry_snapshot",
@@ -335,14 +336,23 @@ def _findings_from_checks(checks: dict[str, Any]) -> list[dict[str, Any]]:
             recommendation="Inspect command lifecycle emission before accepting new command work.",
         ))
     if int(command_lifecycle.get("unverified_completed_count") or 0) > 0:
+        evidence_audit = checks["evidence_audit"]
         findings.append(_finding(
             "runtime.command_lifecycle.unverified_completed",
             category="runtime",
             severity="warning",
             source="checks.command_lifecycle.unverified_completed_count",
             reason="At least one executed command is not backed by verified evidence.",
-            evidence={"unverified_completed_count": command_lifecycle.get("unverified_completed_count")},
-            recommendation="Route completed commands through evidence audit before displaying success.",
+            evidence={
+                "unverified_completed_count": command_lifecycle.get("unverified_completed_count"),
+                "current_unverified_completed_count": evidence_audit.get("current_unverified_completed_count"),
+                "historical_unverified_completed_count": evidence_audit.get("historical_unverified_completed_count"),
+                "unknown_era_unverified_completed_count": evidence_audit.get("unknown_era_unverified_completed_count"),
+            },
+            recommendation=(
+                "Route completed commands through evidence audit before displaying success; historical "
+                "or unknown-era debt must stay visible and must not be marked verified without evidence."
+            ),
         ))
 
     pending_decision_hygiene = checks["pending_decision_hygiene"]
@@ -378,6 +388,10 @@ def _findings_from_checks(checks: dict[str, Any]) -> list[dict[str, Any]]:
             reason="Evidence audit found failed critical verification checks.",
             evidence={
                 "critical_failure_count": evidence_audit.get("critical_failure_count"),
+                "current_evidence_failure_count": evidence_audit.get("current_evidence_failure_count"),
+                "historical_evidence_debt_count": evidence_audit.get("historical_evidence_debt_count"),
+                "unknown_era_evidence_issue_count": evidence_audit.get("unknown_era_evidence_issue_count"),
+                "verifier_check_failure_count": evidence_audit.get("verifier_check_failure_count"),
                 "critical_failures": evidence_audit.get("critical_failures", []),
             },
             recommendation="Treat affected actions as failed or unverified until verifier evidence is corrected.",
@@ -389,8 +403,16 @@ def _findings_from_checks(checks: dict[str, Any]) -> list[dict[str, Any]]:
             severity="warning",
             source="checks.evidence_audit.missing_evidence_count",
             reason="Some completed or failed actions have no execution evidence.",
-            evidence={"missing_evidence_count": evidence_audit.get("missing_evidence_count")},
-            recommendation="Prevent optimistic completion when execution evidence is absent.",
+            evidence={
+                "missing_evidence_count": evidence_audit.get("missing_evidence_count"),
+                "current_missing_evidence_count": evidence_audit.get("current_missing_evidence_count"),
+                "historical_missing_evidence_count": evidence_audit.get("historical_missing_evidence_count"),
+                "unknown_era_missing_evidence_count": evidence_audit.get("unknown_era_missing_evidence_count"),
+            },
+            recommendation=(
+                "Prevent optimistic completion when execution evidence is absent; current missing "
+                "evidence requires investigation and historical or unknown-era gaps require hygiene classification."
+            ),
         ))
 
     websocket = checks["websocket"]
@@ -647,13 +669,20 @@ def run_read_only_maintenance_scan(
         authority = peek_runtime_authority()
         runtime_snapshot = authority.snapshot(journal) if authority else None
     effective_session_id = session_id or (runtime_snapshot or {}).get("session_id")
-    evidence_audit = audit_action_evidence(recent_events, limit=50, session_id=effective_session_id)
     app_registry = get_app_registry_snapshot()
     app_registry["read_only"] = True
     app_registry["status"] = "ok"
     app_discovery = build_configured_app_discovery_smoke()
     log_dir = Path(settings.logging.directory)
     commands = get_approval_manager().snapshot()
+    evidence_audit = audit_action_evidence(
+        recent_events,
+        limit=50,
+        session_id=effective_session_id,
+        include_historical=True,
+        commands_snapshot=commands,
+        replay_diagnostics=replay_diagnostics,
+    )
     command_lifecycle = _command_lifecycle_snapshot(commands)
     pending_decision_hygiene = build_pending_decision_hygiene_report(commands)
     runtime_snapshot_check = _runtime_snapshot_report(runtime_snapshot, journal)

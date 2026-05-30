@@ -4,7 +4,8 @@ from aegis.core import app_map
 from aegis.core import maintenance
 from aegis.core import maintenance_actions
 from aegis.core.commands import get_approval_manager
-from aegis.core.constants import RiskLevel
+from aegis.core.constants import CommandStatus, RiskLevel
+from aegis.core.protocol import ProtocolEventType, create_event
 from aegis.tools.desktop_tools import FocusTool, OpenAppTool
 
 
@@ -196,6 +197,139 @@ def test_maintenance_scan_surfaces_read_only_pending_decision_hygiene() -> None:
     assert finding["read_only"] is True
     assert finding["evidence"]["restored_unresolved_count"] == 1
     assert manager.snapshot()["pending_approvals"] == []
+
+
+def test_maintenance_scan_surfaces_evidence_current_historical_unknown_split(monkeypatch, tmp_path) -> None:
+    current_missing = create_event(
+        ProtocolEventType.ACTION_FAILED,
+        {"action_id": "action-current-missing", "error": "current missing evidence"},
+        session_id="session-maintenance-current",
+    ).to_dict()
+    historical_failed = create_event(
+        ProtocolEventType.ACTION_FAILED,
+        {
+            "action_id": "action-historical-negative",
+            "error": "historical negative evidence",
+            "execution_evidence": {
+                "action": "create_file",
+                "target": "scratch/new.txt",
+                "target_type": "file",
+                "method": "negative_result",
+                "verifier": "executor-negative-evidence/1",
+                "verification_state": "failed",
+                "observed": {
+                    "failure_kind": "tool_returned_error",
+                    "verified_success": False,
+                },
+                "verification_checks": [
+                    {
+                        "check_name": "negative_evidence_recorded",
+                        "expected": "explicit failed evidence",
+                        "observed": "tool_returned_error",
+                        "passed": True,
+                        "reason": "negative evidence recorded",
+                    },
+                    {
+                        "check_name": "verified_success",
+                        "expected": True,
+                        "observed": False,
+                        "passed": False,
+                        "reason": "failed action is not verified success",
+                    },
+                ],
+            },
+        },
+        session_id="session-maintenance-old",
+    ).to_dict()
+    unknown_missing = create_event(
+        ProtocolEventType.ACTION_COMPLETED,
+        {"action_id": "action-unknown-missing", "success": True},
+    ).to_dict()
+
+    journal_path = tmp_path / "runtime_events.jsonl"
+    journal_path.write_text("", encoding="utf-8")
+
+    class FakeJournal:
+        def snapshot(self) -> dict:
+            return {
+                "journal_path": str(journal_path),
+                "event_count": 3,
+                "last_sequence_num": 3,
+                "last_event_hash": "hash-3",
+                "integrity_status": "hash-chain",
+                "historical_integrity_status": "ok",
+                "historical_integrity_breaks": 0,
+            }
+
+        def recent_events(self) -> list[dict]:
+            return [current_missing, historical_failed, unknown_missing]
+
+    monkeypatch.setattr(maintenance, "get_runtime_journal", lambda: FakeJournal())
+    monkeypatch.setattr(
+        maintenance,
+        "build_configured_app_discovery_smoke",
+        lambda: {
+            "scan_version": "app-discovery-smoke/1",
+            "read_only": True,
+            "status": "ok",
+            "entries": [],
+            "actions_performed": [],
+            "observation_errors": [],
+        },
+    )
+
+    manager = get_approval_manager()
+    manager.reset_for_tests()
+    try:
+        record = manager.create_received("open notepad", command_id="cmd-old-unverified")
+        record.status = CommandStatus.EXECUTED
+        record.verification_state = "unverified"
+        record.metadata.update({
+            "restored_from_journal": True,
+            "restored_source": "command_event_replay",
+            "source_snapshot_sequence": 82251,
+        })
+
+        report = maintenance.run_read_only_maintenance_scan(
+            runtime_snapshot={
+                "session_id": "session-maintenance-current",
+                "last_event_sequence": 3,
+                "queue_depth": 0,
+                "queue_capacity": 1,
+                "recovery_depth": 0,
+            },
+            websocket_clients=None,
+        )
+    finally:
+        manager.reset_for_tests()
+
+    evidence = report["checks"]["evidence_audit"]
+    classification = evidence["classification"]
+
+    assert evidence["read_only"] is True
+    assert evidence["mutation_performed"] is False
+    assert evidence["status"] == "fail"
+    assert evidence["current_missing_evidence_count"] == 1
+    assert evidence["historical_missing_evidence_count"] == 0
+    assert evidence["unknown_era_missing_evidence_count"] == 1
+    assert evidence["historical_unverified_completed_count"] == 1
+    assert evidence["negative_evidence_count"] == 1
+    assert classification["scan_version"] == "evidence-classification/1"
+    assert classification["current_evidence_failure_count"] == 1
+    assert classification["historical_evidence_debt_count"] == 2
+    assert classification["unknown_era_evidence_issue_count"] == 1
+    assert "evidence_audit_classification" in report["checks"]["read_only_contract"]["allowed_observations"]
+    assert any(
+        finding["finding_id"] == "runtime.evidence_audit.missing_evidence"
+        and finding["evidence"]["current_missing_evidence_count"] == 1
+        and finding["evidence"]["unknown_era_missing_evidence_count"] == 1
+        for finding in report["findings"]
+    )
+    assert any(
+        finding["finding_id"] == "runtime.command_lifecycle.unverified_completed"
+        and finding["evidence"]["historical_unverified_completed_count"] == 1
+        for finding in report["findings"]
+    )
 
 
 def test_workspace_directory_report_is_read_only_and_evidence_backed(monkeypatch, tmp_path) -> None:
