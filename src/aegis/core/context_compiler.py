@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
@@ -7,6 +9,7 @@ from typing import Any, Iterable, Mapping
 
 CONTEXT_COMPILER_VERSION = "context-compiler/1"
 CONTEXT_PACKAGE_SCHEMA_VERSION = "context-package/1"
+CONTEXT_READ_ONLY_CONTRACT_VERSION = "context-read-only-contract/1"
 
 AUTHORITY_BACKEND = "backend_authoritative"
 AUTHORITY_DERIVED = "backend_derived_summary"
@@ -44,9 +47,11 @@ def compile_context_package(inputs: ContextCompilerInput) -> dict[str, Any]:
 
     budget = inputs.budget or ContextBudget()
     source_references = _source_references(inputs)
+    source_versions = _source_versions(inputs)
     omitted_sections: list[dict[str, Any]] = []
     safety_warnings: list[str] = []
     omitted_item_counts: dict[str, int] = {}
+    generated_at_ms = int(inputs.generated_at_ms if inputs.generated_at_ms is not None else time.time() * 1000)
 
     runtime_events_seen = _count_iterable(inputs.runtime_events)
     if runtime_events_seen:
@@ -83,10 +88,24 @@ def compile_context_package(inputs: ContextCompilerInput) -> dict[str, Any]:
     return {
         "schema_version": CONTEXT_PACKAGE_SCHEMA_VERSION,
         "compiler_version": CONTEXT_COMPILER_VERSION,
-        "generated_at_ms": int(inputs.generated_at_ms if inputs.generated_at_ms is not None else time.time() * 1000),
+        "context_contract_version": CONTEXT_READ_ONLY_CONTRACT_VERSION,
+        "context_package_id": _context_package_id(generated_at_ms, source_references, source_versions),
+        "generated_at_ms": generated_at_ms,
+        "authority": False,
         "non_executing": True,
         "capability_grant": False,
+        "approval_grant": False,
+        "lease_grant": False,
         "execution_permission": "not_granted_by_context",
+        "requires_backend_validation": True,
+        "requires_policy_recheck": True,
+        "memory_mutation": False,
+        "journal_mutation": False,
+        "evidence_mutation": False,
+        "runtime_mutation": False,
+        "raw_journal_included": False,
+        "known_debt_visible": _known_debt_visible(evidence_summary, maintenance_summary),
+        "unknown_era_preserved": _unknown_era_preserved(evidence_summary, maintenance_summary),
         "request": _section("request", request_summary),
         "runtime": _section("runtime_snapshot", runtime_summary),
         "command_lifecycle": _section("command_lifecycle", lifecycle_summary),
@@ -96,6 +115,8 @@ def compile_context_package(inputs: ContextCompilerInput) -> dict[str, Any]:
         "maintenance_diagnostics": _section("maintenance_scan", maintenance_summary),
         "frontend_projection": _section("frontend_projection", frontend_summary),
         "source_references": source_references,
+        "source_refs": source_references,
+        "source_versions": source_versions,
         "omitted_sections": omitted_sections,
         "safety_warnings": safety_warnings,
         "budget": {
@@ -132,6 +153,53 @@ def _source_references(inputs: ContextCompilerInput) -> list[dict[str, Any]]:
         ),
     ]
     return refs
+
+
+def _source_versions(inputs: ContextCompilerInput) -> dict[str, Any]:
+    return {
+        "request": _mapping_version(inputs.request),
+        "runtime_snapshot": _mapping_version(inputs.runtime_snapshot),
+        "command_lifecycle": _mapping_version(inputs.command_lifecycle),
+        "policy_boundary": _policy_version(inputs.policy_boundary),
+        "non_executable_state": _mapping_version(inputs.non_executable_state),
+        "evidence_audit": _mapping_version(inputs.evidence_audit),
+        "maintenance_scan": _mapping_version(inputs.maintenance_scan),
+        "frontend_projection": _mapping_version(inputs.frontend_projection),
+    }
+
+
+def _mapping_version(value: Mapping[str, Any] | None) -> Any:
+    if not isinstance(value, Mapping):
+        return "unavailable"
+    for key in ("schema_version", "scan_version", "version", "boundary_version"):
+        if key in value:
+            return value[key]
+    return "unversioned"
+
+
+def _policy_version(value: Any) -> Any:
+    if value is None:
+        return "unavailable"
+    return _get_field(value, "boundary_version", "unversioned")
+
+
+def _context_package_id(
+    generated_at_ms: int,
+    source_references: list[dict[str, Any]],
+    source_versions: Mapping[str, Any],
+) -> str:
+    digest = hashlib.sha256(
+        json.dumps(
+            {
+                "generated_at_ms": generated_at_ms,
+                "source_references": source_references,
+                "source_versions": dict(source_versions),
+            },
+            sort_keys=True,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()[:16]
+    return f"context-package/{digest}"
 
 
 def _source_ref(
@@ -334,15 +402,105 @@ def _compile_maintenance_scan(scan: Mapping[str, Any] | None, warnings: list[str
     if not isinstance(scan, Mapping):
         return {"status": "unavailable", "read_only": "unknown", "diagnostics_only": True}
     checks = scan.get("checks") if isinstance(scan.get("checks"), Mapping) else {}
+    runtime_health = checks.get("runtime_health") if isinstance(checks.get("runtime_health"), Mapping) else {}
+    runtime_health = scan.get("summary") if isinstance(scan.get("summary"), Mapping) else runtime_health
+    closure = (
+        checks.get("foundation_closure_readiness")
+        if isinstance(checks.get("foundation_closure_readiness"), Mapping)
+        else {}
+    )
+    evidence_audit = checks.get("evidence_audit") if isinstance(checks.get("evidence_audit"), Mapping) else {}
+    pending_hygiene = (
+        checks.get("pending_decision_hygiene")
+        if isinstance(checks.get("pending_decision_hygiene"), Mapping)
+        else {}
+    )
+    replay = checks.get("replay_diagnostics") if isinstance(checks.get("replay_diagnostics"), Mapping) else {}
+    replay_boundary = replay.get("replay_boundary") if isinstance(replay.get("replay_boundary"), Mapping) else {}
+    system_resources = checks.get("system_resources") if isinstance(checks.get("system_resources"), Mapping) else {}
+    disk = system_resources.get("disk") if isinstance(system_resources.get("disk"), Mapping) else {}
     app_discovery = checks.get("app_discovery") if isinstance(checks.get("app_discovery"), Mapping) else {}
     read_only = scan.get("read_only") if "read_only" in scan else "unavailable"
     app_read_only = app_discovery.get("read_only") if "read_only" in app_discovery else "unavailable"
     if read_only is not True or app_read_only is False:
         warnings.append("maintenance diagnostics read-only status is not explicitly safe")
+    if runtime_health.get("status") not in {None, "ok"}:
+        warnings.append(f"runtime health status is {runtime_health.get('status')}")
+    if replay.get("status") not in {None, "ok", "unknown"}:
+        warnings.append(f"replay diagnostics status is {replay.get('status')}")
+    if system_resources.get("status") not in {None, "ok", "unknown"}:
+        warnings.append(f"system resources status is {system_resources.get('status')}")
     return {
         "status": _state_status(scan),
         "read_only": read_only,
         "diagnostics_only": True,
+        "runtime_health_status": runtime_health.get("status", "unavailable"),
+        "runtime_health_reasons": runtime_health.get("reasons", "unavailable"),
+        "finding_severity_counts": runtime_health.get("finding_severity_counts", "unavailable"),
+        "foundation_closure_readiness": {
+            "present": bool(closure),
+            "read_only": closure.get("read_only", "unavailable"),
+            "mutation_performed": closure.get("mutation_performed", False) is True,
+            "status": closure.get("status", "unavailable"),
+            "closure_readiness_status": closure.get("closure_readiness_status", "unavailable"),
+            "current_blocker_count": _count_or_unavailable(closure, "current_blocker_count"),
+            "current_evidence_failure_count": _count_or_unavailable(
+                closure,
+                "current_evidence_failure_count",
+                fallback=evidence_audit,
+            ),
+            "current_missing_evidence_count": _count_or_unavailable(
+                closure,
+                "current_missing_evidence_count",
+                fallback=evidence_audit,
+            ),
+            "pending_decision_hygiene_status": pending_hygiene.get("status", "unavailable"),
+            "pending_count": _count_or_unavailable(closure, "pending_decision_blocker_count", fallback=pending_hygiene),
+            "restored_pending_count": _count_or_unavailable(
+                closure,
+                "restored_pending_count",
+                fallback=pending_hygiene,
+                fallback_key="restored_unresolved_count",
+            ),
+            "historical_evidence_debt_count": _count_or_unavailable(
+                closure,
+                "historical_evidence_debt_count",
+                fallback=evidence_audit,
+            ),
+            "historical_missing_evidence_count": _count_or_unavailable(
+                closure,
+                "historical_missing_evidence_count",
+                fallback=evidence_audit,
+            ),
+            "unknown_era_evidence_issue_count": _count_or_unavailable(
+                closure,
+                "unknown_era_evidence_issue_count",
+                fallback=evidence_audit,
+            ),
+            "unknown_era_missing_evidence_count": _count_or_unavailable(
+                closure,
+                "unknown_era_missing_evidence_count",
+                fallback=evidence_audit,
+            ),
+            "replay_diagnostics_status": closure.get("replay_diagnostics_status", replay.get("status", "unavailable")),
+            "replay_boundary_classification": closure.get(
+                "replay_boundary_classification",
+                replay_boundary.get("classification", "unavailable"),
+            ),
+            "replay_cleanup_execution_blocked": replay.get("cleanup_execution_blocked", "unavailable"),
+            "system_resource_warning_count": _count_or_unavailable(closure, "system_resource_warning_count"),
+        },
+        "replay_diagnostics": {
+            "present": bool(replay),
+            "status": replay.get("status", "unavailable"),
+            "boundary_classification": replay_boundary.get("classification", "unavailable"),
+            "cleanup_execution_blocked": replay.get("cleanup_execution_blocked", "unavailable"),
+        },
+        "system_resources": {
+            "present": bool(system_resources),
+            "status": system_resources.get("status", "unavailable"),
+            "disk_percent": disk.get("percent", "unavailable"),
+        },
         "action_proposal_count": len(_list_from(scan.get("action_proposals"))),
         "app_discovery": {
             "present": bool(app_discovery),
@@ -457,3 +615,52 @@ def _count_iterable(value: Iterable[Any] | None) -> int:
     if isinstance(value, list | tuple):
         return len(value)
     return sum(1 for _ in value)
+
+
+def _count_or_unavailable(
+    mapping: Mapping[str, Any],
+    key: str,
+    *,
+    fallback: Mapping[str, Any] | None = None,
+    fallback_key: str | None = None,
+) -> Any:
+    if key in mapping:
+        return mapping[key]
+    if isinstance(fallback, Mapping):
+        resolved_key = fallback_key or key
+        if resolved_key in fallback:
+            return fallback[resolved_key]
+    return "unavailable"
+
+
+def _known_debt_visible(evidence: Mapping[str, Any], maintenance: Mapping[str, Any]) -> bool:
+    closure = maintenance.get("foundation_closure_readiness")
+    closure = closure if isinstance(closure, Mapping) else {}
+    return any(
+        _positive_count(value)
+        for value in (
+            evidence.get("historical_evidence_debt_count"),
+            evidence.get("historical_missing_evidence_count"),
+            evidence.get("failed_evidence_count"),
+            closure.get("historical_evidence_debt_count"),
+            closure.get("historical_missing_evidence_count"),
+            closure.get("system_resource_warning_count"),
+        )
+    ) or closure.get("replay_diagnostics_status") not in {None, "unavailable", "ok", "unknown"}
+
+
+def _unknown_era_preserved(evidence: Mapping[str, Any], maintenance: Mapping[str, Any]) -> bool:
+    closure = maintenance.get("foundation_closure_readiness")
+    closure = closure if isinstance(closure, Mapping) else {}
+    return any(
+        key in source and source.get(key) != "unavailable"
+        for source in (evidence, closure)
+        for key in ("unknown_era_evidence_issue_count", "unknown_era_missing_evidence_count")
+    )
+
+
+def _positive_count(value: Any) -> bool:
+    try:
+        return int(value) > 0
+    except (TypeError, ValueError):
+        return False

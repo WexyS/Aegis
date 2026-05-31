@@ -4,6 +4,7 @@ from copy import deepcopy
 from aegis.core.context_compiler import (
     CONTEXT_COMPILER_VERSION,
     CONTEXT_PACKAGE_SCHEMA_VERSION,
+    CONTEXT_READ_ONLY_CONTRACT_VERSION,
     ContextBudget,
     ContextCompilerInput,
     compile_context_package,
@@ -23,13 +24,27 @@ def test_context_package_includes_schema_version_and_provenance() -> None:
 
     assert package["schema_version"] == CONTEXT_PACKAGE_SCHEMA_VERSION
     assert package["compiler_version"] == CONTEXT_COMPILER_VERSION
+    assert package["context_contract_version"] == CONTEXT_READ_ONLY_CONTRACT_VERSION
+    assert package["context_package_id"].startswith("context-package/")
     assert package["generated_at_ms"] == 12345
+    assert package["authority"] is False
     assert package["non_executing"] is True
     assert package["capability_grant"] is False
+    assert package["approval_grant"] is False
+    assert package["lease_grant"] is False
     assert package["execution_permission"] == "not_granted_by_context"
+    assert package["requires_backend_validation"] is True
+    assert package["requires_policy_recheck"] is True
+    assert package["memory_mutation"] is False
+    assert package["journal_mutation"] is False
+    assert package["evidence_mutation"] is False
+    assert package["runtime_mutation"] is False
+    assert package["raw_journal_included"] is False
     refs = {ref["source_id"]: ref for ref in package["source_references"]}
     assert refs["runtime_snapshot"]["authority"] == "backend_authoritative"
     assert refs["runtime_snapshot"]["provided"] is True
+    assert package["source_refs"] == package["source_references"]
+    assert package["source_versions"]["runtime_snapshot"] == 3
     assert package["runtime"]["source_ref"] == "runtime_snapshot"
 
 
@@ -211,7 +226,37 @@ def test_evidence_classification_counts_are_preserved_without_verification_claim
     assert summary["unknown_era_missing_evidence_count"] == 0
     assert summary["verified_action_count"] == 0
     assert summary["dispatch_success_is_not_verification"] is True
+    assert package["known_debt_visible"] is True
+    assert package["unknown_era_preserved"] is True
     assert package["execution_permission"] == "not_granted_by_context"
+
+
+def test_unknown_era_counts_are_preserved_without_collapsing_to_historical() -> None:
+    package = compile_context_package(
+        ContextCompilerInput(
+            evidence_audit={
+                "scan_version": "evidence-audit/2",
+                "read_only": True,
+                "status": "fail",
+                "historical_evidence_debt_count": 18,
+                "historical_missing_evidence_count": 16,
+                "unknown_era_evidence_issue_count": 10,
+                "unknown_era_missing_evidence_count": 0,
+                "verified_action_count": 0,
+                "missing_evidence_count": 16,
+                "failed_evidence_count": 0,
+            },
+            generated_at_ms=1,
+        )
+    )
+
+    summary = package["verifier_evidence"]["summary"]
+    assert summary["historical_evidence_debt_count"] == 18
+    assert summary["historical_missing_evidence_count"] == 16
+    assert summary["unknown_era_evidence_issue_count"] == 10
+    assert summary["unknown_era_missing_evidence_count"] == 0
+    assert package["unknown_era_preserved"] is True
+    assert "unknown_era_as_historical" not in json.dumps(package)
 
 
 def test_maintenance_diagnostics_are_marked_read_only() -> None:
@@ -239,6 +284,92 @@ def test_maintenance_diagnostics_are_marked_read_only() -> None:
     assert summary["app_discovery"]["read_only"] is True
     assert summary["app_discovery"]["actions_performed"] == []
     assert summary["mutation_performed"] is False
+
+
+def test_maintenance_debt_and_runtime_health_projection_are_preserved_read_only() -> None:
+    package = compile_context_package(
+        ContextCompilerInput(
+            maintenance_scan={
+                "scan_version": "maintenance-scan/1",
+                "status": "fail",
+                "read_only": True,
+                "summary": {
+                    "scan_version": "runtime-health/1",
+                    "read_only": True,
+                    "status": "fail",
+                    "reasons": ["evidence_audit", "replay_diagnostics", "system_resources"],
+                    "finding_severity_counts": {"fail": 1, "warning": 2},
+                },
+                "action_proposals": [],
+                "mutation_performed": False,
+                "checks": {
+                    "foundation_closure_readiness": {
+                        "read_only": True,
+                        "mutation_performed": False,
+                        "status": "warning",
+                        "closure_readiness_status": "needs_operator_attention",
+                        "current_blocker_count": 0,
+                        "current_evidence_failure_count": 0,
+                        "current_missing_evidence_count": 0,
+                        "pending_decision_blocker_count": 0,
+                        "restored_pending_count": 0,
+                        "historical_evidence_debt_count": 18,
+                        "historical_missing_evidence_count": 16,
+                        "unknown_era_evidence_issue_count": 10,
+                        "unknown_era_missing_evidence_count": 0,
+                        "replay_diagnostics_status": "fail",
+                        "replay_boundary_classification": "historical_mixed_sequence_eras_or_reset_boundaries",
+                        "system_resource_warning_count": 1,
+                    },
+                    "pending_decision_hygiene": {
+                        "status": "ok",
+                        "pending_count": 0,
+                        "restored_unresolved_count": 0,
+                    },
+                    "replay_diagnostics": {
+                        "status": "fail",
+                        "cleanup_execution_blocked": True,
+                        "replay_boundary": {
+                            "classification": "historical_mixed_sequence_eras_or_reset_boundaries",
+                        },
+                    },
+                    "system_resources": {
+                        "status": "warning",
+                        "disk": {"percent": 92.3},
+                    },
+                    "app_discovery": {
+                        "read_only": True,
+                        "actions_performed": [],
+                    },
+                },
+            },
+            generated_at_ms=1,
+        )
+    )
+
+    summary = package["maintenance_diagnostics"]["summary"]
+    closure = summary["foundation_closure_readiness"]
+    assert summary["runtime_health_status"] == "fail"
+    assert summary["runtime_health_reasons"] == ["evidence_audit", "replay_diagnostics", "system_resources"]
+    assert closure["read_only"] is True
+    assert closure["mutation_performed"] is False
+    assert closure["closure_readiness_status"] == "needs_operator_attention"
+    assert closure["current_blocker_count"] == 0
+    assert closure["current_evidence_failure_count"] == 0
+    assert closure["historical_evidence_debt_count"] == 18
+    assert closure["historical_missing_evidence_count"] == 16
+    assert closure["unknown_era_evidence_issue_count"] == 10
+    assert closure["unknown_era_missing_evidence_count"] == 0
+    assert closure["replay_diagnostics_status"] == "fail"
+    assert closure["replay_cleanup_execution_blocked"] is True
+    assert closure["system_resource_warning_count"] == 1
+    assert summary["replay_diagnostics"]["boundary_classification"] == (
+        "historical_mixed_sequence_eras_or_reset_boundaries"
+    )
+    assert summary["system_resources"]["disk_percent"] == 92.3
+    assert package["known_debt_visible"] is True
+    assert package["unknown_era_preserved"] is True
+    assert package["runtime_mutation"] is False
 
 
 def test_raw_runtime_journal_is_excluded_by_default_and_budget_records_omissions() -> None:
@@ -279,6 +410,29 @@ def test_raw_runtime_journal_is_excluded_by_default_and_budget_records_omissions
     assert any(section["section"] == "command_lifecycle.records" for section in package["omitted_sections"])
 
 
+def test_requested_raw_runtime_events_remain_omitted_without_boundary_approval() -> None:
+    package = compile_context_package(
+        ContextCompilerInput(
+            runtime_events=[
+                {
+                    "type": "ACTION_COMPLETED",
+                    "payload": {"execution_evidence": {"verification_state": "verified"}},
+                }
+            ],
+            budget=ContextBudget(include_raw_runtime_events=True),
+            generated_at_ms=1,
+        )
+    )
+
+    encoded = json.dumps(package)
+    assert package["raw_journal_included"] is False
+    assert package["budget"]["raw_runtime_journal_included"] is False
+    assert package["budget"]["requested_raw_runtime_events"] is True
+    assert package["budget"]["omitted_item_counts"]["runtime_events"] == 1
+    assert "ACTION_COMPLETED" not in encoded
+    assert "execution_evidence" not in encoded
+
+
 def test_context_compiler_introduces_no_execution_capability() -> None:
     package = compile_context_package(
         ContextCompilerInput(
@@ -291,7 +445,10 @@ def test_context_compiler_introduces_no_execution_capability() -> None:
 
     assert package["non_executing"] is True
     assert package["capability_grant"] is False
+    assert package["approval_grant"] is False
+    assert package["lease_grant"] is False
     assert package["execution_permission"] == "not_granted_by_context"
+    assert package["raw_journal_included"] is False
     assert package["policy_boundary"]["summary"]["context_grants_permission"] is False
     assert package["frontend_projection"]["summary"]["used_as_authority"] is False
     assert "execute_allowed" not in json.dumps(package["policy_boundary"])
@@ -338,22 +495,38 @@ def test_untrusted_permission_fields_are_not_promoted_from_sources() -> None:
                 "read_only": True,
                 "capability_grant": True,
                 "approval_grant": True,
+                "lease_grant": True,
                 "execution_permission": "granted",
+                "authority": True,
+                "memory_mutation": True,
+                "journal_mutation": True,
+                "evidence_mutation": True,
+                "runtime_mutation": True,
+                "raw_journal_included": True,
                 "checks": {"app_discovery": {"read_only": True, "actions_performed": []}},
             },
             frontend_projection={
                 "capability_grant": True,
                 "approval_grant": True,
+                "lease_grant": True,
                 "execution_permission": "granted",
+                "authority": True,
             },
             generated_at_ms=1,
         )
     )
 
+    assert package["authority"] is False
     assert package["non_executing"] is True
     assert package["capability_grant"] is False
+    assert package["approval_grant"] is False
+    assert package["lease_grant"] is False
     assert package["execution_permission"] == "not_granted_by_context"
-    assert "approval_grant" not in package
+    assert package["memory_mutation"] is False
+    assert package["journal_mutation"] is False
+    assert package["evidence_mutation"] is False
+    assert package["runtime_mutation"] is False
+    assert package["raw_journal_included"] is False
     assert "granted" not in json.dumps(package["request"])
     assert "granted" not in json.dumps(package["maintenance_diagnostics"])
     assert package["frontend_projection"]["summary"]["used_as_authority"] is False
