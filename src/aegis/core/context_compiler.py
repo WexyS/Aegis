@@ -295,6 +295,36 @@ def _compile_evidence_audit(evidence: Mapping[str, Any] | None, warnings: list[s
         "verified_action_count": evidence["verified_action_count"] if "verified_action_count" in evidence else "unavailable",
         "missing_evidence_count": evidence["missing_evidence_count"] if "missing_evidence_count" in evidence else "unavailable",
         "failed_evidence_count": evidence["failed_evidence_count"] if "failed_evidence_count" in evidence else "unavailable",
+        "current_evidence_failure_count": (
+            evidence["current_evidence_failure_count"]
+            if "current_evidence_failure_count" in evidence
+            else "unavailable"
+        ),
+        "historical_evidence_debt_count": (
+            evidence["historical_evidence_debt_count"]
+            if "historical_evidence_debt_count" in evidence
+            else "unavailable"
+        ),
+        "unknown_era_evidence_issue_count": (
+            evidence["unknown_era_evidence_issue_count"]
+            if "unknown_era_evidence_issue_count" in evidence
+            else "unavailable"
+        ),
+        "current_missing_evidence_count": (
+            evidence["current_missing_evidence_count"]
+            if "current_missing_evidence_count" in evidence
+            else "unavailable"
+        ),
+        "historical_missing_evidence_count": (
+            evidence["historical_missing_evidence_count"]
+            if "historical_missing_evidence_count" in evidence
+            else "unavailable"
+        ),
+        "unknown_era_missing_evidence_count": (
+            evidence["unknown_era_missing_evidence_count"]
+            if "unknown_era_missing_evidence_count" in evidence
+            else "unavailable"
+        ),
         "verification_counts": evidence.get("verification_counts") if "verification_counts" in evidence else "unavailable",
         "dispatch_success_is_not_verification": True,
     }

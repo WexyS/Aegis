@@ -354,4 +354,7 @@ The current product target is:
 
 **Reliable Local AI Control Plane**
 
+`Reliable AI Computer Operator` remains the first operator-facing product mode
+inside that broader control-plane architecture.
+
 The first commercializable direction is still likely an evidence-backed local computer maintenance assistant, but the architecture is intentionally broader: a modular, auditable local control plane with policy, evidence, approval, capability, context, tool, model, and operator UX boundaries.

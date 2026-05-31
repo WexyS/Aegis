@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 
 from aegis.core.context_compiler import (
     CONTEXT_COMPILER_VERSION,
@@ -177,6 +178,42 @@ def test_verifier_evidence_summary_distinguishes_dispatch_from_verified_evidence
     assert any("evidence audit status is warning" in warning for warning in package["safety_warnings"])
 
 
+def test_evidence_classification_counts_are_preserved_without_verification_claims() -> None:
+    package = compile_context_package(
+        ContextCompilerInput(
+            evidence_audit={
+                "scan_version": "evidence-audit/2",
+                "read_only": True,
+                "status": "fail",
+                "success_count": 2,
+                "verified_action_count": 0,
+                "missing_evidence_count": 16,
+                "failed_evidence_count": 2,
+                "current_evidence_failure_count": 0,
+                "historical_evidence_debt_count": 18,
+                "unknown_era_evidence_issue_count": 10,
+                "current_missing_evidence_count": 0,
+                "historical_missing_evidence_count": 16,
+                "unknown_era_missing_evidence_count": 0,
+                "verification_counts": {"missing": 16, "failed": 2},
+            },
+            generated_at_ms=1,
+        )
+    )
+
+    summary = package["verifier_evidence"]["summary"]
+    assert summary["status"] == "fail"
+    assert summary["current_evidence_failure_count"] == 0
+    assert summary["historical_evidence_debt_count"] == 18
+    assert summary["unknown_era_evidence_issue_count"] == 10
+    assert summary["current_missing_evidence_count"] == 0
+    assert summary["historical_missing_evidence_count"] == 16
+    assert summary["unknown_era_missing_evidence_count"] == 0
+    assert summary["verified_action_count"] == 0
+    assert summary["dispatch_success_is_not_verification"] is True
+    assert package["execution_permission"] == "not_granted_by_context"
+
+
 def test_maintenance_diagnostics_are_marked_read_only() -> None:
     package = compile_context_package(
         ContextCompilerInput(
@@ -259,3 +296,112 @@ def test_context_compiler_introduces_no_execution_capability() -> None:
     assert package["frontend_projection"]["summary"]["used_as_authority"] is False
     assert "execute_allowed" not in json.dumps(package["policy_boundary"])
     assert "execute_allowed" not in json.dumps(package["request"])
+
+
+def test_policy_approval_grant_is_reported_but_not_context_permission() -> None:
+    package = compile_context_package(
+        ContextCompilerInput(
+            policy_boundary={
+                "boundary_version": "policy-boundary/1",
+                "dispatch_allowed": True,
+                "decision_status": "approval_required",
+                "policy_rule": "medium_risk.requires_approval",
+                "approval_granted": True,
+                "resume_allowed": True,
+            },
+            generated_at_ms=1,
+        )
+    )
+
+    summary = package["policy_boundary"]["summary"]
+    assert summary["approval_granted"] is True
+    assert summary["resume_allowed_by_policy"] is True
+    assert summary["context_grants_permission"] is False
+    assert summary["execution_permission"] == "not_granted_by_context"
+    assert summary["requires_policy_recheck_before_dispatch"] is True
+    assert package["non_executing"] is True
+    assert package["capability_grant"] is False
+    assert package["execution_permission"] == "not_granted_by_context"
+
+
+def test_untrusted_permission_fields_are_not_promoted_from_sources() -> None:
+    package = compile_context_package(
+        ContextCompilerInput(
+            request={
+                "text": "open notepad",
+                "capability_grant": True,
+                "approval_grant": True,
+                "execution_permission": "granted",
+            },
+            maintenance_scan={
+                "status": "ok",
+                "read_only": True,
+                "capability_grant": True,
+                "approval_grant": True,
+                "execution_permission": "granted",
+                "checks": {"app_discovery": {"read_only": True, "actions_performed": []}},
+            },
+            frontend_projection={
+                "capability_grant": True,
+                "approval_grant": True,
+                "execution_permission": "granted",
+            },
+            generated_at_ms=1,
+        )
+    )
+
+    assert package["non_executing"] is True
+    assert package["capability_grant"] is False
+    assert package["execution_permission"] == "not_granted_by_context"
+    assert "approval_grant" not in package
+    assert "granted" not in json.dumps(package["request"])
+    assert "granted" not in json.dumps(package["maintenance_diagnostics"])
+    assert package["frontend_projection"]["summary"]["used_as_authority"] is False
+
+
+def test_context_compiler_does_not_mutate_supplied_inputs() -> None:
+    request = {"text": "summarize runtime", "metadata": {"operator": "local"}}
+    lifecycle = {
+        "records": [{"command_id": "cmd-1", "status": "executed", "metadata": {}}],
+        "pending_approvals": [],
+        "pending_clarifications": [],
+    }
+    evidence = {
+        "status": "warning",
+        "read_only": True,
+        "success_count": 0,
+        "verified_action_count": 0,
+        "missing_evidence_count": 1,
+        "failed_evidence_count": 0,
+        "verification_counts": {"missing": 1},
+    }
+    maintenance = {
+        "status": "warning",
+        "read_only": True,
+        "action_proposals": [],
+        "checks": {"app_discovery": {"read_only": True, "actions_performed": []}},
+    }
+    before = deepcopy({
+        "request": request,
+        "lifecycle": lifecycle,
+        "evidence": evidence,
+        "maintenance": maintenance,
+    })
+
+    package = compile_context_package(
+        ContextCompilerInput(
+            request=request,
+            command_lifecycle=lifecycle,
+            evidence_audit=evidence,
+            maintenance_scan=maintenance,
+            generated_at_ms=1,
+        )
+    )
+
+    assert {
+        "request": request,
+        "lifecycle": lifecycle,
+        "evidence": evidence,
+        "maintenance": maintenance,
+    } == before
+    assert package["non_executing"] is True
