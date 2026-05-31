@@ -1,8 +1,10 @@
 # Aegis
 
-**Aegis is a local-first, verification-backed desktop automation runtime for Windows.**
+**Aegis is a local-first, verification-backed AI control plane and AI computer operator runtime for Windows.**
 
-It is designed to operate as a reliable computer assistant: it receives a user command, evaluates risk, asks for approval when needed, executes through bounded tools, verifies observable side effects, records evidence, and keeps the frontend synchronized from backend truth surfaces.
+The Aegis GitHub repository, `WexyS/Aegis`, is built for deterministic runtime truth, evidence-backed execution, policy-as-code boundaries, approval-aware automation, auditability, replayability, and bounded autonomy. It is a local AI operator foundation: closer to auditable autonomous AI mission control than a loose demo agent.
+
+Aegis is designed to operate as a reliable computer assistant: it receives a user command, evaluates risk, asks for approval when needed, executes through bounded tools, verifies observable side effects, records evidence, and keeps the frontend synchronized from backend truth surfaces.
 
 Aegis is not trying to be an uncontrolled autonomous agent. The project is intentionally built around deterministic runtime state, auditability, replayability, and approval-aware operation.
 
@@ -36,6 +38,9 @@ The long-term product direction is a trustworthy local assistant that can inspec
 - [Historical evidence/replay debt cleanup design](docs/historical-evidence-replay-debt-cleanup-design-v1.md)
 - [Historical evidence/replay debt inventory](docs/historical-evidence-replay-debt-inventory-v1.md)
 - [Post-foundation architecture roadmap](docs/post-foundation-architecture-roadmap-v1.md)
+- [Policy-as-code extension](docs/policy-as-code-extension-v1.md)
+- [Context Compiler read-only integration readiness](docs/context-compiler-read-only-integration-readiness-v1.md)
+- [GitHub discoverability and SEO alignment](docs/github-discoverability-seo-v1.md)
 - Git tag: `foundation-v1-baseline`
 
 ## Core Principles
