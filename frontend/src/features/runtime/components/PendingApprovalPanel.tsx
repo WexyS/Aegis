@@ -4,11 +4,18 @@ import React, { useRef, useState } from 'react';
 import { Ban, Check, ShieldAlert, Square } from 'lucide-react';
 
 import { EmptyState } from '@/components/EmptyState';
-import { resolveApprovalDecision, resolveClarificationDecision } from '@/lib/api';
-import { cancelCommand } from '@/lib/socket';
+import {
+  denySelectedRestoredApprovals,
+  previewRestoredApprovalHygiene,
+  resolveApprovalDecision,
+  resolveClarificationDecision,
+} from '@/lib/api';
+import { cancelCommand, runMaintenanceScan } from '@/lib/socket';
 import { useRuntimeStore } from '@/store/useRuntimeStore';
 import {
   CommandRecord,
+  ApprovalHygieneDenyResponse,
+  ApprovalHygienePreviewResponse,
   MaintenanceActionProposal,
 } from '@/types/runtime';
 
@@ -45,6 +52,7 @@ export const PendingApprovalPanel = () => {
               ))}
             </PendingDecisionGroup>
             <PendingDecisionGroup title="Restored unresolved approvals" count={restoredApprovals.length} restored>
+              <RestoredApprovalHygieneControls commands={restoredApprovals} />
               {restoredApprovals.map((command) => (
                 <ApprovalItem key={command.command_id} command={command} />
               ))}
@@ -118,6 +126,257 @@ const PendingDecisionGroup = ({
     </div>
   );
 };
+
+const HYGIENE_CONFIRMATION_PHRASE = 'DENY RESTORED APPROVALS';
+
+const RestoredApprovalHygieneControls = ({ commands }: { commands: CommandRecord[] }) => {
+  const upsertCommand = useRuntimeStore((state) => state.upsertCommand);
+  const addLog = useRuntimeStore((state) => state.addLog);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [preview, setPreview] = useState<ApprovalHygienePreviewResponse | null>(null);
+  const [result, setResult] = useState<ApprovalHygieneDenyResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmationPhrase, setConfirmationPhrase] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState<'preview' | 'deny' | null>(null);
+  const commandIds = commands.map(approvalIdFor).filter((value): value is string => Boolean(value));
+  const selectedCommands = commands.filter((command) => {
+    const approvalId = approvalIdFor(command);
+    return approvalId ? selectedIds.includes(approvalId) : false;
+  });
+  const allSelected = commandIds.length > 0 && selectedIds.length === commandIds.length;
+  const phraseValid = confirmationPhrase === HYGIENE_CONFIRMATION_PHRASE;
+  const reasonValid = reason.trim().length > 0;
+
+  const toggleAll = () => {
+    setResult(null);
+    setPreview(null);
+    setError(null);
+    setSelectedIds(allSelected ? [] : commandIds);
+  };
+
+  const toggleOne = (approvalId: string) => {
+    setResult(null);
+    setPreview(null);
+    setError(null);
+    setSelectedIds((current) => (
+      current.includes(approvalId)
+        ? current.filter((item) => item !== approvalId)
+        : [...current, approvalId]
+    ));
+  };
+
+  const runPreview = async () => {
+    if (selectedIds.length === 0 || busy !== null) return;
+    setBusy('preview');
+    setError(null);
+    setResult(null);
+    try {
+      const nextPreview = await previewRestoredApprovalHygiene(selectedIds);
+      setPreview(nextPreview);
+      addLog({
+        level: 'INFO',
+        message: `Restored approval hygiene preview: ${nextPreview.eligible_count} eligible / ${nextPreview.ineligible_count} ineligible`,
+        color: 'text-accent',
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Approval hygiene preview failed';
+      setError(message);
+      addLog({ level: 'ERR', message, color: 'text-danger' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const denySelected = async () => {
+    if (selectedIds.length === 0 || !phraseValid || !reasonValid || busy !== null) return;
+    setBusy('deny');
+    setError(null);
+    try {
+      const response = await denySelectedRestoredApprovals({
+        approvalIds: selectedIds,
+        confirmationPhrase,
+        reason: reason.trim(),
+        idempotencyKey: `restored-hygiene-${Date.now()}`,
+      });
+      response.results.forEach((item) => {
+        if (item.command) upsertCommand(item.command);
+      });
+      setResult(response);
+      setPreview(response.preview);
+      setSelectedIds((current) => current.filter((approvalId) => (
+        !response.results.some((item) => item.approval_id === approvalId && item.command?.status !== 'pending_approval')
+      )));
+      setConfirmOpen(false);
+      setConfirmationPhrase('');
+      setReason('');
+      runMaintenanceScan();
+      addLog({
+        level: response.failed_count > 0 ? 'WARN' : 'INFO',
+        message: `Restored approval hygiene deny: ${response.resolved_count} denied / ${response.failed_count} failed`,
+        color: response.failed_count > 0 ? 'text-warning' : 'text-accent',
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Approval hygiene deny failed';
+      setError(message);
+      addLog({ level: 'ERR', message, color: 'text-danger' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (commands.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-warning/20 bg-warning/[0.04] p-3 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[9px] font-bold uppercase tracking-widest text-warning">Restored hygiene</div>
+          <p className="mt-1 text-[9px] font-mono leading-relaxed text-warning/75">
+            Deny-only operator flow. Selected restored approvals are rejected by backend lifecycle state and are not executed.
+          </p>
+        </div>
+        <span className="shrink-0 text-[9px] font-mono text-warning">{selectedIds.length}/{commands.length}</span>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={toggleAll}
+          className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-foreground/60 hover:text-warning"
+        >
+          {allSelected ? 'Clear' : 'Select all restored'}
+        </button>
+        <button
+          type="button"
+          onClick={() => void runPreview()}
+          disabled={selectedIds.length === 0 || busy !== null}
+          className="rounded-md border border-accent/25 bg-accent/10 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-accent disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy === 'preview' ? 'Previewing' : 'Preview report'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirmOpen(true)}
+          disabled={selectedIds.length === 0 || busy !== null}
+          className="rounded-md border border-danger/25 bg-danger/10 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-danger disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Deny selected
+        </button>
+      </div>
+
+      <div className="grid gap-1 sm:grid-cols-2">
+        {commands.map((command) => {
+          const approvalId = approvalIdFor(command);
+          if (!approvalId) return null;
+          return (
+            <label key={`select-${approvalId}`} className="flex items-center gap-2 rounded-md border border-white/10 bg-black/10 px-2 py-1 text-[9px] font-mono text-foreground/55">
+              <input
+                type="checkbox"
+                checked={selectedIds.includes(approvalId)}
+                onChange={() => toggleOne(approvalId)}
+                className="h-3 w-3 accent-amber-400"
+              />
+              <span className="min-w-0 truncate">{command.text}</span>
+            </label>
+          );
+        })}
+      </div>
+
+      {preview && (
+        <HygienePreviewSummary preview={preview} />
+      )}
+
+      {confirmOpen && (
+        <div className="rounded-lg border border-danger/25 bg-danger/[0.06] p-3 space-y-3">
+          <div>
+            <div className="text-[9px] font-bold uppercase tracking-widest text-danger">Confirm deny selected</div>
+            <p className="mt-1 text-[9px] font-mono leading-relaxed text-danger/80">
+              This will reject {selectedIds.length} selected restored approvals and will not execute their commands.
+            </p>
+            <p className="mt-1 text-[9px] font-mono leading-relaxed text-foreground/45">
+              Top selected commands: {formatTopCommands(selectedCommands)}
+            </p>
+          </div>
+          <input
+            value={confirmationPhrase}
+            onChange={(event) => setConfirmationPhrase(event.target.value)}
+            placeholder={HYGIENE_CONFIRMATION_PHRASE}
+            className="w-full rounded-md border border-white/10 bg-black/20 px-2 py-2 text-[10px] font-mono text-foreground/80 outline-none placeholder:text-foreground/30 focus:border-danger/40"
+          />
+          <textarea
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Reason required"
+            className="min-h-[64px] w-full resize-y rounded-md border border-white/10 bg-black/20 px-2 py-2 text-[10px] text-foreground/80 outline-none placeholder:text-foreground/30 focus:border-danger/40"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmOpen(false)}
+              className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground/55 hover:text-foreground/80"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void denySelected()}
+              disabled={!phraseValid || !reasonValid || busy !== null}
+              className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-danger hover:bg-danger/15 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busy === 'deny' ? 'Denying' : 'Deny restored'}
+            </button>
+          </div>
+          {(!phraseValid || !reasonValid) && (
+            <p className="text-[9px] font-mono text-warning/80">
+              Type the exact phrase and provide a reason before backend denial is enabled.
+            </p>
+          )}
+        </div>
+      )}
+
+      {result && (
+        <div className="rounded-md border border-white/10 bg-black/15 px-2 py-1.5 text-[9px] font-mono leading-relaxed text-foreground/55">
+          resolved {result.resolved_count} / failed {result.failed_count} / mutation={String(result.mutation_performed)}
+          {result.failures.length > 0 && (
+            <div className="mt-1 text-danger">
+              {result.failures.map((failure) => `${failure.approval_id}: ${failure.reason}`).join(' | ')}
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && (
+        <p className="rounded-md border border-danger/30 bg-danger/10 px-2 py-1.5 text-[9px] font-mono text-danger">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+};
+
+const HygienePreviewSummary = ({ preview }: { preview: ApprovalHygienePreviewResponse }) => (
+  <div className="rounded-md border border-white/10 bg-black/15 px-2 py-1.5 text-[9px] font-mono leading-relaxed text-foreground/55">
+    <div className="flex flex-wrap gap-x-3 gap-y-1">
+      <span>eligible {preview.eligible_count}</span>
+      <span>ineligible {preview.ineligible_count}</span>
+      <span>restored {preview.restored_count}</span>
+      <span>current {preview.current_session_count}</span>
+      <span>mutation={String(preview.mutation_performed)}</span>
+    </div>
+    {preview.top_command_texts.length > 0 && (
+      <p className="mt-1 text-foreground/45">
+        {preview.top_command_texts.map((item) => `${item.value} x${item.count}`).join(' / ')}
+      </p>
+    )}
+    {preview.warnings.length > 0 && (
+      <p className="mt-1 text-warning/80">
+        warnings: {preview.warnings.map((item) => `${String(item.approval_id)}=${String(item.reason)}`).join(' | ')}
+      </p>
+    )}
+  </div>
+);
 
 const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
   const upsertCommand = useRuntimeStore((state) => state.upsertCommand);
@@ -483,6 +742,23 @@ function getMaintenanceProposalFromCommand(command: CommandRecord): MaintenanceA
     return null;
   }
   return candidate as MaintenanceActionProposal;
+}
+
+function approvalIdFor(command: CommandRecord): string | null {
+  return getMetadataString(command, 'approval_id') || command.command_id || null;
+}
+
+function formatTopCommands(commands: CommandRecord[]): string {
+  const counts = new Map<string, number>();
+  commands.forEach((command) => {
+    const text = command.text || 'unknown command';
+    counts.set(text, (counts.get(text) || 0) + 1);
+  });
+  const top = Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([text, count]) => `${text} x${count}`);
+  return top.length > 0 ? top.join(' / ') : 'none selected';
 }
 
 function getMetadataString(command: CommandRecord, key: string): string | null {

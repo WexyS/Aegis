@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from aegis.core import journal_cleanup, maintenance
+from aegis.core.approval_hygiene import build_approval_hygiene_preview, reject_grant_like_payload
 from aegis.core.commands import ApprovalManager, get_approval_manager
 from aegis.core.constants import ActionStatus, CommandStatus, IntentSource, RiskLevel
 from aegis.core.context import ExecutionContext
@@ -223,6 +224,45 @@ def test_threat_stale_missing_and_already_resolved_approval_ids_fail_without_exe
 
     with pytest.raises(ValueError):
         manager.resolve_approval(state.metadata["approval_id"], approved=True)
+
+
+def test_threat_restored_hygiene_preview_does_not_authorize_grant_or_current_session_sweep():
+    manager = ApprovalManager()
+    manager.register_pending(
+        command_id="cmd-threat-restored-hygiene",
+        text="open notepad",
+        trace_id="trace-threat-restored-hygiene",
+        reason="restored approval",
+        risk_level=RiskLevel.MEDIUM,
+        metadata={
+            "approval_id": "approval-threat-restored-hygiene",
+            "restored_from_journal": True,
+            "restored_source": "command_event_replay",
+        },
+    )
+    manager.register_pending(
+        command_id="cmd-threat-current-hygiene",
+        text="open notepad",
+        trace_id="trace-threat-current-hygiene",
+        reason="current approval",
+        risk_level=RiskLevel.MEDIUM,
+        metadata={"approval_id": "approval-threat-current-hygiene"},
+    )
+
+    assert reject_grant_like_payload({"decision": "grant"}) is not None
+    assert reject_grant_like_payload({"approved": True}) is not None
+    preview = build_approval_hygiene_preview(
+        manager.snapshot(),
+        ["approval-threat-restored-hygiene", "approval-threat-current-hygiene"],
+    )
+
+    by_id = {item["approval_id"]: item for item in preview["items"]}
+    assert preview["approval_grant_exposed"] is False
+    assert by_id["approval-threat-restored-hygiene"]["eligible"] is True
+    assert by_id["approval-threat-current-hygiene"]["eligible"] is False
+    assert by_id["approval-threat-current-hygiene"]["ineligible_reason"] == "current_session_excluded"
+    assert manager.get("cmd-threat-restored-hygiene").status is CommandStatus.PENDING_APPROVAL
+    assert manager.get("cmd-threat-current-hygiene").status is CommandStatus.PENDING_APPROVAL
 
 
 def test_threat_clarification_answer_is_state_only_not_replanned_or_executed():

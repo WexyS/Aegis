@@ -537,6 +537,75 @@ export interface PendingDecisionHygieneDiagnostics {
   };
 }
 
+export interface ApprovalHygienePreviewItem {
+  approval_id: string;
+  command_id?: string | null;
+  eligible: boolean;
+  ineligible_reason?: string | null;
+  restored: boolean;
+  current_session: boolean;
+  status: string;
+  text: string;
+  risk_level: string;
+  source: string;
+  source_snapshot_sequence?: number | null;
+  resume_allowed?: boolean | string | null;
+  approval_resolution_status?: string | null;
+}
+
+export interface ApprovalHygieneCount {
+  value: string;
+  count: number;
+}
+
+export interface ApprovalHygienePreviewResponse {
+  read_only: boolean;
+  mutation_performed: boolean;
+  approval_grant_exposed: boolean;
+  restored_only: boolean;
+  include_current_session: boolean;
+  requested_count: number;
+  eligible_count: number;
+  ineligible_count: number;
+  restored_count: number;
+  current_session_count: number;
+  top_command_texts: ApprovalHygieneCount[];
+  items: ApprovalHygienePreviewItem[];
+  warnings: Array<Record<string, unknown>>;
+}
+
+export interface ApprovalHygieneDenyResult {
+  approval_id: string;
+  command_id?: string | null;
+  status: string;
+  approval_resolution_status?: string | null;
+  not_executed?: boolean;
+  idempotent?: boolean;
+  command?: CommandRecord;
+}
+
+export interface ApprovalHygieneFailure {
+  approval_id: string;
+  command_id?: string | null;
+  reason: string;
+  status?: string | null;
+}
+
+export interface ApprovalHygieneDenyResponse {
+  mutation_performed: boolean;
+  operator_action: string;
+  requested_count: number;
+  resolved_count: number;
+  failed_count: number;
+  not_executed: boolean;
+  approval_grant_exposed: boolean;
+  restored_only: boolean;
+  current_session_excluded: boolean;
+  preview: ApprovalHygienePreviewResponse;
+  results: ApprovalHygieneDenyResult[];
+  failures: ApprovalHygieneFailure[];
+}
+
 export interface RuntimeSnapshotDiagnostics {
   scan_version: string;
   read_only: boolean;

@@ -259,6 +259,223 @@ class TestCommandEndpoint:
         assert resolved_payload["mutation_performed"] is False
 
     @pytest.mark.asyncio
+    async def test_approval_hygiene_preview_is_read_only_and_classifies_selection(self) -> None:
+        from aegis.core.constants import RiskLevel
+
+        manager = get_approval_manager()
+        manager.reset_for_tests()
+        before = manager.register_pending(
+            command_id="cmd-restored-preview",
+            text="open notepad",
+            trace_id="trace-restored-preview",
+            risk_level=RiskLevel.MEDIUM,
+            reason="restored approval",
+            metadata={
+                "approval_id": "approval-restored-preview",
+                "restored_from_journal": True,
+                "restored_source": "command_event_replay",
+            },
+        ).to_dict()
+        manager.register_pending(
+            command_id="cmd-current-preview",
+            text="create file scratch/new.txt",
+            trace_id="trace-current-preview",
+            risk_level=RiskLevel.MEDIUM,
+            reason="current approval",
+            metadata={"approval_id": "approval-current-preview"},
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post(
+                "/command/approvals/hygiene/preview",
+                json={
+                    "approval_ids": [
+                        "approval-restored-preview",
+                        "approval-current-preview",
+                        "approval-missing-preview",
+                    ]
+                },
+            )
+
+        data = r.json()
+        assert r.status_code == 200
+        assert data["read_only"] is True
+        assert data["mutation_performed"] is False
+        assert data["approval_grant_exposed"] is False
+        assert data["eligible_count"] == 1
+        assert data["ineligible_count"] == 2
+        reasons = {item["approval_id"]: item["ineligible_reason"] for item in data["items"]}
+        assert reasons["approval-restored-preview"] is None
+        assert reasons["approval-current-preview"] == "current_session_excluded"
+        assert reasons["approval-missing-preview"] == "missing_approval_id"
+        assert manager.get("cmd-restored-preview").to_dict() == before
+
+    @pytest.mark.asyncio
+    async def test_approval_hygiene_deny_selected_requires_confirmation_reason_and_rejects_grant_like_payload(self) -> None:
+        from aegis.core.constants import RiskLevel
+
+        manager = get_approval_manager()
+        manager.reset_for_tests()
+        manager.register_pending(
+            command_id="cmd-restored-validation",
+            text="open notepad",
+            trace_id="trace-restored-validation",
+            risk_level=RiskLevel.MEDIUM,
+            reason="restored approval",
+            metadata={
+                "approval_id": "approval-restored-validation",
+                "restored_from_journal": True,
+                "restored_source": "command_event_replay",
+            },
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            missing_phrase = await client.post(
+                "/command/approvals/hygiene/deny-selected",
+                json={"approval_ids": ["approval-restored-validation"], "reason": "deny restored"},
+            )
+            missing_reason = await client.post(
+                "/command/approvals/hygiene/deny-selected",
+                json={
+                    "approval_ids": ["approval-restored-validation"],
+                    "confirmation_phrase": "DENY RESTORED APPROVALS",
+                },
+            )
+            grant_like = await client.post(
+                "/command/approvals/hygiene/deny-selected",
+                json={
+                    "approval_ids": ["approval-restored-validation"],
+                    "confirmation_phrase": "DENY RESTORED APPROVALS",
+                    "reason": "deny restored",
+                    "decision": "grant",
+                },
+            )
+
+        assert missing_phrase.status_code == 400
+        assert missing_reason.status_code == 400
+        assert grant_like.status_code == 400
+        assert manager.get("cmd-restored-validation").status.value == "pending_approval"
+
+    @pytest.mark.asyncio
+    async def test_approval_hygiene_deny_selected_denies_restored_only_without_execution(self, monkeypatch) -> None:
+        from aegis.core.constants import RiskLevel
+
+        manager = get_approval_manager()
+        manager.reset_for_tests()
+        manager.register_pending(
+            command_id="cmd-restored-deny",
+            text="open notepad",
+            trace_id="trace-restored-deny",
+            risk_level=RiskLevel.MEDIUM,
+            reason="restored approval",
+            metadata={
+                "approval_id": "approval-restored-deny",
+                "restored_from_journal": True,
+                "restored_source": "command_event_replay",
+                "source_snapshot_sequence": 82251,
+            },
+        )
+        manager.register_pending(
+            command_id="cmd-current-deny",
+            text="create file scratch/new.txt",
+            trace_id="trace-current-deny",
+            risk_level=RiskLevel.MEDIUM,
+            reason="current approval",
+            metadata={"approval_id": "approval-current-deny"},
+        )
+        queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+        emitted: list[tuple[str, dict]] = []
+
+        async def fake_emit_event(event_type, payload, **kwargs):
+            emitted.append((event_type.value, payload))
+
+        monkeypatch.setattr(ws_bridge, "_command_queue", queue)
+        monkeypatch.setattr(ws_bridge, "_command_queue_capacity", 4)
+        monkeypatch.setattr(ws_bridge, "emit_event", fake_emit_event)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post(
+                "/command/approvals/hygiene/deny-selected",
+                json={
+                    "approval_ids": ["approval-restored-deny", "approval-current-deny", "approval-missing-deny"],
+                    "confirmation_phrase": "DENY RESTORED APPROVALS",
+                    "reason": "operator denied restored historical backlog",
+                    "idempotency_key": "retry-safe",
+                },
+            )
+
+        data = r.json()
+        assert r.status_code == 200
+        assert data["mutation_performed"] is True
+        assert data["resolved_count"] == 1
+        assert data["failed_count"] == 2
+        restored = manager.get("cmd-restored-deny")
+        current = manager.get("cmd-current-deny")
+        assert restored.status.value == "rejected"
+        assert restored.metadata["approval_resolution_status"] == "approval_denied"
+        assert restored.metadata["operator_action"] == "restored_pending_hygiene_deny"
+        assert restored.metadata["bulk_hygiene"] is True
+        assert restored.metadata["hygiene_scope"] == "selected_restored_approvals"
+        assert restored.metadata["not_executed"] is True
+        assert restored.metadata["mutation_performed"] is False
+        assert current.status.value == "pending_approval"
+        assert queue.qsize() == 0
+        emitted_types = [event[0] for event in emitted]
+        assert emitted_types == ["APPROVAL_RESOLVED", "COMMAND_REJECTED"]
+        assert "ACTION_STARTED" not in emitted_types
+        assert "ACTION_COMPLETED" not in emitted_types
+        failure_reasons = {item["approval_id"]: item["reason"] for item in data["failures"]}
+        assert failure_reasons["approval-current-deny"] == "current_session_excluded"
+        assert failure_reasons["approval-missing-deny"] == "missing_approval_id"
+
+    @pytest.mark.asyncio
+    async def test_approval_hygiene_deny_selected_retry_is_idempotent_for_hygiene_denied_items(self, monkeypatch) -> None:
+        from aegis.core.constants import RiskLevel
+
+        manager = get_approval_manager()
+        manager.reset_for_tests()
+        manager.register_pending(
+            command_id="cmd-restored-idempotent",
+            text="open notepad",
+            trace_id="trace-restored-idempotent",
+            risk_level=RiskLevel.MEDIUM,
+            reason="restored approval",
+            metadata={
+                "approval_id": "approval-restored-idempotent",
+                "restored_from_journal": True,
+                "restored_source": "command_event_replay",
+            },
+        )
+        emitted: list[tuple[str, dict]] = []
+
+        async def fake_emit_event(event_type, payload, **kwargs):
+            emitted.append((event_type.value, payload))
+
+        monkeypatch.setattr(ws_bridge, "emit_event", fake_emit_event)
+
+        payload = {
+            "approval_ids": ["approval-restored-idempotent"],
+            "confirmation_phrase": "DENY RESTORED APPROVALS",
+            "reason": "operator denied restored historical backlog",
+            "idempotency_key": "same-request",
+        }
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            first = await client.post("/command/approvals/hygiene/deny-selected", json=payload)
+            second = await client.post("/command/approvals/hygiene/deny-selected", json=payload)
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["resolved_count"] == 1
+        assert second.json()["resolved_count"] == 0
+        assert second.json()["failed_count"] == 0
+        assert second.json()["results"][0]["status"] == "already_denied"
+        assert second.json()["results"][0]["idempotent"] is True
+        assert [event[0] for event in emitted].count("COMMAND_REJECTED") == 1
+
+    @pytest.mark.asyncio
     async def test_http_clarification_decision_cancel_remains_non_executed(self, monkeypatch) -> None:
         from aegis.core.constants import RiskLevel
 

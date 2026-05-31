@@ -12,6 +12,12 @@ from fastapi import APIRouter, Request, Body, HTTPException
 from aegis.core.schemas import CommandResponse, CommandRequest
 from aegis.core.app_map import get_app_registry_snapshot, refresh_installed_app_registry
 from aegis.core.commands import get_approval_manager
+from aegis.core.approval_hygiene import (
+    HYGIENE_CONFIRMATION_PHRASE,
+    approval_hygiene_resolution_metadata,
+    build_approval_hygiene_preview,
+    reject_grant_like_payload,
+)
 from aegis.core.constants import CommandStatus, ExecutionMode
 from aegis.core.environment import collect_environment_diagnostics
 from aegis.core.maintenance import get_last_maintenance_scan, run_read_only_maintenance_scan
@@ -233,6 +239,146 @@ async def resolve_approval(
             mode=str(payload.get("mode") or "auto"),
         )
     return {"command": record.to_dict()}
+
+
+@router.post("/command/approvals/hygiene/preview")
+async def preview_approval_hygiene(body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+    payload = body or {}
+    grant_error = reject_grant_like_payload(payload)
+    if grant_error:
+        raise HTTPException(status_code=400, detail=grant_error)
+    approval_ids = payload.get("approval_ids")
+    if approval_ids is not None and not isinstance(approval_ids, list):
+        raise HTTPException(status_code=400, detail="approval_ids must be a list")
+    restored_only = bool(payload.get("restored_only", True))
+    include_current_session = bool(payload.get("include_current_session", False))
+    return build_approval_hygiene_preview(
+        get_approval_manager().snapshot(),
+        [str(item) for item in approval_ids] if isinstance(approval_ids, list) else None,
+        restored_only=restored_only,
+        include_current_session=include_current_session,
+    )
+
+
+@router.post("/command/approvals/hygiene/deny-selected")
+async def deny_selected_restored_approvals(body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+    payload = body or {}
+    grant_error = reject_grant_like_payload(payload)
+    if grant_error:
+        raise HTTPException(status_code=400, detail=grant_error)
+
+    approval_ids = payload.get("approval_ids")
+    if not isinstance(approval_ids, list) or not approval_ids:
+        raise HTTPException(status_code=400, detail="approval_ids must be a non-empty list")
+    normalized_ids = []
+    seen_ids: set[str] = set()
+    for item in approval_ids:
+        approval_id = str(item).strip()
+        if not approval_id or approval_id in seen_ids:
+            continue
+        seen_ids.add(approval_id)
+        normalized_ids.append(approval_id)
+    if not normalized_ids:
+        raise HTTPException(status_code=400, detail="approval_ids must include at least one non-empty id")
+
+    if payload.get("restored_only", True) is not True:
+        raise HTTPException(status_code=400, detail="deny-selected hygiene is restored-only")
+    if payload.get("include_current_session", False) is True:
+        raise HTTPException(status_code=400, detail="current-session approvals are excluded from restored hygiene")
+    if str(payload.get("confirmation_phrase") or "") != HYGIENE_CONFIRMATION_PHRASE:
+        raise HTTPException(status_code=400, detail="confirmation_phrase must be DENY RESTORED APPROVALS")
+    reason = str(payload.get("reason") or "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="reason is required")
+
+    manager = get_approval_manager()
+    preview = build_approval_hygiene_preview(
+        manager.snapshot(),
+        normalized_ids,
+        restored_only=True,
+        include_current_session=False,
+    )
+    from aegis.api import ws_bridge
+
+    results: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    resolution_metadata = approval_hygiene_resolution_metadata(
+        reason=reason,
+        selected_count=len(normalized_ids),
+        restored_only=True,
+        idempotency_key=str(payload.get("idempotency_key") or "").strip() or None,
+    )
+
+    for item in preview["items"]:
+        approval_id = str(item["approval_id"])
+        if item.get("eligible") is not True:
+            existing = manager.find_by_approval_id(approval_id)
+            if (
+                existing is not None
+                and existing.status == CommandStatus.REJECTED
+                and existing.metadata.get("approval_resolution_status") == "approval_denied"
+                and existing.metadata.get("operator_action") == "restored_pending_hygiene_deny"
+            ):
+                results.append({
+                    "approval_id": approval_id,
+                    "command_id": existing.command_id,
+                    "status": "already_denied",
+                    "approval_resolution_status": existing.metadata.get("approval_resolution_status"),
+                    "idempotent": True,
+                    "command": existing.to_dict(),
+                })
+                continue
+            failures.append({
+                "approval_id": approval_id,
+                "command_id": item.get("command_id"),
+                "reason": item.get("ineligible_reason") or "ineligible",
+                "status": item.get("status"),
+            })
+            continue
+        try:
+            record = manager.resolve_approval(
+                approval_id,
+                approved=False,
+                reason=reason,
+                resolution_metadata=resolution_metadata,
+            )
+        except KeyError:
+            failures.append({"approval_id": approval_id, "reason": "missing_approval_id"})
+            continue
+        except ValueError as exc:
+            failures.append({"approval_id": approval_id, "reason": str(exc)})
+            continue
+
+        await ws_bridge.emit_approval_resolved(record, decision="denied")
+        await ws_bridge.emit_event(
+            ws_bridge.ProtocolEventType.COMMAND_REJECTED,
+            {"command": record.to_dict()},
+            trace_id=record.trace_id,
+            source=ws_bridge.Component.GUARD,
+        )
+        results.append({
+            "approval_id": approval_id,
+            "command_id": record.command_id,
+            "status": record.status.value,
+            "approval_resolution_status": record.metadata.get("approval_resolution_status"),
+            "not_executed": record.metadata.get("not_executed") is True,
+            "command": record.to_dict(),
+        })
+
+    return {
+        "mutation_performed": bool([item for item in results if item.get("status") == CommandStatus.REJECTED.value]),
+        "operator_action": "deny_selected_restored_approvals",
+        "requested_count": len(normalized_ids),
+        "resolved_count": sum(1 for item in results if item.get("status") == CommandStatus.REJECTED.value),
+        "failed_count": len(failures),
+        "not_executed": True,
+        "approval_grant_exposed": False,
+        "restored_only": True,
+        "current_session_excluded": True,
+        "preview": preview,
+        "results": results,
+        "failures": failures,
+    }
 
 
 @router.post("/command/clarifications/{clarification_id}/resolve")

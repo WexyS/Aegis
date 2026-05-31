@@ -171,15 +171,22 @@ class ApprovalManager:
         *,
         approved: bool,
         reason: str = "",
+        resolution_metadata: dict[str, Any] | None = None,
     ) -> CommandRecord:
         with self._lock:
             record = self._find_pending_decision("approval_id", approval_id, CommandStatus.PENDING_APPROVAL)
             if approved:
-                return self._approve_record(record, decision_id=approval_id, reason=reason)
+                return self._approve_record(
+                    record,
+                    decision_id=approval_id,
+                    reason=reason,
+                    resolution_metadata=resolution_metadata,
+                )
             return self._reject_record(
                 record,
                 reason=reason or "approval denied by user",
                 decision_id=approval_id,
+                resolution_metadata=resolution_metadata,
             )
 
     def reject(self, command_id: str, reason: str = "rejected by user") -> CommandRecord:
@@ -309,6 +316,15 @@ class ApprovalManager:
         with self._lock:
             return self._records.get(command_id)
 
+    def find_by_approval_id(self, approval_id: str) -> CommandRecord | None:
+        with self._lock:
+            matches = [
+                record
+                for record in self._records.values()
+                if str(record.metadata.get("approval_id") or "") == str(approval_id)
+            ]
+            return matches[-1] if matches else None
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             records = [record.to_dict() for record in self._records.values()]
@@ -417,6 +433,7 @@ class ApprovalManager:
         *,
         decision_id: str | None = None,
         reason: str = "",
+        resolution_metadata: dict[str, Any] | None = None,
     ) -> CommandRecord:
         if record.status != CommandStatus.PENDING_APPROVAL:
             raise ValueError(f"Command {record.command_id} is not pending approval")
@@ -430,6 +447,8 @@ class ApprovalManager:
             record.metadata["approval_id"] = decision_id
         record.metadata["approval_resolution_status"] = "approval_granted"
         record.metadata["mutation_performed"] = False
+        if resolution_metadata:
+            record.metadata.update(resolution_metadata)
 
         if record.metadata.get("resume_allowed") is False:
             record.status = CommandStatus.BLOCKED
@@ -450,6 +469,7 @@ class ApprovalManager:
         *,
         reason: str,
         decision_id: str | None = None,
+        resolution_metadata: dict[str, Any] | None = None,
     ) -> CommandRecord:
         if record.status != CommandStatus.PENDING_APPROVAL:
             raise ValueError(f"Command {record.command_id} is not pending approval")
@@ -466,6 +486,8 @@ class ApprovalManager:
         record.metadata["not_executed"] = True
         if decision_id is not None:
             record.metadata["approval_id"] = decision_id
+        if resolution_metadata:
+            record.metadata.update(resolution_metadata)
         record.touch()
         return record
 

@@ -1,4 +1,10 @@
-import { AppRegistrySnapshot, CommandRecord, ToolRegistrySnapshot } from '@/types/runtime';
+import {
+  AppRegistrySnapshot,
+  ApprovalHygieneDenyResponse,
+  ApprovalHygienePreviewResponse,
+  CommandRecord,
+  ToolRegistrySnapshot,
+} from '@/types/runtime';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:8400';
 
@@ -73,6 +79,60 @@ export async function resolveClarificationDecision(
     throw new Error('Clarification resolve returned no command record.');
   }
   return body.command;
+}
+
+export async function previewRestoredApprovalHygiene(
+  approvalIds: string[],
+): Promise<ApprovalHygienePreviewResponse> {
+  const url = new URL('/command/approvals/hygiene/preview', API_URL);
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({
+      approval_ids: approvalIds,
+      restored_only: true,
+      include_current_session: false,
+    }),
+  });
+  const body = await parseJsonBody<ApprovalHygienePreviewResponse | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Approval hygiene preview failed: ${response.status}`));
+  }
+  if (!body || !('items' in body)) {
+    throw new Error('Approval hygiene preview returned no items.');
+  }
+  return body;
+}
+
+export async function denySelectedRestoredApprovals(payload: {
+  approvalIds: string[];
+  confirmationPhrase: string;
+  reason: string;
+  idempotencyKey?: string;
+}): Promise<ApprovalHygieneDenyResponse> {
+  const url = new URL('/command/approvals/hygiene/deny-selected', API_URL);
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({
+      approval_ids: payload.approvalIds,
+      restored_only: true,
+      include_current_session: false,
+      confirmation_phrase: payload.confirmationPhrase,
+      reason: payload.reason,
+      idempotency_key: payload.idempotencyKey,
+    }),
+  });
+  const body = await parseJsonBody<ApprovalHygieneDenyResponse | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Approval hygiene deny failed: ${response.status}`));
+  }
+  if (!body || !('results' in body) || !('failures' in body)) {
+    throw new Error('Approval hygiene deny returned no result details.');
+  }
+  return body;
 }
 
 async function parseJsonBody<T>(response: Response): Promise<T | null> {
