@@ -8,7 +8,11 @@ Aegis is not trying to be an uncontrolled autonomous agent. The project is inten
 
 ## Current Position
 
-Aegis is currently focused on the reliability foundation for a future local AI computer operator:
+Aegis has a Foundation v1 baseline for a future local AI computer operator. The baseline is accepted as `READY_FOR_BASELINE_WITH_KNOWN_HISTORICAL_DEBT`, which means the current runtime foundation can be used as a checkpoint while known historical, unknown-era, replay, and resource debt remains visible.
+
+Runtime health may still report `fail` after the baseline. That is intentional when historical evidence debt, unknown-era evidence issues, replay diagnostics debt, or resource warnings are still present. Current blockers, current evidence failures, current missing evidence, pending decisions, and restored pending decisions are tracked separately from known historical debt.
+
+The current foundation includes:
 
 - deterministic runtime authority
 - separate command lifecycle state
@@ -22,7 +26,17 @@ Aegis is currently focused on the reliability foundation for a future local AI c
 - backend-derived UI state with no frontend fake inference
 - read-only maintenance diagnostics
 
+Post-foundation platform expansion is planned but gated. New modules such as Context Compiler integration, Memory Governance, MCP/tool gateway, model routing, skill/plugin architecture, and vertical packs must start as design or read-only readiness work before any execution path is added.
+
 The long-term product direction is a trustworthy local assistant that can inspect a system, explain what it finds, recommend safe actions, request approval for risky actions, and prove what it did.
+
+## Foundation and Roadmap Documents
+
+- [Foundation v1 baseline](docs/foundation-baseline-v1.md)
+- [Historical evidence/replay debt cleanup design](docs/historical-evidence-replay-debt-cleanup-design-v1.md)
+- [Historical evidence/replay debt inventory](docs/historical-evidence-replay-debt-inventory-v1.md)
+- [Post-foundation architecture roadmap](docs/post-foundation-architecture-roadmap-v1.md)
+- Git tag: `foundation-v1-baseline`
 
 ## Core Principles
 
@@ -287,24 +301,23 @@ npm.cmd run build
 
 ## Roadmap
 
-### Near Term
+The post-foundation roadmap is design/readiness-first. Full gates and invariants are documented in [Post-Foundation Architecture Roadmap v1](docs/post-foundation-architecture-roadmap-v1.md).
 
-- Runtime debt audit
-- Maintenance scan productization
-- Safer read-only system inspection
-- Approval-gated maintenance actions
-- Reliable desktop workflow expansion
+Recommended sequence:
 
-### Later
+- README Post-Foundation Alignment v1
+- Context Compiler Read-Only Integration Readiness v1
+- Policy-as-code Extension v1
+- Capability Lease Design v1
+- MCP/Tool Gateway Readiness v1
+- Memory Governance / Memory OS Design v1
+- Model Router Readiness v1
+- Skill/Plugin Architecture Design v1
+- Vertical Pack Prototypes, read-only first
 
-- voice interaction
-- screen/vision assistance
-- richer system profiling
-- layered memory and briefing
-- controlled self-improvement proposals
-- packaging and installer flow
+The Context Compiler skeleton already exists. The next safe Context Compiler work is `Context Compiler Read-Only Integration Readiness v1`: compiler output is context, not command truth, and it cannot grant capability, permission, approval, or execution authority.
 
-These later capabilities should be added only after the runtime, evidence, approval, and replay foundations remain stable.
+Post-foundation capabilities should be added only after the runtime, evidence, approval, policy, and replay foundations remain stable under tests and operator-reviewed gates.
 
 ## Non-Goals for the Current Stage
 
@@ -316,21 +329,29 @@ These later capabilities should be added only after the runtime, evidence, appro
 - voice-first control
 - memory graph
 - self-modifying code without approval, tests, and rollback
+- journal cleanup execution
+- archive or compaction execution
+- Memory OS implementation
+- MCP execution gateway implementation
+- Model Router implementation
+- plugin or skill execution
+- vertical pack write actions
+- autonomous execution expansion
 
 ## Project Status
 
 Latest stable checkpoint:
 
-- verified desktop process/window evidence
-- evidence audit and completion gate
-- WebSocket runtime truth sync
-- replay parity hardening
-- real Windows desktop smoke for open/focus/close
-- full backend tests passing
-- frontend production build passing
+- Foundation v1 baseline tagged as `foundation-v1-baseline`
+- accepted condition: `READY_FOR_BASELINE_WITH_KNOWN_HISTORICAL_DEBT`
+- current blockers, current evidence failures, current missing evidence, pending decisions, and restored pending decisions tracked separately from historical debt
+- historical evidence debt, unknown-era evidence issues, replay diagnostics debt, and resource warnings remain visible
+- runtime health may remain `fail`; this is not greenwashed or suppressed
+- app discovery and maintenance diagnostics remain read-only
+- post-foundation roadmap documented, with platform expansion still gated
 
 The current product target is:
 
-**Reliable AI Computer Operator**
+**Reliable Local AI Control Plane**
 
-The first commercializable direction is likely an evidence-backed local computer maintenance assistant.
+The first commercializable direction is still likely an evidence-backed local computer maintenance assistant, but the architecture is intentionally broader: a modular, auditable local control plane with policy, evidence, approval, capability, context, tool, model, and operator UX boundaries.
