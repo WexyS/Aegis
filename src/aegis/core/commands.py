@@ -555,7 +555,8 @@ def _restore_approval_manager_from_events(events: list[dict[str, Any]], manager:
     if not events:
         return False
 
-    for event in reversed(events):
+    for snapshot_index in range(len(events) - 1, -1, -1):
+        event = events[snapshot_index]
         payload = event.get("payload") if isinstance(event, dict) else None
         runtime = payload.get("runtime") if isinstance(payload, dict) else None
         command_snapshot = runtime.get("commands") if isinstance(runtime, dict) else None
@@ -566,8 +567,32 @@ def _restore_approval_manager_from_events(events: list[dict[str, Any]], manager:
                 restored_source="runtime_snapshot",
                 source_snapshot_sequence=sequence if isinstance(sequence, int) else None,
             )
+            post_snapshot_records = _command_records_from_events(events[snapshot_index + 1:])
+            if post_snapshot_records:
+                manager.restore_from_snapshot(
+                    {"records": post_snapshot_records},
+                    replace=False,
+                    restored_source="command_event_replay",
+                    source_snapshot_sequence=_max_event_sequence(events[snapshot_index + 1:]),
+                )
             return True
 
+    records_by_id = _command_records_by_id(events)
+    if records_by_id:
+        manager.restore_from_snapshot(
+            {"records": list(records_by_id.values())},
+            restored_source="command_event_replay",
+            source_snapshot_sequence=_max_event_sequence(events),
+        )
+        return True
+    return False
+
+
+def _command_records_from_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return list(_command_records_by_id(events).values())
+
+
+def _command_records_by_id(events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     records_by_id: dict[str, dict[str, Any]] = {}
     for event in events:
         payload = event.get("payload") if isinstance(event, dict) else None
@@ -577,17 +602,13 @@ def _restore_approval_manager_from_events(events: list[dict[str, Any]], manager:
         command_id = command.get("command_id")
         if isinstance(command_id, str) and command_id:
             records_by_id[command_id] = command
+    return records_by_id
 
-    if records_by_id:
-        sequences = [
-            event.get("sequence_num")
-            for event in events
-            if isinstance(event.get("sequence_num"), int)
-        ]
-        manager.restore_from_snapshot(
-            {"records": list(records_by_id.values())},
-            restored_source="command_event_replay",
-            source_snapshot_sequence=max(sequences) if sequences else None,
-        )
-        return True
-    return False
+
+def _max_event_sequence(events: list[dict[str, Any]]) -> int | None:
+    sequences = [
+        event.get("sequence_num")
+        for event in events
+        if isinstance(event.get("sequence_num"), int)
+    ]
+    return max(sequences) if sequences else None

@@ -215,6 +215,50 @@ class TestCommandEndpoint:
         assert "ACTION_COMPLETED" not in emitted_types
 
     @pytest.mark.asyncio
+    async def test_http_approval_decision_deny_emits_rejected_lifecycle_truth_without_execution(self, monkeypatch) -> None:
+        from aegis.core.constants import RiskLevel
+
+        manager = get_approval_manager()
+        manager.reset_for_tests()
+        manager.register_pending(
+            command_id="cmd-http-deny",
+            text="open notepad",
+            trace_id="trace-http-deny",
+            risk_level=RiskLevel.MEDIUM,
+            reason="medium risk command requires approval",
+            metadata={"approval_id": "approval-http-deny"},
+        )
+        emitted: list[tuple[str, dict]] = []
+        queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+
+        async def fake_emit_event(event_type, payload, **kwargs):
+            emitted.append((event_type.value, payload))
+
+        monkeypatch.setattr(ws_bridge, "_command_queue", queue)
+        monkeypatch.setattr(ws_bridge, "_command_queue_capacity", 4)
+        monkeypatch.setattr(ws_bridge, "emit_event", fake_emit_event)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post("/command/approvals/approval-http-deny/resolve", json={"decision": "deny"})
+
+        data = r.json()["command"]
+        assert r.status_code == 200
+        assert data["status"] == "rejected"
+        assert data["metadata"]["approval_resolution_status"] == "approval_denied"
+        assert data["metadata"]["mutation_performed"] is False
+        assert data["metadata"]["not_executed"] is True
+        assert queue.qsize() == 0
+        emitted_types = [event[0] for event in emitted]
+        assert emitted_types == ["APPROVAL_RESOLVED"]
+        resolved_payload = emitted[0][1]
+        assert resolved_payload["decision"] == "denied"
+        assert resolved_payload["command"]["status"] == "rejected"
+        assert resolved_payload["command"]["metadata"]["approval_resolution_status"] == "approval_denied"
+        assert resolved_payload["not_executed"] is True
+        assert resolved_payload["mutation_performed"] is False
+
+    @pytest.mark.asyncio
     async def test_http_clarification_decision_cancel_remains_non_executed(self, monkeypatch) -> None:
         from aegis.core.constants import RiskLevel
 

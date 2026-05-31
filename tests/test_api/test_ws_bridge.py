@@ -852,6 +852,54 @@ async def test_approved_command_resume_helper_queues_policy_gated_command_withou
 
 
 @pytest.mark.asyncio
+async def test_ws_approval_decision_deny_emits_rejected_truth_and_snapshot_without_execution(monkeypatch) -> None:
+    manager = get_approval_manager()
+    manager.reset_for_tests()
+    manager.register_pending(
+        command_id="cmd-ws-deny",
+        text="open notepad",
+        trace_id="11111111-1111-4111-8111-111111111113",
+        risk_level=RiskLevel.MEDIUM,
+        reason="approval required",
+        metadata={"approval_id": "approval-ws-deny"},
+    )
+    emitted: list[tuple[ProtocolEventType, dict]] = []
+    snapshots: list[str] = []
+    queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+
+    async def fake_emit_event(event_type, payload, **kwargs):
+        emitted.append((event_type, payload))
+
+    async def fake_emit_snapshot(*, to, last_sequence_num=0):
+        snapshots.append(to)
+
+    monkeypatch.setattr(ws_bridge, "_command_queue", queue)
+    monkeypatch.setattr(ws_bridge, "_command_queue_capacity", 4)
+    monkeypatch.setattr(ws_bridge, "emit_event", fake_emit_event)
+    monkeypatch.setattr(ws_bridge, "_emit_snapshot", fake_emit_snapshot)
+
+    await ws_bridge.resolve_approval(
+        "sid-deny",
+        {"approval_id": "approval-ws-deny", "decision": "deny"},
+    )
+
+    updated = manager.get("cmd-ws-deny")
+    assert updated is not None
+    assert updated.status.value == "rejected"
+    assert updated.metadata["approval_resolution_status"] == "approval_denied"
+    assert updated.metadata["mutation_performed"] is False
+    assert updated.metadata["not_executed"] is True
+    assert queue.qsize() == 0
+    emitted_types = [event[0] for event in emitted]
+    assert ProtocolEventType.APPROVAL_RESOLVED in emitted_types
+    assert ProtocolEventType.COMMAND_REJECTED in emitted_types
+    assert ProtocolEventType.COMMAND_STATUS_CHANGED in emitted_types
+    assert ProtocolEventType.ACTION_STARTED not in emitted_types
+    assert ProtocolEventType.ACTION_COMPLETED not in emitted_types
+    assert snapshots == ["sid-deny"]
+
+
+@pytest.mark.asyncio
 async def test_action_failed_event_carries_execution_evidence(monkeypatch) -> None:
     emitted: list[tuple[ProtocolEventType, dict]] = []
 

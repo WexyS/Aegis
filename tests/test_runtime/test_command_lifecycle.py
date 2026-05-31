@@ -13,6 +13,7 @@ from aegis.core.non_executable_runtime_adapter import (
     project_non_executable_events_to_action_timeline,
     project_non_executable_events_to_snapshot,
 )
+from aegis.core.pending_decision_hygiene import build_pending_decision_hygiene_report
 from aegis.core.protocol import ProtocolEventType, RuntimeEvent, reset_sequence_for_testing
 from aegis.core.runtime_authority import get_runtime_authority
 from aegis.core.schemas import (
@@ -677,6 +678,158 @@ def test_restores_approval_manager_from_recent_journal_tail_before_full_scan() -
 
     assert restore_approval_manager_from_journal(journal=FakeJournal(), manager=restored) is True
     assert restored.snapshot()["pending_approvals"][0]["command_id"] == "44444444-4444-4444-9444-444444444444"
+
+
+def test_restore_reconciles_pending_snapshot_with_later_denied_approval_event() -> None:
+    source = ApprovalManager()
+    pending = source.register_pending(
+        command_id="55555555-5555-4555-7555-555555555555",
+        text="open notepad",
+        trace_id="trace-denied-overlay",
+        risk_level=RiskLevel.MEDIUM,
+        reason="medium risk requires approval",
+        metadata={"approval_id": "approval-denied-overlay"},
+    )
+    snapshot = source.snapshot()
+    denied = source.resolve_approval(
+        "approval-denied-overlay",
+        approved=False,
+        reason="operator denied stale restored approval",
+    )
+
+    class FakeJournal:
+        def recent_events(self) -> list[dict]:
+            return [
+                {
+                    "event_type": "SNAPSHOT_CREATED",
+                    "sequence_num": 100,
+                    "payload": {
+                        "runtime": {
+                            "commands": snapshot,
+                        },
+                    },
+                },
+                {
+                    "event_type": "APPROVAL_RESOLVED",
+                    "sequence_num": 101,
+                    "payload": {
+                        "command_id": pending.command_id,
+                        "approval_id": "approval-denied-overlay",
+                        "decision": "denied",
+                        "command": denied.to_dict(),
+                    },
+                },
+            ]
+
+        def events_after(self, sequence_num: int) -> list[dict]:
+            raise AssertionError("recent journal tail has enough state")
+
+    restored = ApprovalManager()
+
+    assert restore_approval_manager_from_journal(journal=FakeJournal(), manager=restored) is True
+    restored_snapshot = restored.snapshot()
+    assert restored_snapshot["pending_approvals"] == []
+    hygiene = build_pending_decision_hygiene_report(restored_snapshot, generated_at_ms=10_000)
+    assert hygiene["restored_unresolved_count"] == 0
+    assert restored.get(pending.command_id).status == CommandStatus.REJECTED
+    assert restored.get(pending.command_id).metadata["approval_resolution_status"] == "approval_denied"
+
+
+def test_restore_keeps_snapshot_pending_when_later_resolution_event_has_no_command_truth() -> None:
+    source = ApprovalManager()
+    pending = source.register_pending(
+        command_id="55555555-5555-4555-6555-555555555555",
+        text="open notepad",
+        trace_id="trace-malformed-overlay",
+        risk_level=RiskLevel.MEDIUM,
+        reason="medium risk requires approval",
+        metadata={"approval_id": "approval-malformed-overlay"},
+    )
+
+    class FakeJournal:
+        def recent_events(self) -> list[dict]:
+            return [
+                {
+                    "event_type": "SNAPSHOT_CREATED",
+                    "sequence_num": 200,
+                    "payload": {
+                        "runtime": {
+                            "commands": source.snapshot(),
+                        },
+                    },
+                },
+                {
+                    "event_type": "APPROVAL_RESOLVED",
+                    "sequence_num": 201,
+                    "payload": {
+                        "command_id": pending.command_id,
+                        "approval_id": "approval-malformed-overlay",
+                        "decision": "denied",
+                    },
+                },
+            ]
+
+        def events_after(self, sequence_num: int) -> list[dict]:
+            raise AssertionError("recent journal tail has enough state")
+
+    restored = ApprovalManager()
+
+    assert restore_approval_manager_from_journal(journal=FakeJournal(), manager=restored) is True
+    restored_snapshot = restored.snapshot()
+    assert [item["command_id"] for item in restored_snapshot["pending_approvals"]] == [pending.command_id]
+    assert restored.get(pending.command_id).metadata["restored_from_journal"] is True
+
+
+def test_restore_reconciles_pending_snapshot_with_later_clarification_resolution() -> None:
+    source = ApprovalManager()
+    pending = source.register_waiting_clarification(
+        command_id="55555555-5555-4555-5555-555555555555",
+        text="click there",
+        trace_id="trace-clarification-overlay",
+        risk_level=RiskLevel.HIGH,
+        reason="generic click quarantine",
+        metadata={"clarification_id": "clarification-overlay"},
+    )
+    snapshot = source.snapshot()
+    resolved = source.resolve_clarification(
+        "clarification-overlay",
+        cancelled=True,
+        reason="operator cancelled stale clarification",
+    )
+
+    class FakeJournal:
+        def recent_events(self) -> list[dict]:
+            return [
+                {
+                    "event_type": "SNAPSHOT_CREATED",
+                    "sequence_num": 300,
+                    "payload": {
+                        "runtime": {
+                            "commands": snapshot,
+                        },
+                    },
+                },
+                {
+                    "event_type": "CLARIFICATION_RESOLVED",
+                    "sequence_num": 301,
+                    "payload": {
+                        "command_id": pending.command_id,
+                        "clarification_id": "clarification-overlay",
+                        "command": resolved.to_dict(),
+                    },
+                },
+            ]
+
+        def events_after(self, sequence_num: int) -> list[dict]:
+            raise AssertionError("recent journal tail has enough state")
+
+    restored = ApprovalManager()
+
+    assert restore_approval_manager_from_journal(journal=FakeJournal(), manager=restored) is True
+    restored_snapshot = restored.snapshot()
+    assert restored_snapshot["pending_clarifications"] == []
+    assert restored.get(pending.command_id).status == CommandStatus.CANCELLED
+    assert restored.get(pending.command_id).metadata["clarification_resolution_status"] == "clarification_cancelled"
 
 
 def test_restores_approval_manager_falls_back_to_full_journal_when_recent_tail_has_no_state() -> None:
