@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from 'react';
 import { Wrench } from 'lucide-react';
 
 import { EmptyState } from '@/components/EmptyState';
@@ -118,6 +119,9 @@ const RuntimeHealthSummary = ({ health }: { health: RuntimeHealth }) => {
       {attention.length > 0 && (
         <p className="mt-2 truncate text-[9px] font-mono text-warning/85">{attention.join(', ')}</p>
       )}
+      <p className="mt-2 text-[9px] font-mono leading-relaxed text-foreground/45">
+        Backend-reported health is preserved. A fail state can be correct while historical, replay, unknown-era, or resource debt remains visible.
+      </p>
       {findingCount !== null && findingCount > 0 && (
         <p className="mt-2 text-[9px] font-mono text-foreground/45">{findingCount} backend findings</p>
       )}
@@ -137,6 +141,7 @@ const ClosureReadinessSummary = ({ readiness }: { readiness: FoundationClosureRe
   const currentEvidenceFailures = numberish(readiness.current_evidence_failure_count);
   const currentMissingEvidence = numberish(readiness.current_missing_evidence_count);
   const pendingBlockers = numberish(readiness.pending_decision_blocker_count);
+  const currentSessionPending = numberish(readiness.current_session_pending_count);
   const restoredPending = numberish(readiness.restored_pending_count);
   const historicalDebt = numberish(readiness.historical_evidence_debt_count);
   const historicalMissing = numberish(readiness.historical_missing_evidence_count);
@@ -146,36 +151,50 @@ const ClosureReadinessSummary = ({ readiness }: { readiness: FoundationClosureRe
   const appDiscoveryWarnings = numberish(readiness.app_discovery_warning_count);
   const replayStatus = String(readiness.replay_diagnostics_status || 'unknown');
   const replayTone = replayStatus === 'ok' ? 'default' : replayStatus === 'fail' ? 'danger' : 'warning';
+  const readOnlyLabel = readiness.read_only === true ? 'Read-only scan' : 'Read-only state unavailable';
+  const mutationLabel = readiness.mutation_performed === false ? 'No mutation performed' : 'Mutation state unavailable';
 
   return (
     <div className="mt-3 border-t border-white/10 pt-3">
       <div className="flex items-center justify-between gap-2 text-[9px] font-bold uppercase tracking-widest">
-        <span className="text-foreground/40">Closure Readiness</span>
+        <span className="text-foreground/40">Foundation Readiness</span>
         <span className={closureReadinessTone(status)}>{status.replace(/_/g, ' ')}</span>
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-1.5">
-        <AuditMetric label="current blockers" value={countLabel(currentBlockers)} tone={(currentBlockers ?? 0) > 0 ? 'danger' : 'default'} />
-        <AuditMetric label="current evidence" value={countLabel(currentEvidenceFailures)} tone={(currentEvidenceFailures ?? 0) > 0 ? 'danger' : 'default'} />
-        <AuditMetric label="current missing" value={countLabel(currentMissingEvidence)} tone={(currentMissingEvidence ?? 0) > 0 ? 'danger' : 'default'} />
-        <AuditMetric label="pending blockers" value={countLabel(pendingBlockers)} tone={(pendingBlockers ?? 0) > 0 ? 'warning' : 'default'} />
-        <AuditMetric label="restored pending" value={countLabel(restoredPending)} tone={(restoredPending ?? 0) > 0 ? 'warning' : 'default'} />
-        <AuditMetric label="historical debt" value={countLabel(historicalDebt)} tone={(historicalDebt ?? 0) > 0 ? 'warning' : 'default'} />
-        <AuditMetric label="historical missing" value={countLabel(historicalMissing)} tone={(historicalMissing ?? 0) > 0 ? 'warning' : 'default'} />
-        <AuditMetric label="unknown era" value={countLabel(unknownEra)} tone={(unknownEra ?? 0) > 0 ? 'warning' : 'default'} />
-        <AuditMetric label="unknown missing" value={countLabel(unknownMissing)} tone={(unknownMissing ?? 0) > 0 ? 'warning' : 'default'} />
-        <AuditMetric label="replay" value={replayStatus} tone={replayTone} />
-        <AuditMetric label="resources" value={countLabel(systemWarnings)} tone={(systemWarnings ?? 0) > 0 ? 'warning' : 'default'} />
-        <AuditMetric label="app discovery" value={countLabel(appDiscoveryWarnings)} tone={(appDiscoveryWarnings ?? 0) > 0 ? 'warning' : 'default'} />
-      </div>
-      <p className="mt-2 text-[9px] font-mono text-foreground/45">
-        Runtime Health remains separate; this closure projection does not hide evidence or replay failures.
+      <p className="mt-2 text-[9px] font-mono leading-relaxed text-foreground/45">
+        This read-only projection separates current operational blockers from known debt. It does not execute cleanup, mutate journals, or suppress findings.
       </p>
-      {readiness.mutation_performed === false && (
-        <p className="mt-1 text-[9px] font-mono text-foreground/35">Read-only; no mutation performed.</p>
-      )}
+      <div className="mt-2 space-y-2">
+        <MetricGroup title="Current operational blockers">
+          <AuditMetric label="current blockers" value={countLabel(currentBlockers)} tone={(currentBlockers ?? 0) > 0 ? 'danger' : 'default'} />
+          <AuditMetric label="evidence failures" value={countLabel(currentEvidenceFailures)} tone={(currentEvidenceFailures ?? 0) > 0 ? 'danger' : 'default'} />
+          <AuditMetric label="missing evidence" value={countLabel(currentMissingEvidence)} tone={(currentMissingEvidence ?? 0) > 0 ? 'danger' : 'default'} />
+          <AuditMetric label="pending decisions" value={countLabel(pendingBlockers)} tone={(pendingBlockers ?? 0) > 0 ? 'warning' : 'default'} />
+          <AuditMetric label="current pending" value={countLabel(currentSessionPending)} tone={(currentSessionPending ?? 0) > 0 ? 'warning' : 'default'} />
+          <AuditMetric label="restored pending" value={countLabel(restoredPending)} tone={(restoredPending ?? 0) > 0 ? 'warning' : 'default'} />
+        </MetricGroup>
+        <MetricGroup title="Debt breakdown">
+          <AuditMetric label="historical debt" value={countLabel(historicalDebt)} tone={(historicalDebt ?? 0) > 0 ? 'warning' : 'default'} />
+          <AuditMetric label="historical missing" value={countLabel(historicalMissing)} tone={(historicalMissing ?? 0) > 0 ? 'warning' : 'default'} />
+          <AuditMetric label="unknown-era issues" value={countLabel(unknownEra)} tone={(unknownEra ?? 0) > 0 ? 'warning' : 'default'} />
+          <AuditMetric label="unknown missing" value={countLabel(unknownMissing)} tone={(unknownMissing ?? 0) > 0 ? 'warning' : 'default'} />
+          <AuditMetric label="replay diagnostics" value={replayStatus} tone={replayTone} />
+          <AuditMetric label="resource warnings" value={countLabel(systemWarnings)} tone={(systemWarnings ?? 0) > 0 ? 'warning' : 'default'} />
+          <AuditMetric label="app discovery" value={countLabel(appDiscoveryWarnings)} tone={(appDiscoveryWarnings ?? 0) > 0 ? 'warning' : 'default'} />
+        </MetricGroup>
+        <MetricGroup title="Scan contract">
+          <AuditMetric label="mode" value={readOnlyLabel} tone={readiness.read_only === true ? 'default' : 'warning'} />
+          <AuditMetric label="mutation" value={mutationLabel} tone={readiness.mutation_performed === false ? 'default' : 'warning'} />
+        </MetricGroup>
+      </div>
+      <p className="mt-2 text-[9px] font-mono leading-relaxed text-warning/80">
+        Foundation baseline is accepted with known debt when current blockers are clear and historical, unknown-era, replay, and resource debt remain visible.
+      </p>
+      <p className="mt-1 text-[9px] font-mono leading-relaxed text-foreground/45">
+        Runtime Health remains separate and may still be fail. Unknown-era evidence is not guessed as historical, and replay debt is not cleanup-ready.
+      </p>
       {readiness.replay_boundary_classification && readiness.replay_boundary_classification !== 'unknown' && (
-        <p className="mt-1 truncate text-[9px] font-mono text-warning/75">
-          replay boundary: {readiness.replay_boundary_classification}
+        <p className="mt-1 text-[9px] font-mono leading-relaxed text-warning/75">
+          replay boundary: {readiness.replay_boundary_classification}; cleanup execution remains blocked until backup, restore, replay, hash-chain, and operator gates pass.
         </p>
       )}
       {readiness.recommendation && (
@@ -651,6 +670,13 @@ const AuditMetric = ({ label, value, tone = 'default' }: { label: string; value:
     </div>
   );
 };
+
+const MetricGroup = ({ title, children }: { title: string; children: ReactNode }) => (
+  <div className="rounded-md border border-white/10 bg-black/15 p-2">
+    <div className="mb-1.5 text-[8px] font-bold uppercase tracking-widest text-foreground/35">{title}</div>
+    <div className="grid grid-cols-2 gap-1.5">{children}</div>
+  </div>
+);
 
 const ResourceMetric = ({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'success' | 'warning' | 'danger' }) => {
   const valueColor = tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-warning' : tone === 'danger' ? 'text-danger' : 'text-foreground/70';
