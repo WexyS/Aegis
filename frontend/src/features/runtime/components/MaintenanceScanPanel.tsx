@@ -473,6 +473,13 @@ const EvidenceAuditSummary = ({ audit }: { audit: EvidenceAudit }) => {
   const verifiedActionCount = numberish(audit.verified_action_count);
   const checkFailCount = numberish(audit.check_fail_count);
   const criticalFailureCount = numberish(audit.critical_failure_count);
+  const currentFailureCount = numberish(audit.current_evidence_failure_count);
+  const historicalDebtCount = numberish(audit.historical_evidence_debt_count);
+  const unknownEraCount = numberish(audit.unknown_era_evidence_issue_count);
+  const negativeEvidenceCount = numberish(audit.negative_evidence_count);
+  const currentMissingCount = numberish(audit.current_missing_evidence_count);
+  const historicalMissingCount = numberish(audit.historical_missing_evidence_count);
+  const unknownMissingCount = numberish(audit.unknown_era_missing_evidence_count);
   const criticalFailures = Array.isArray(audit.critical_failures) ? audit.critical_failures : [];
   return (
     <div className="mt-3 border-t border-white/10 pt-3">
@@ -487,7 +494,19 @@ const EvidenceAuditSummary = ({ audit }: { audit: EvidenceAudit }) => {
         <AuditMetric label="verified" value={countLabel(verifiedActionCount)} tone={verifiedActionCount !== null && verifiedActionCount > 0 ? 'success' : 'default'} />
         <AuditMetric label="check fail" value={countLabel(checkFailCount)} tone={checkFailCount !== null && checkFailCount > 0 ? 'danger' : 'default'} />
         <AuditMetric label="critical" value={countLabel(criticalFailureCount)} tone={criticalFailureCount !== null && criticalFailureCount > 0 ? 'danger' : 'default'} />
+        <AuditMetric label="current issues" value={countLabel(currentFailureCount)} tone={currentFailureCount !== null && currentFailureCount > 0 ? 'danger' : 'default'} />
+        <AuditMetric label="historical debt" value={countLabel(historicalDebtCount)} tone={historicalDebtCount !== null && historicalDebtCount > 0 ? 'warning' : 'default'} />
+        <AuditMetric label="unknown era" value={countLabel(unknownEraCount)} tone={unknownEraCount !== null && unknownEraCount > 0 ? 'warning' : 'default'} />
+        <AuditMetric label="negative evidence" value={countLabel(negativeEvidenceCount)} tone={negativeEvidenceCount !== null && negativeEvidenceCount > 0 ? 'warning' : 'default'} />
       </div>
+      {(currentMissingCount !== null || historicalMissingCount !== null || unknownMissingCount !== null) && (
+        <p className="mt-2 truncate text-[9px] font-mono text-foreground/45">
+          missing split: current {countLabel(currentMissingCount)} / historical {countLabel(historicalMissingCount)} / unknown {countLabel(unknownMissingCount)}
+        </p>
+      )}
+      {audit.mutation_performed === false && (
+        <p className="mt-1 text-[9px] font-mono text-foreground/35">Evidence audit is read-only; no mutation performed.</p>
+      )}
       {criticalFailures.length > 0 && (
         <div className="mt-2 space-y-1">
           {criticalFailures.slice(0, 2).map((failure, index) => (
