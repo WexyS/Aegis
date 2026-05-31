@@ -56,6 +56,9 @@ export const AppRegistryPanel = () => {
             <p className="text-xs text-foreground/40 font-mono truncate">
               {appRegistry ? `${appRegistry.entry_count} entries / ${appRegistry.scan_version}` : 'Backend registry unavailable'}
             </p>
+            <p className="mt-1 text-[10px] font-mono text-foreground/35">
+              Registry entries are configured identities and aliases. They are not launch proof or deterministic verification.
+            </p>
           </div>
         </div>
 
@@ -91,7 +94,7 @@ export const AppRegistryPanel = () => {
         <Stat label="Configured" value={appRegistry ? appRegistry.configured_count : 'Unavailable'} />
         <Stat label="Discovered" value={appRegistry ? appRegistry.discovered_count : 'Unavailable'} />
         <Stat label="Visible" value={appRegistry ? entries.length : 'Unavailable'} />
-        <Stat label="Read Only" value={appRegistry ? (appRegistry.read_only === false ? 'No' : 'Yes') : 'Unavailable'} />
+        <Stat label="Snapshot" value={appRegistry ? (appRegistry.read_only === false ? 'Mutable' : 'Read-only') : 'Unavailable'} />
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -134,10 +137,15 @@ const AppEntryCard = ({ entry }: { entry: AppRegistryEntry }) => (
       <MonitorUp size={16} className="shrink-0 text-accent/70" />
     </div>
     <div className="mt-4 flex flex-wrap gap-2">
-      <Pill>{SOURCE_LABELS[entry.source] ?? entry.source}</Pill>
-      <Pill>{entry.launch_target_type}</Pill>
-      {entry.process_name && <Pill>{entry.process_name}</Pill>}
+      <Pill>source: {SOURCE_LABELS[entry.source] ?? entry.source}</Pill>
+      <Pill>target: {entry.launch_target_type}</Pill>
+      {entry.process_name && <Pill>process: {entry.process_name}</Pill>}
     </div>
+    {entry.aliases.length > 0 && (
+      <p className="mt-3 truncate text-[10px] font-mono text-foreground/35">
+        aliases: {entry.aliases.slice(0, 4).join(', ')}
+      </p>
+    )}
   </div>
 );
 

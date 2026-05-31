@@ -443,13 +443,15 @@ const AppDiscoverySummary = ({ diagnostics }: { diagnostics: AppDiscoveryDiagnos
         <>
           <div className="mt-2 grid grid-cols-2 gap-1.5">
             <AuditMetric label="entries" value={entries.length} />
-            <AuditMetric label="verify possible" value={possibleCount} tone="default" />
+            <AuditMetric label="verification possible" value={possibleCount} tone="default" />
             <AuditMetric label="ambiguous" value={ambiguousCount} tone={ambiguousCount > 0 ? 'warning' : 'default'} />
             <AuditMetric label="missing path" value={missingPathCount} tone={missingPathCount > 0 ? 'warning' : 'default'} />
-            <AuditMetric label="window-only" value={windowOnlyCount} tone={windowOnlyCount > 0 ? 'warning' : 'default'} />
+            <AuditMetric label="title-only/window" value={windowOnlyCount} tone={windowOnlyCount > 0 ? 'warning' : 'default'} />
             <AuditMetric label="actions" value={diagnostics.actions_performed.length} tone={diagnostics.actions_performed.length > 0 ? 'danger' : 'default'} />
           </div>
-          <p className="mt-2 text-[9px] font-mono text-foreground/40">Discovery only; not launch proof.</p>
+          <p className="mt-2 text-[9px] font-mono leading-relaxed text-foreground/40">
+            Read-only discovery. Path presence, aliases, and title observations are not launch proof or verified execution.
+          </p>
           <div className="mt-2 space-y-1.5">
             {visibleEntries.length > 0 ? (
               visibleEntries.map((entry) => (
@@ -461,6 +463,11 @@ const AppDiscoverySummary = ({ diagnostics }: { diagnostics: AppDiscoveryDiagnos
               </p>
             )}
           </div>
+          {entries.length > visibleEntries.length && (
+            <p className="mt-2 text-[9px] font-mono text-foreground/35">
+              Showing {visibleEntries.length} of {entries.length} entries, ordered by attention state.
+            </p>
+          )}
           {Array.isArray(diagnostics.observation_errors) && diagnostics.observation_errors.length > 0 && (
             <p className="mt-2 line-clamp-2 text-[9px] font-mono text-warning/80">
               observation: {diagnostics.observation_errors.join(', ')}
@@ -480,14 +487,9 @@ const AppDiscoveryEntryRow = ({ entry }: { entry: AppDiscoveryEntry }) => {
   const matchingWindowCount = numberish(entry.matching_window_count) ?? 0;
   const pidMatchedWindowCount = numberish(entry.pid_matched_window_count) ?? 0;
   const pathLabel = executablePathLabel(entry);
-  const processLabel = entry.process_alive === true
-    ? `running ${formatPidList(entry.running_processes)}`
-    : entry.process_alive === false
-      ? 'process not observed'
-      : 'process unknown';
-  const windowLabel = matchingWindowCount > 0
-    ? `${matchingWindowCount} window${matchingWindowCount === 1 ? '' : 's'} / ${pidMatchedWindowCount} pid matched`
-    : 'no matching window';
+  const processLabel = processObservationLabel(entry);
+  const windowLabel = windowObservationLabel(entry);
+  const identityNotes = appDiscoveryIdentityNotes(entry);
 
   return (
     <div className={`rounded-md border px-2 py-1.5 ${appDiscoveryBorder(state)}`}>
@@ -506,14 +508,19 @@ const AppDiscoveryEntryRow = ({ entry }: { entry: AppDiscoveryEntry }) => {
         </div>
         <div className="flex items-center justify-between gap-2">
           <span className="truncate">window</span>
-          <span className={isWindowOnlyAppDiscovery(entry) ? 'text-warning/80' : 'text-foreground/55'}>{windowLabel}</span>
+          <span className={pidMatchedWindowCount > 0 ? 'text-foreground/65' : matchingWindowCount > 0 ? 'text-warning/80' : 'text-foreground/45'}>{windowLabel}</span>
         </div>
       </div>
+      {identityNotes.length > 0 && (
+        <p className="mt-1 line-clamp-2 text-[8px] font-mono text-warning/80">
+          identity: {identityNotes.join(', ')}
+        </p>
+      )}
       {processCandidates.length > 0 && (
-        <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">process: {processCandidates.join(', ')}</p>
+        <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">configured process: {processCandidates.join(', ')}</p>
       )}
       {aliases.length > 0 && (
-        <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">aliases: {aliases.slice(0, 4).join(', ')}</p>
+        <p className="mt-1 truncate text-[8px] font-mono text-foreground/35">configured aliases: {aliases.slice(0, 4).join(', ')}</p>
       )}
       {blockers.length > 0 && (
         <p className="mt-1 line-clamp-2 text-[8px] font-mono text-warning/80">blocked: {blockers.join(', ')}</p>
@@ -864,11 +871,11 @@ function appDiscoveryState(entry: AppDiscoveryEntry): 'possible' | 'ambiguous' |
 
 function appDiscoveryLabel(entry: AppDiscoveryEntry): string {
   const state = appDiscoveryState(entry);
-  if (state === 'possible') return 'verifiable';
+  if (state === 'possible') return 'verification possible';
   if (state === 'ambiguous') return 'ambiguous';
-  if (state === 'missing') return 'unavailable';
-  if (state === 'window-only') return 'unverified';
-  return 'unknown';
+  if (state === 'missing') return 'path missing';
+  if (state === 'window-only') return 'title-only';
+  return 'not observed';
 }
 
 function appDiscoveryBadgeTone(state: ReturnType<typeof appDiscoveryState>): 'info' | 'warning' | 'unknown' {
@@ -897,14 +904,43 @@ function isWindowOnlyAppDiscovery(entry: AppDiscoveryEntry): boolean {
 
 function executablePathLabel(entry: AppDiscoveryEntry): { label: string; tone: string } {
   const candidates = Array.isArray(entry.executable_candidates) ? entry.executable_candidates : [];
-  if (candidates.length === 0) return { label: entry.known ? 'unavailable' : 'unknown app', tone: 'text-warning/80' };
+  if (candidates.length === 0) return { label: entry.known ? 'path unavailable' : 'unknown app', tone: 'text-warning/80' };
   if (candidates.some((candidate) => candidate.path_exists === false || candidate.resolved_read_only === false)) {
-    return { label: 'missing', tone: 'text-warning/80' };
+    return { label: 'path missing', tone: 'text-warning/80' };
   }
   if (candidates.some((candidate) => candidate.path_exists === true || candidate.resolved_read_only === true)) {
-    return { label: 'present', tone: 'text-foreground/60' };
+    return { label: 'path present', tone: 'text-foreground/60' };
   }
-  return { label: 'unknown', tone: 'text-foreground/45' };
+  return { label: 'path unknown', tone: 'text-foreground/45' };
+}
+
+function processObservationLabel(entry: AppDiscoveryEntry): string {
+  if (entry.process_alive === true) return `process observed ${formatPidList(entry.running_processes)}`;
+  if (entry.process_alive === false) return 'process not observed';
+  return 'process unavailable';
+}
+
+function windowObservationLabel(entry: AppDiscoveryEntry): string {
+  const matchingWindowCount = numberish(entry.matching_window_count) ?? 0;
+  const pidMatchedWindowCount = numberish(entry.pid_matched_window_count) ?? 0;
+  if (pidMatchedWindowCount > 0) {
+    return `PID-backed observation ${pidMatchedWindowCount}/${matchingWindowCount}`;
+  }
+  if (matchingWindowCount > 0) {
+    return `title-only observation ${matchingWindowCount}`;
+  }
+  return 'window not observed';
+}
+
+function appDiscoveryIdentityNotes(entry: AppDiscoveryEntry): string[] {
+  const diagnostics = entry.identity_diagnostics;
+  if (!diagnostics) return [];
+  const notes: string[] = [];
+  if (diagnostics.process_pid_window_match_supports_this_app) notes.push('process/PID supports this app');
+  if (diagnostics.process_supported_title_overlap) notes.push('title overlaps another configured app');
+  if (diagnostics.title_only_overlap_without_process_identity) notes.push('title-only overlap without process identity');
+  if (diagnostics.pid_supports_different_configured_app) notes.push('PID supports a different configured app');
+  return notes;
 }
 
 function formatPidList(processes: AppDiscoveryEntry['running_processes']): string {
