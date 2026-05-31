@@ -1,0 +1,23 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Aegis social preview</title>
+  <desc id="desc">Aegis local-first AI control plane with evidence-backed execution, policy gates, and auditable automation.</desc>
+  <rect width="1280" height="640" fill="#0B0F14"/>
+  <rect x="56" y="56" width="1168" height="528" rx="24" fill="#111821" stroke="#263342" stroke-width="2"/>
+  <path d="M116 158H1164" stroke="#263342" stroke-width="2"/>
+  <circle cx="114" cy="108" r="10" fill="#64D2FF"/>
+  <circle cx="148" cy="108" r="10" fill="#8CE99A"/>
+  <circle cx="182" cy="108" r="10" fill="#F5C76B"/>
+  <text x="116" y="282" fill="#EDF3FB" font-family="Segoe UI, Arial, sans-serif" font-size="118" font-weight="800" letter-spacing="0">Aegis</text>
+  <text x="122" y="350" fill="#64D2FF" font-family="Segoe UI, Arial, sans-serif" font-size="36" font-weight="700">Local-first AI control plane</text>
+  <text x="122" y="420" fill="#A8B7C7" font-family="Segoe UI, Arial, sans-serif" font-size="30">Evidence-backed execution | Policy gates | Auditable automation</text>
+  <text x="122" y="484" fill="#A8B7C7" font-family="Segoe UI, Arial, sans-serif" font-size="24">WexyS/Aegis GitHub repository</text>
+  <g opacity="0.92">
+    <rect x="866" y="228" width="250" height="188" rx="12" fill="#172230" stroke="#263342" stroke-width="2"/>
+    <path d="M910 290H1072" stroke="#64D2FF" stroke-width="10" stroke-linecap="round"/>
+    <path d="M910 338H1038" stroke="#8CE99A" stroke-width="10" stroke-linecap="round"/>
+    <path d="M910 386H1090" stroke="#F5C76B" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="864" cy="290" r="8" fill="#64D2FF"/>
+    <circle cx="864" cy="338" r="8" fill="#8CE99A"/>
+    <circle cx="864" cy="386" r="8" fill="#F5C76B"/>
+  </g>
+</svg>

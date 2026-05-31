@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://wexys.github.io/Aegis/</loc>
+    <lastmod>2026-06-01</lastmod>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://wexys.github.io/Aegis/foundation-baseline-v1.html</loc>
+    <lastmod>2026-06-01</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://wexys.github.io/Aegis/post-foundation-architecture-roadmap-v1.html</loc>
+    <lastmod>2026-06-01</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://wexys.github.io/Aegis/policy-as-code-extension-v1.html</loc>
+    <lastmod>2026-06-01</lastmod>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://wexys.github.io/Aegis/context-compiler-read-only-integration-readiness-v1.html</loc>
+    <lastmod>2026-06-01</lastmod>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://wexys.github.io/Aegis/github-discoverability-seo-v1.html</loc>
+    <lastmod>2026-06-01</lastmod>
+    <priority>0.6</priority>
+  </url>
+</urlset>

@@ -41,6 +41,7 @@ The long-term product direction is a trustworthy local assistant that can inspec
 - [Policy-as-code extension](docs/policy-as-code-extension-v1.md)
 - [Context Compiler read-only integration readiness](docs/context-compiler-read-only-integration-readiness-v1.md)
 - [GitHub discoverability and SEO alignment](docs/github-discoverability-seo-v1.md)
+- GitHub Pages landing source: [docs/index.html](docs/index.html)
 - Git tag: `foundation-v1-baseline`
 
 ## Core Principles
@@ -311,6 +312,7 @@ The post-foundation roadmap is design/readiness-first. Full gates and invariants
 Recommended sequence:
 
 - README Post-Foundation Alignment v1
+- GitHub Discoverability / SEO Alignment v1
 - Context Compiler Read-Only Integration Readiness v1
 - Policy-as-code Extension v1
 - Capability Lease Design v1
@@ -320,7 +322,7 @@ Recommended sequence:
 - Skill/Plugin Architecture Design v1
 - Vertical Pack Prototypes, read-only first
 
-The Context Compiler skeleton already exists. The next safe Context Compiler work is `Context Compiler Read-Only Integration Readiness v1`: compiler output is context, not command truth, and it cannot grant capability, permission, approval, or execution authority.
+The Context Compiler skeleton and read-only readiness boundary already exist. Compiler output is context, not command truth, and it cannot grant capability, permission, approval, or execution authority.
 
 Post-foundation capabilities should be added only after the runtime, evidence, approval, policy, and replay foundations remain stable under tests and operator-reviewed gates.
 

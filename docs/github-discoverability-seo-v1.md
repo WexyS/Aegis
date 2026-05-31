@@ -90,7 +90,27 @@ Recommended topic set:
 GitHub may normalize, reject, or limit topics. Use the best accepted subset
 rather than forcing awkward alternatives.
 
-## 6. Recommended Social Preview
+## 6. GitHub Pages Landing Source
+
+This repository now includes a small GitHub Pages-ready landing source:
+
+- `docs/index.html`
+- `docs/sitemap.xml`
+- `docs/robots.txt`
+- `docs/assets/aegis-social-preview.svg`
+
+Recommended Pages settings:
+
+- Source: deploy from branch
+- Branch: `main`
+- Folder: `/docs`
+- Expected project page URL after GitHub Pages is enabled:
+  `https://wexys.github.io/Aegis/`
+
+The landing page is a discoverability surface only. It does not replace the
+README, backend truth surfaces, foundation baseline, or roadmap documents.
+
+## 7. Recommended Social Preview
 
 Suggested concept:
 
@@ -100,16 +120,17 @@ Suggested concept:
 - Visual style: dark technical cockpit, subtle runtime/event-line motif, no fake
   metrics, no fake badges, no exaggerated security claims
 
-No image asset was generated in this sprint. The operator can add a social
-preview manually in GitHub repository settings later.
+A source SVG was added at `docs/assets/aegis-social-preview.svg`. If GitHub
+repository settings require a raster image for social preview, export it to PNG
+manually before upload.
 
-## 7. Optional GitHub Pages Plan
+## 8. Optional GitHub Pages Plan
 
-A small GitHub Pages landing page could help external indexing and give a
-stable human-readable entry point, but it should stay concise and link back to
-the repository truth surfaces.
+A small GitHub Pages landing page can help external indexing and give a stable
+human-readable entry point, but it should stay concise and link back to the
+repository truth surfaces.
 
-Recommended future page sections:
+Implemented page sections:
 
 1. One-screen product identity: local-first AI control plane and AI computer
    operator runtime.
@@ -121,10 +142,25 @@ Recommended future page sections:
    policy-as-code extension, and Context Compiler readiness.
 5. No fake demos, no fake badges, no ranking or adoption claims.
 
-Do not enable GitHub Pages automatically from code. That is a repository
-settings decision for the operator.
+Do not treat the landing page as runtime authority. Enable GitHub Pages manually
+from repository settings.
 
-## 8. What Cannot Be Guaranteed
+## 9. Google Search Console Readiness
+
+After GitHub Pages is enabled, recommended manual steps:
+
+1. Add `https://wexys.github.io/Aegis/` as a URL-prefix property in Google Search
+   Console, or use a custom domain later if one is configured.
+2. Verify ownership using one of Google's supported methods.
+3. Inspect `https://wexys.github.io/Aegis/` with URL Inspection.
+4. Request indexing for the landing page after it returns HTTP 200.
+5. Submit sitemap URL: `https://wexys.github.io/Aegis/sitemap.xml`.
+6. Re-check indexing after Google has time to crawl.
+
+The repository itself remains available at `https://github.com/WexyS/Aegis`.
+Search Console setup is for the Pages surface or a future custom domain.
+
+## 10. What Cannot Be Guaranteed
 
 - No repository-only change can guarantee a Google ranking.
 - Search indexing may take time.
@@ -134,21 +170,23 @@ settings decision for the operator.
 - This sprint optimizes repository clarity and discoverability legitimately; it
   does not claim guaranteed ranking improvements.
 
-## 9. Follow-Up Checklist for the Operator
+## 11. Follow-Up Checklist for the Operator
 
 1. Set the GitHub repository description manually using the primary candidate or
    one of the shorter alternatives.
 2. Add the recommended topics manually in GitHub repository settings.
-3. Consider adding a social preview image using the concept above.
-4. Consider a small GitHub Pages landing page later if public discoverability
-   becomes a priority.
-5. After indexing time has passed, search for `WexyS Aegis`, `Aegis local AI
+3. Upload a social preview image. Use `docs/assets/aegis-social-preview.svg` as
+   the source, exported to PNG if required by GitHub settings.
+4. Enable GitHub Pages from `main` / `/docs`.
+5. Add the Pages URL to Google Search Console.
+6. Submit `https://wexys.github.io/Aegis/sitemap.xml` after Pages is live.
+7. After indexing time has passed, search for `WexyS Aegis`, `Aegis local AI
    control plane`, and `Aegis verification-backed runtime`.
-6. Do not expect immediate Google ranking changes.
-7. Avoid fake badges, fake popularity claims, unsupported security claims, or
+8. Do not expect immediate Google ranking changes.
+9. Avoid fake badges, fake popularity claims, unsupported security claims, or
    repeated unnatural keyword blocks in future documentation.
 
-## 10. Safety Notes
+## 12. Safety Notes
 
 - No runtime, backend, frontend, API, approval, policy, verifier, evidence,
   replay, journal, command lifecycle, package, workflow, or execution behavior
