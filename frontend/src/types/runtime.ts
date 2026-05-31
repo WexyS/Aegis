@@ -473,6 +473,33 @@ export interface RuntimeHealth {
   pending_action_proposal_count?: number;
 }
 
+export interface FoundationClosureReadiness {
+  scan_version: string;
+  read_only: boolean;
+  mutation_performed: boolean;
+  status: string;
+  closure_readiness_status: string;
+  current_blocker_count?: number;
+  current_evidence_failure_count?: number;
+  current_missing_evidence_count?: number;
+  pending_decision_blocker_count?: number;
+  restored_pending_count?: number;
+  current_session_pending_count?: number;
+  historical_evidence_debt_count?: number;
+  historical_missing_evidence_count?: number;
+  unknown_era_evidence_issue_count?: number;
+  unknown_era_missing_evidence_count?: number;
+  replay_historical_debt_present?: boolean;
+  replay_diagnostics_status?: string;
+  replay_boundary_classification?: string;
+  system_resource_warning_count?: number;
+  app_discovery_warning_count?: number;
+  component_inputs?: Record<string, string | null | undefined>;
+  unknown_inputs?: string[];
+  recommendation?: string;
+  guidance?: string[];
+}
+
 export interface CommandLifecycleDiagnostics {
   scan_version: string;
   read_only: boolean;

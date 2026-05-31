@@ -28,6 +28,8 @@ _last_scan: dict[str, Any] | None = None
 
 
 STATUS_RANK = {"ok": 0, "unknown": 1, "warning": 2, "fail": 3}
+CLOSURE_READINESS_VERSION = "foundation-closure-readiness/1"
+UNKNOWN_ERA_OPERATOR_ATTENTION_THRESHOLD = 1
 FINDING_CATEGORIES = {
     "telemetry",
     "runtime",
@@ -116,6 +118,136 @@ def _action_timeline_report(events: list[dict[str, Any]], *, session_id: str | N
         "error_count": error_count,
         "evidence_backed_count": evidence_backed,
         "latest_sequence_num": max((int(item.get("sequence_num") or 0) for item in timeline), default=0),
+    }
+
+
+def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
+    """Read-only closure projection kept separate from runtime health."""
+
+    evidence_audit = checks["evidence_audit"]
+    pending_decision_hygiene = checks["pending_decision_hygiene"]
+    replay_diagnostics = checks["replay_diagnostics"]
+    command_lifecycle = checks["command_lifecycle"]
+    runtime_snapshot = checks["runtime_snapshot"]
+    system_resources = checks["system_resources"]
+    process_resources = checks["process_resources"]
+    network_ports = checks["network_ports"]
+    app_discovery = checks["app_discovery"]
+
+    current_evidence_failure_count = _int_count(evidence_audit.get("current_evidence_failure_count"))
+    current_missing_evidence_count = _int_count(evidence_audit.get("current_missing_evidence_count"))
+    historical_evidence_debt_count = _int_count(evidence_audit.get("historical_evidence_debt_count"))
+    unknown_era_evidence_issue_count = _int_count(evidence_audit.get("unknown_era_evidence_issue_count"))
+    historical_missing_evidence_count = _int_count(evidence_audit.get("historical_missing_evidence_count"))
+    unknown_era_missing_evidence_count = _int_count(evidence_audit.get("unknown_era_missing_evidence_count"))
+    restored_pending_count = _int_count(pending_decision_hygiene.get("restored_unresolved_count"))
+    current_pending_count = _int_count(pending_decision_hygiene.get("current_session_pending_count"))
+    pending_count = _int_count(pending_decision_hygiene.get("pending_count"))
+    system_resource_warning_count = sum(
+        1
+        for status in (
+            system_resources.get("status"),
+            process_resources.get("status"),
+            network_ports.get("status"),
+        )
+        if str(status or "unknown") not in {"ok", "unknown"}
+    )
+    app_discovery_warning_count = _app_discovery_warning_count(app_discovery)
+
+    replay_status = str(replay_diagnostics.get("status") or "unknown")
+    replay_boundary = replay_diagnostics.get("replay_boundary")
+    replay_boundary = replay_boundary if isinstance(replay_boundary, dict) else {}
+    replay_historical_debt_present = replay_status not in {"ok", "unknown"}
+    replay_classification = str(replay_boundary.get("classification") or "unknown")
+
+    lifecycle_blocker_count = 1 if command_lifecycle.get("status") == "fail" else 0
+    runtime_snapshot_blocker_count = 1 if runtime_snapshot.get("status") == "fail" else 0
+    pending_decision_blocker_count = pending_count
+    current_blocker_count = (
+        current_evidence_failure_count
+        + pending_decision_blocker_count
+        + lifecycle_blocker_count
+        + runtime_snapshot_blocker_count
+    )
+
+    unknown_inputs = []
+    if evidence_audit.get("classification") is None:
+        unknown_inputs.append("evidence_audit_classification_unavailable")
+    if replay_status == "unknown":
+        unknown_inputs.append("replay_diagnostics_unknown")
+
+    if current_evidence_failure_count > 0:
+        closure_readiness_status = "blocked_current_issue"
+    elif current_blocker_count > 0:
+        closure_readiness_status = "needs_operator_attention"
+    elif unknown_era_evidence_issue_count >= UNKNOWN_ERA_OPERATOR_ATTENTION_THRESHOLD:
+        closure_readiness_status = "needs_operator_attention"
+    elif unknown_inputs:
+        closure_readiness_status = "unknown"
+    elif historical_evidence_debt_count > 0 or replay_historical_debt_present or system_resource_warning_count > 0:
+        closure_readiness_status = "ready_with_known_historical_debt"
+    else:
+        closure_readiness_status = "ready"
+
+    status = {
+        "ready": "ok",
+        "ready_with_known_historical_debt": "warning",
+        "needs_operator_attention": "warning",
+        "blocked_current_issue": "fail",
+        "unknown": "warning",
+    }.get(closure_readiness_status, "warning")
+
+    recommendations = _closure_readiness_recommendations(
+        closure_readiness_status=closure_readiness_status,
+        current_evidence_failure_count=current_evidence_failure_count,
+        historical_evidence_debt_count=historical_evidence_debt_count,
+        unknown_era_evidence_issue_count=unknown_era_evidence_issue_count,
+        replay_historical_debt_present=replay_historical_debt_present,
+        pending_decision_blocker_count=pending_decision_blocker_count,
+        system_resource_warning_count=system_resource_warning_count,
+    )
+
+    return {
+        "scan_version": CLOSURE_READINESS_VERSION,
+        "read_only": True,
+        "mutation_performed": False,
+        "status": status,
+        "closure_readiness_status": closure_readiness_status,
+        "current_blocker_count": current_blocker_count,
+        "current_evidence_failure_count": current_evidence_failure_count,
+        "current_missing_evidence_count": current_missing_evidence_count,
+        "pending_decision_blocker_count": pending_decision_blocker_count,
+        "restored_pending_count": restored_pending_count,
+        "current_session_pending_count": current_pending_count,
+        "historical_evidence_debt_count": historical_evidence_debt_count,
+        "historical_missing_evidence_count": historical_missing_evidence_count,
+        "unknown_era_evidence_issue_count": unknown_era_evidence_issue_count,
+        "unknown_era_missing_evidence_count": unknown_era_missing_evidence_count,
+        "unknown_era_operator_attention_threshold": UNKNOWN_ERA_OPERATOR_ATTENTION_THRESHOLD,
+        "replay_historical_debt_present": replay_historical_debt_present,
+        "replay_diagnostics_status": replay_status,
+        "replay_boundary_classification": replay_classification,
+        "system_resource_warning_count": system_resource_warning_count,
+        "app_discovery_warning_count": app_discovery_warning_count,
+        "component_inputs": {
+            "evidence_audit": evidence_audit.get("status"),
+            "pending_decision_hygiene": pending_decision_hygiene.get("status"),
+            "command_lifecycle": command_lifecycle.get("status"),
+            "runtime_snapshot": runtime_snapshot.get("status"),
+            "replay_diagnostics": replay_status,
+            "system_resources": system_resources.get("status"),
+            "process_resources": process_resources.get("status"),
+            "network_ports": network_ports.get("status"),
+        },
+        "unknown_inputs": unknown_inputs,
+        "recommendation": " ".join(recommendations),
+        "guidance": [
+            "Runtime health remains the direct component health signal and is not greenwashed by closure readiness.",
+            "Historical evidence and replay debt remain visible and require separate hygiene planning.",
+            "Unknown-era evidence issues require operator attention until source or session evidence is available.",
+            "Maintenance scan performed no mutation and did not resolve approvals, rewrite evidence, or alter journal history.",
+            "Foundation release tagging should be a later explicit operator action.",
+        ],
     }
 
 
@@ -237,6 +369,7 @@ def _read_only_contract() -> dict[str, Any]:
             "process_resource_snapshot",
             "network_port_snapshot",
             "workspace_directory_snapshot",
+            "foundation_closure_readiness_projection",
         ],
         "allowed_ephemeral_state": [
             "last_maintenance_scan_cache",
@@ -568,6 +701,29 @@ def _findings_from_checks(checks: dict[str, Any]) -> list[dict[str, Any]]:
             ),
         ))
 
+    foundation_closure = checks.get("foundation_closure_readiness")
+    if isinstance(foundation_closure, dict) and foundation_closure.get("status") not in {"ok", "unknown"}:
+        closure_status = str(foundation_closure.get("closure_readiness_status") or "unknown")
+        findings.append(_finding(
+            "runtime.foundation_closure.readiness_attention",
+            category="runtime",
+            severity="fail" if closure_status == "blocked_current_issue" else "warning",
+            source="checks.foundation_closure_readiness.closure_readiness_status",
+            reason=f"Foundation closure readiness is {closure_status}; runtime health remains separate.",
+            evidence={
+                "closure_readiness_status": closure_status,
+                "current_blocker_count": foundation_closure.get("current_blocker_count"),
+                "current_evidence_failure_count": foundation_closure.get("current_evidence_failure_count"),
+                "pending_decision_blocker_count": foundation_closure.get("pending_decision_blocker_count"),
+                "restored_pending_count": foundation_closure.get("restored_pending_count"),
+                "historical_evidence_debt_count": foundation_closure.get("historical_evidence_debt_count"),
+                "unknown_era_evidence_issue_count": foundation_closure.get("unknown_era_evidence_issue_count"),
+                "replay_historical_debt_present": foundation_closure.get("replay_historical_debt_present"),
+                "system_resource_warning_count": foundation_closure.get("system_resource_warning_count"),
+            },
+            recommendation=str(foundation_closure.get("recommendation") or "Review closure readiness inputs without mutating runtime history."),
+        ))
+
     tool_registry = checks["tool_registry"]
     if tool_registry.get("status") != "ok":
         findings.append(_finding(
@@ -632,6 +788,64 @@ def _findings_from_checks(checks: dict[str, Any]) -> list[dict[str, Any]]:
 
     findings.extend(_environment_findings(checks["environment"]))
     return findings
+
+
+def _int_count(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _app_discovery_warning_count(app_discovery: dict[str, Any]) -> int:
+    entries = app_discovery.get("entries") if isinstance(app_discovery, dict) else []
+    if not isinstance(entries, list):
+        return 0
+    warning_count = 0
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        blockers = entry.get("verification_blockers")
+        if isinstance(blockers, list) and blockers:
+            warning_count += 1
+            continue
+        state = str(entry.get("diagnostic_state") or entry.get("ambiguity_status") or "unknown")
+        if state not in {"ok", "known", "verifiable", "unknown"}:
+            warning_count += 1
+    return warning_count
+
+
+def _closure_readiness_recommendations(
+    *,
+    closure_readiness_status: str,
+    current_evidence_failure_count: int,
+    historical_evidence_debt_count: int,
+    unknown_era_evidence_issue_count: int,
+    replay_historical_debt_present: bool,
+    pending_decision_blocker_count: int,
+    system_resource_warning_count: int,
+) -> list[str]:
+    recommendations = []
+    if closure_readiness_status == "blocked_current_issue":
+        recommendations.append("Current runtime blockers require investigation before closure.")
+    if pending_decision_blocker_count:
+        recommendations.append("Pending decisions require backend lifecycle resolution; no auto-resolution was performed.")
+    if current_evidence_failure_count:
+        recommendations.append("Current evidence failures remain visible and must not be marked verified without evidence.")
+    if historical_evidence_debt_count:
+        recommendations.append("Historical evidence debt remains visible and should be handled by a separate hygiene design.")
+    if unknown_era_evidence_issue_count:
+        recommendations.append("Unknown-era evidence issues require operator attention instead of guessed historical classification.")
+    if replay_historical_debt_present:
+        recommendations.append("Replay diagnostics still show historical journal debt; cleanup execution remains out of scope.")
+    if system_resource_warning_count:
+        recommendations.append("System resource warnings are environmental and should be reviewed before long-running automation.")
+    if not recommendations:
+        recommendations.append("No current blockers, pending decisions, historical evidence debt, replay debt, or resource warnings were classified.")
+    recommendations.append("No mutation was performed by this maintenance scan.")
+    return recommendations
 
 
 def _finding_summary(findings: list[dict[str, Any]]) -> dict[str, Any]:
@@ -746,6 +960,7 @@ def run_read_only_maintenance_scan(
         "process_resources": process_resources,
         "network_ports": network_ports,
     }
+    checks["foundation_closure_readiness"] = _foundation_closure_readiness(checks)
     findings = _findings_from_checks(checks)
     action_proposals = build_maintenance_action_proposals(findings, checks, commands_snapshot=commands)
     finding_summary = _finding_summary(findings)

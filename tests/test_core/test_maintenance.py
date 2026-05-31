@@ -21,6 +21,148 @@ REQUIRED_FINDING_FIELDS = {
 }
 
 
+def _evidence_audit_stub(
+    *,
+    status: str = "ok",
+    current: int = 0,
+    historical: int = 0,
+    unknown: int = 0,
+    current_missing: int = 0,
+    historical_missing: int = 0,
+    unknown_missing: int = 0,
+) -> dict:
+    return {
+        "scan_version": "evidence-audit/2",
+        "read_only": True,
+        "status": status,
+        "action_event_count": 0,
+        "action_count": 0,
+        "completed_or_failed_count": 0,
+        "active_count": 0,
+        "success_count": 0,
+        "error_count": 0,
+        "evidence_backed_count": 0,
+        "missing_evidence_count": current_missing + historical_missing + unknown_missing,
+        "verified_action_count": 0,
+        "unverified_evidence_count": 0,
+        "failed_evidence_count": 0,
+        "negative_evidence_count": 0,
+        "check_pass_count": 0,
+        "check_fail_count": 0,
+        "check_unknown_count": 0,
+        "critical_failure_count": 0,
+        "critical_failures": [],
+        "verification_counts": {},
+        "verifier_counts": {},
+        "latest_sequence_num": 0,
+        "limit": 50,
+        "include_historical": True,
+        "current_evidence_failure_count": current,
+        "historical_evidence_debt_count": historical,
+        "unknown_era_evidence_issue_count": unknown,
+        "current_missing_evidence_count": current_missing,
+        "historical_missing_evidence_count": historical_missing,
+        "unknown_era_missing_evidence_count": unknown_missing,
+        "current_unverified_completed_count": 0,
+        "historical_unverified_completed_count": 0,
+        "unknown_era_unverified_completed_count": 0,
+        "verifier_check_failure_count": 0,
+        "mutation_performed": False,
+        "classification": {
+            "scan_version": "evidence-classification/1",
+            "read_only": True,
+            "mutation_performed": False,
+        },
+    }
+
+
+def _patch_closure_scan_dependencies(
+    monkeypatch,
+    tmp_path,
+    *,
+    evidence: dict | None = None,
+    replay_status: str = "ok",
+    replay_classification: str = "no_replay_gap_detected",
+    system_status: str = "ok",
+) -> None:
+    journal_path = tmp_path / "runtime_events.jsonl"
+    journal_path.write_text("", encoding="utf-8")
+
+    class FakeJournal:
+        def snapshot(self) -> dict:
+            return {
+                "journal_path": str(journal_path),
+                "event_count": 0,
+                "last_sequence_num": 0,
+                "last_event_hash": None,
+                "integrity_status": "hash-chain",
+                "historical_integrity_status": "ok",
+                "historical_integrity_breaks": 0,
+            }
+
+        def recent_events(self) -> list[dict]:
+            return []
+
+    monkeypatch.setattr(maintenance, "get_runtime_journal", lambda: FakeJournal())
+    monkeypatch.setattr(
+        maintenance,
+        "audit_action_evidence",
+        lambda *args, **kwargs: evidence or _evidence_audit_stub(),
+    )
+    monkeypatch.setattr(
+        maintenance,
+        "build_runtime_replay_gap_diagnostics",
+        lambda *args, **kwargs: {
+            "scan_version": "runtime-replay-gap-diagnostics/1",
+            "read_only": True,
+            "mutated": False,
+            "status": replay_status,
+            "parse_error_count": 0,
+            "sequence": {},
+            "control_plane": {},
+            "replay_boundary": {
+                "classification": replay_classification,
+                "cleanup_execution_blocked": replay_status == "fail",
+            },
+        },
+    )
+    monkeypatch.setattr(
+        maintenance,
+        "build_configured_app_discovery_smoke",
+        lambda: {
+            "scan_version": "app-discovery-smoke/1",
+            "read_only": True,
+            "status": "ok",
+            "entries": [],
+            "actions_performed": [],
+            "observation_errors": [],
+        },
+    )
+    monkeypatch.setattr(
+        maintenance,
+        "collect_system_resource_snapshot",
+        lambda: {"scan_version": "system-resources/1", "read_only": True, "status": system_status},
+    )
+    monkeypatch.setattr(
+        maintenance,
+        "collect_process_resource_snapshot",
+        lambda: {
+            "scan_version": "process-resources/1",
+            "read_only": True,
+            "status": "ok",
+            "process_count": 0,
+            "top_by_memory": [],
+            "skipped": {},
+            "skipped_count": 0,
+        },
+    )
+    monkeypatch.setattr(
+        maintenance,
+        "collect_network_port_snapshot",
+        lambda: {"scan_version": "network-ports/1", "read_only": True, "status": "ok", "ports": []},
+    )
+
+
 def test_maintenance_scan_findings_have_source_contract() -> None:
     report = maintenance.run_read_only_maintenance_scan(
         runtime_snapshot={
@@ -330,6 +472,152 @@ def test_maintenance_scan_surfaces_evidence_current_historical_unknown_split(mon
         and finding["evidence"]["historical_unverified_completed_count"] == 1
         for finding in report["findings"]
     )
+
+
+def test_maintenance_scan_adds_read_only_closure_readiness_diagnostic(monkeypatch, tmp_path) -> None:
+    _patch_closure_scan_dependencies(
+        monkeypatch,
+        tmp_path,
+        evidence=_evidence_audit_stub(status="warning", historical=3, historical_missing=2),
+        replay_status="fail",
+        replay_classification="historical_mixed_sequence_eras_or_reset_boundaries",
+        system_status="warning",
+    )
+
+    report = maintenance.run_read_only_maintenance_scan(
+        runtime_snapshot={
+            "session_id": "closure-historical-debt",
+            "last_event_sequence": 0,
+            "queue_depth": 0,
+            "queue_capacity": 1,
+            "recovery_depth": 0,
+        },
+        websocket_clients=0,
+    )
+
+    closure = report["checks"]["foundation_closure_readiness"]
+
+    assert closure["scan_version"] == "foundation-closure-readiness/1"
+    assert closure["read_only"] is True
+    assert closure["mutation_performed"] is False
+    assert closure["closure_readiness_status"] == "ready_with_known_historical_debt"
+    assert closure["status"] == "warning"
+    assert closure["current_blocker_count"] == 0
+    assert closure["historical_evidence_debt_count"] == 3
+    assert closure["historical_missing_evidence_count"] == 2
+    assert closure["replay_historical_debt_present"] is True
+    assert closure["system_resource_warning_count"] == 1
+    assert report["summary"]["component_statuses"]["evidence_audit"] == "warning"
+    assert report["summary"]["component_statuses"]["replay_diagnostics"] == "fail"
+    assert "foundation_closure_readiness" not in report["summary"]["component_statuses"]
+    assert "foundation_closure_readiness_projection" in report["checks"]["read_only_contract"]["allowed_observations"]
+    assert any(
+        finding["finding_id"] == "runtime.foundation_closure.readiness_attention"
+        and finding["severity"] == "warning"
+        and finding["evidence"]["closure_readiness_status"] == "ready_with_known_historical_debt"
+        for finding in report["findings"]
+    )
+
+
+def test_maintenance_closure_readiness_blocks_current_evidence_failures(monkeypatch, tmp_path) -> None:
+    _patch_closure_scan_dependencies(
+        monkeypatch,
+        tmp_path,
+        evidence=_evidence_audit_stub(status="fail", current=1, current_missing=1),
+    )
+
+    report = maintenance.run_read_only_maintenance_scan(
+        runtime_snapshot={
+            "session_id": "closure-current-failure",
+            "last_event_sequence": 0,
+            "queue_depth": 0,
+            "queue_capacity": 1,
+            "recovery_depth": 0,
+        },
+        websocket_clients=0,
+    )
+
+    closure = report["checks"]["foundation_closure_readiness"]
+
+    assert closure["closure_readiness_status"] == "blocked_current_issue"
+    assert closure["status"] == "fail"
+    assert closure["current_evidence_failure_count"] == 1
+    assert closure["current_missing_evidence_count"] == 1
+    assert closure["current_blocker_count"] == 1
+    assert any(
+        finding["finding_id"] == "runtime.foundation_closure.readiness_attention"
+        and finding["severity"] == "fail"
+        for finding in report["findings"]
+    )
+
+
+def test_maintenance_closure_readiness_requires_attention_for_pending_decisions(monkeypatch, tmp_path) -> None:
+    _patch_closure_scan_dependencies(monkeypatch, tmp_path)
+    manager = get_approval_manager()
+    manager.reset_for_tests()
+    try:
+        manager.register_pending(
+            command_id="cmd-closure-restored",
+            text="open notepad",
+            trace_id="trace-closure-restored",
+            risk_level=RiskLevel.MEDIUM,
+            reason="approval required",
+            metadata={
+                "approval_id": "approval-closure-restored",
+                "resume_allowed": True,
+                "restored_from_journal": True,
+                "restored_source": "command_event_replay",
+                "restored_at": 20_000,
+                "source_snapshot_sequence": 82251,
+            },
+        )
+        report = maintenance.run_read_only_maintenance_scan(
+            runtime_snapshot={
+                "session_id": "closure-pending",
+                "last_event_sequence": 0,
+                "queue_depth": 0,
+                "queue_capacity": 1,
+                "recovery_depth": 0,
+            },
+            websocket_clients=0,
+        )
+    finally:
+        manager.reset_for_tests()
+
+    closure = report["checks"]["foundation_closure_readiness"]
+
+    assert closure["closure_readiness_status"] == "needs_operator_attention"
+    assert closure["pending_decision_blocker_count"] == 1
+    assert closure["restored_pending_count"] == 1
+    assert closure["current_blocker_count"] == 1
+    assert closure["mutation_performed"] is False
+
+
+def test_maintenance_closure_readiness_does_not_guess_unknown_era(monkeypatch, tmp_path) -> None:
+    _patch_closure_scan_dependencies(
+        monkeypatch,
+        tmp_path,
+        evidence=_evidence_audit_stub(status="warning", unknown=1, unknown_missing=1),
+    )
+
+    report = maintenance.run_read_only_maintenance_scan(
+        runtime_snapshot={
+            "session_id": "closure-unknown-era",
+            "last_event_sequence": 0,
+            "queue_depth": 0,
+            "queue_capacity": 1,
+            "recovery_depth": 0,
+        },
+        websocket_clients=0,
+    )
+
+    closure = report["checks"]["foundation_closure_readiness"]
+
+    assert closure["closure_readiness_status"] == "needs_operator_attention"
+    assert closure["unknown_era_evidence_issue_count"] == 1
+    assert closure["unknown_era_missing_evidence_count"] == 1
+    assert closure["unknown_era_operator_attention_threshold"] == 1
+    assert "Unknown-era evidence issues require operator attention" in closure["recommendation"]
 
 
 def test_workspace_directory_report_is_read_only_and_evidence_backed(monkeypatch, tmp_path) -> None:

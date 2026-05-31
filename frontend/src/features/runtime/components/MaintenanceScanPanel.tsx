@@ -13,6 +13,7 @@ import {
   CommandLifecycleDiagnostics,
   EnvironmentDiagnostics,
   EvidenceAudit,
+  FoundationClosureReadiness,
   MaintenanceActionProposal,
   MaintenanceFinding,
   NetworkPortsDiagnostics,
@@ -27,6 +28,7 @@ import {
 export const MaintenanceScanPanel = () => {
   const lastMaintenanceScan = useRuntimeStore((state) => state.lastMaintenanceScan);
   const runtimeHealth = getRuntimeHealth(lastMaintenanceScan);
+  const closureReadiness = getFoundationClosureReadiness(lastMaintenanceScan);
   const commandLifecycle = getCommandLifecycle(lastMaintenanceScan);
   const pendingDecisionHygiene = getPendingDecisionHygiene(lastMaintenanceScan);
   const runtimeSnapshot = getRuntimeSnapshot(lastMaintenanceScan);
@@ -70,6 +72,7 @@ export const MaintenanceScanPanel = () => {
             />
           </div>
           {runtimeHealth && <RuntimeHealthSummary health={runtimeHealth} />}
+          {closureReadiness && <ClosureReadinessSummary readiness={closureReadiness} />}
           {findings.length > 0 && <MaintenanceFindings findings={findings} />}
           {actionProposals.length > 0 && <MaintenanceActionProposals proposals={actionProposals} />}
           {(commandLifecycle || runtimeSnapshot || websocket || actionTimeline) && (
@@ -123,6 +126,62 @@ const RuntimeHealthSummary = ({ health }: { health: RuntimeHealth }) => {
       )}
       {typeof health.pending_action_proposal_count === 'number' && health.pending_action_proposal_count > 0 && (
         <p className="mt-1 text-[9px] font-mono text-warning/80">{health.pending_action_proposal_count} proposals in approval lifecycle</p>
+      )}
+    </div>
+  );
+};
+
+const ClosureReadinessSummary = ({ readiness }: { readiness: FoundationClosureReadiness }) => {
+  const status = String(readiness.closure_readiness_status || 'unknown');
+  const currentBlockers = numberish(readiness.current_blocker_count);
+  const currentEvidenceFailures = numberish(readiness.current_evidence_failure_count);
+  const currentMissingEvidence = numberish(readiness.current_missing_evidence_count);
+  const pendingBlockers = numberish(readiness.pending_decision_blocker_count);
+  const restoredPending = numberish(readiness.restored_pending_count);
+  const historicalDebt = numberish(readiness.historical_evidence_debt_count);
+  const historicalMissing = numberish(readiness.historical_missing_evidence_count);
+  const unknownEra = numberish(readiness.unknown_era_evidence_issue_count);
+  const unknownMissing = numberish(readiness.unknown_era_missing_evidence_count);
+  const systemWarnings = numberish(readiness.system_resource_warning_count);
+  const appDiscoveryWarnings = numberish(readiness.app_discovery_warning_count);
+  const replayStatus = String(readiness.replay_diagnostics_status || 'unknown');
+  const replayTone = replayStatus === 'ok' ? 'default' : replayStatus === 'fail' ? 'danger' : 'warning';
+
+  return (
+    <div className="mt-3 border-t border-white/10 pt-3">
+      <div className="flex items-center justify-between gap-2 text-[9px] font-bold uppercase tracking-widest">
+        <span className="text-foreground/40">Closure Readiness</span>
+        <span className={closureReadinessTone(status)}>{status.replace(/_/g, ' ')}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        <AuditMetric label="current blockers" value={countLabel(currentBlockers)} tone={(currentBlockers ?? 0) > 0 ? 'danger' : 'default'} />
+        <AuditMetric label="current evidence" value={countLabel(currentEvidenceFailures)} tone={(currentEvidenceFailures ?? 0) > 0 ? 'danger' : 'default'} />
+        <AuditMetric label="current missing" value={countLabel(currentMissingEvidence)} tone={(currentMissingEvidence ?? 0) > 0 ? 'danger' : 'default'} />
+        <AuditMetric label="pending blockers" value={countLabel(pendingBlockers)} tone={(pendingBlockers ?? 0) > 0 ? 'warning' : 'default'} />
+        <AuditMetric label="restored pending" value={countLabel(restoredPending)} tone={(restoredPending ?? 0) > 0 ? 'warning' : 'default'} />
+        <AuditMetric label="historical debt" value={countLabel(historicalDebt)} tone={(historicalDebt ?? 0) > 0 ? 'warning' : 'default'} />
+        <AuditMetric label="historical missing" value={countLabel(historicalMissing)} tone={(historicalMissing ?? 0) > 0 ? 'warning' : 'default'} />
+        <AuditMetric label="unknown era" value={countLabel(unknownEra)} tone={(unknownEra ?? 0) > 0 ? 'warning' : 'default'} />
+        <AuditMetric label="unknown missing" value={countLabel(unknownMissing)} tone={(unknownMissing ?? 0) > 0 ? 'warning' : 'default'} />
+        <AuditMetric label="replay" value={replayStatus} tone={replayTone} />
+        <AuditMetric label="resources" value={countLabel(systemWarnings)} tone={(systemWarnings ?? 0) > 0 ? 'warning' : 'default'} />
+        <AuditMetric label="app discovery" value={countLabel(appDiscoveryWarnings)} tone={(appDiscoveryWarnings ?? 0) > 0 ? 'warning' : 'default'} />
+      </div>
+      <p className="mt-2 text-[9px] font-mono text-foreground/45">
+        Runtime Health remains separate; this closure projection does not hide evidence or replay failures.
+      </p>
+      {readiness.mutation_performed === false && (
+        <p className="mt-1 text-[9px] font-mono text-foreground/35">Read-only; no mutation performed.</p>
+      )}
+      {readiness.replay_boundary_classification && readiness.replay_boundary_classification !== 'unknown' && (
+        <p className="mt-1 truncate text-[9px] font-mono text-warning/75">
+          replay boundary: {readiness.replay_boundary_classification}
+        </p>
+      )}
+      {readiness.recommendation && (
+        <p className="mt-1 line-clamp-3 text-[9px] font-mono leading-relaxed text-warning/80">
+          {readiness.recommendation}
+        </p>
       )}
     </div>
   );
@@ -618,6 +677,12 @@ function getRuntimeHealth(report: Record<string, unknown> | null): RuntimeHealth
   return health as RuntimeHealth;
 }
 
+function getFoundationClosureReadiness(report: Record<string, unknown> | null): FoundationClosureReadiness | null {
+  const readiness = getCheck(report, 'foundation_closure_readiness') as Partial<FoundationClosureReadiness> | null;
+  if (!readiness || readiness.scan_version !== 'foundation-closure-readiness/1' || readiness.read_only !== true) return null;
+  return readiness as FoundationClosureReadiness;
+}
+
 function getCommandLifecycle(report: Record<string, unknown> | null): CommandLifecycleDiagnostics | null {
   const lifecycle = getCheck(report, 'command_lifecycle') as Partial<CommandLifecycleDiagnostics> | null;
   if (!lifecycle || lifecycle.scan_version !== 'command-lifecycle/1') return null;
@@ -864,6 +929,13 @@ function worstDiagnosticStatus(...statuses: Array<string | null | undefined>): s
 function statusTone(status: string): string {
   if (status === 'ok') return 'text-success';
   if (status === 'fail') return 'text-danger';
+  if (status === 'unknown') return 'text-foreground/45';
+  return 'text-warning';
+}
+
+function closureReadinessTone(status: string): string {
+  if (status === 'ready') return 'text-success';
+  if (status === 'blocked_current_issue') return 'text-danger';
   if (status === 'unknown') return 'text-foreground/45';
   return 'text-warning';
 }
