@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
 
+from aegis.core.browser_preferences import BrowserPreferenceResolution, resolve_preferred_browser
 from aegis.core.constants import IntentSource, RiskLevel
 from aegis.core.schemas import IntentResult
 from aegis.intent.rules import APP_ALIASES, KNOWN_SITES
@@ -176,8 +177,54 @@ _ENGLISH_OPEN_SEARCH_PATTERNS = (
 )
 
 
-def _normalize_app_alias(value: str) -> str:
+BROWSER_APPS = {"brave", "chrome", "edge", "firefox", "browser", "tarayici"}
+SEARCH_TRAILING_MARKERS = (
+    "arama yap",
+    "aramasi yap",
+    "diye arat",
+    "arat",
+    "ara",
+    "search",
+    "find",
+    "bul",
+    "googlela",
+    "yaz",
+)
+CONNECTOR_WORDS = {"ve", "sonra", "ardindan", "and", "then"}
+DESTRUCTIVE_WORDS = {"sil", "delete", "remove", "rm", "format", "wipe"}
+
+
+def _fold_text(value: str) -> str:
     text = value.strip().lower()
+    replacements = {
+        "\u00e7": "c",
+        "\u011f": "g",
+        "\u0131": "i",
+        "\u00f6": "o",
+        "\u015f": "s",
+        "\u00fc": "u",
+        "\u00e2": "a",
+        "Ã§": "c",
+        "ÄŸ": "g",
+        "Ä±": "i",
+        "Ä°": "i",
+        "Ã¶": "o",
+        "ÅŸ": "s",
+        "Ã¼": "u",
+        "Ã¢": "a",
+        "Ã„Â±": "i",
+        "â€™": "'",
+        "`": "'",
+    }
+    for before, after in replacements.items():
+        text = text.replace(before, after)
+    text = text.replace("'", " ")
+    text = re.sub(r"[^a-z0-9:/?&=.+#-]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _normalize_app_alias(value: str) -> str:
+    text = _fold_text(value)
     replacements = {
         "not defterini": "not defteri",
         "not defterine": "not defteri",
@@ -203,6 +250,37 @@ def _canonical_app(value: str) -> str | None:
 
 def _is_known_site(value: str) -> bool:
     return _normalize_app_alias(value) in KNOWN_SITES
+
+
+def _canonical_site(value: str) -> str | None:
+    normalized = _normalize_app_alias(value)
+    if normalized in KNOWN_SITES:
+        return normalized
+    for suffix in ("a", "e", "ya", "ye"):
+        candidate = normalized.removesuffix(suffix).strip()
+        if candidate in KNOWN_SITES:
+            return candidate
+    return None
+
+
+def _search_params(
+    *,
+    query: str,
+    preference: BrowserPreferenceResolution,
+    search_provider: str = "google",
+) -> dict[str, Any]:
+    params: dict[str, Any] = {
+        "query": query.strip(),
+        "search_provider": search_provider,
+        "browser_runtime": preference.browser_runtime,
+        "controlled_browser": preference.controlled_browser,
+    }
+    if preference.browser_app:
+        params["preferred_browser"] = preference.browser_app
+        params["browser"] = preference.browser_app
+    if preference.warning:
+        params["browser_preference_warning"] = preference.warning
+    return params
 
 
 def _clarification_plan(source_text: str, language: str, ambiguity: str) -> NormalizedPlan:
@@ -310,6 +388,225 @@ def _ready_open_search_plan(
     )
 
 
+def _ready_browser_search_plan(
+    *,
+    source_text: str,
+    language: str,
+    query: str,
+    source_span: str,
+    preference: BrowserPreferenceResolution,
+    search_provider: str = "google",
+) -> NormalizedPlan:
+    plan = NormalizedPlan(
+        plan_kind="deterministic_decomposition",
+        language=language,
+        source_text=source_text,
+        status=PlanStatus.READY.value,
+        risk="low",
+        steps=[
+            PrimitiveStep(
+                intent="search_web",
+                params=_search_params(query=query, preference=preference, search_provider=search_provider),
+                source_span=source_span,
+                risk="low",
+            ),
+        ],
+        ambiguities=[],
+        guard_notes=[],
+    )
+    validation = validate_normalized_plan(plan)
+    if validation.valid:
+        return plan
+    return NormalizedPlan(
+        plan_kind="deterministic_decomposition",
+        language=language,
+        source_text=source_text,
+        status=PlanStatus.BLOCKED.value,
+        risk="low",
+        steps=[],
+        ambiguities=[],
+        guard_notes=validation.errors,
+    )
+
+
+def _ready_open_url_plan(
+    *,
+    source_text: str,
+    language: str,
+    site: str,
+    source_span: str,
+    preference: BrowserPreferenceResolution,
+) -> NormalizedPlan:
+    params: dict[str, Any] = {
+        "site": site,
+        "url": KNOWN_SITES[site],
+        "browser_runtime": preference.browser_runtime,
+        "controlled_browser": preference.controlled_browser,
+    }
+    if preference.browser_app:
+        params["preferred_browser"] = preference.browser_app
+    if preference.warning:
+        params["browser_preference_warning"] = preference.warning
+    plan = NormalizedPlan(
+        plan_kind="deterministic_decomposition",
+        language=language,
+        source_text=source_text,
+        status=PlanStatus.READY.value,
+        risk="low",
+        steps=[
+            PrimitiveStep(
+                intent="open_url",
+                params=params,
+                source_span=source_span,
+                risk="low",
+            )
+        ],
+        ambiguities=[],
+        guard_notes=[],
+    )
+    validation = validate_normalized_plan(plan)
+    if validation.valid:
+        return plan
+    return NormalizedPlan(
+        plan_kind="deterministic_decomposition",
+        language=language,
+        source_text=source_text,
+        status=PlanStatus.BLOCKED.value,
+        risk="low",
+        steps=[],
+        ambiguities=[],
+        guard_notes=validation.errors,
+    )
+
+
+def _language_for_text(text: str) -> str:
+    folded = _fold_text(text)
+    tokens = set(folded.split())
+    if tokens & {"ac", "acip", "ara", "arat", "gir", "yaz", "sonra", "ve"}:
+        return "tr"
+    return "en"
+
+
+def _strip_search_marker(value: str, *, allow_write_marker: bool = False) -> str | None:
+    text = value.strip()
+    for marker in sorted(SEARCH_TRAILING_MARKERS, key=len, reverse=True):
+        if marker == "yaz" and not allow_write_marker:
+            continue
+        suffix = f" {marker}"
+        if text == marker:
+            return ""
+        if text.endswith(suffix):
+            query = text[: -len(suffix)].strip()
+            query = re.sub(r"^(?:and|then|ve|sonra)\s+", "", query).strip()
+            if query.endswith(" diye"):
+                query = query[: -len(" diye")].strip()
+            return query
+    return None
+
+
+def _strip_search_prefix(value: str) -> str | None:
+    text = value.strip()
+    text = re.sub(r"^(?:and|then|ve|sonra)\s+", "", text)
+    for prefix in ("search ", "find ", "ara ", "bul ", "googlela "):
+        if text.startswith(prefix):
+            return text[len(prefix):].strip()
+    return None
+
+
+def _looks_mixed_destructive(text: str) -> bool:
+    tokens = set(_fold_text(text).split())
+    return bool(tokens & CONNECTOR_WORDS and tokens & DESTRUCTIVE_WORDS)
+
+
+def decompose_browser_search(text: str) -> NormalizedPlan | None:
+    source_text = text
+    folded = _fold_text(text)
+    if not folded:
+        return None
+
+    patterns = [
+        re.compile(
+            r"^(?:open|launch|start)\s+"
+            r"(?P<browser>brave|chrome|edge|firefox|browser|tarayici)\s+"
+            r"(?:and|then|ve|sonra)\s+(?P<body>.+)$"
+        ),
+        re.compile(
+            r"^(?:open|launch|start)\s+(?P<provider>google)\s+"
+            r"(?:and|then|ve|sonra)\s+(?P<body>.+)$"
+        ),
+        re.compile(
+            r"^(?P<browser>brave|chrome|edge|firefox|browser|tarayici)\s+"
+            r"(?:i|yi|a|e)?\s*"
+            r"(?:acip|ac|open|launch|start|de|da|te|ta)\s+"
+            r"(?P<body>.+)$"
+        ),
+        re.compile(
+            r"^(?P<provider>google)\s+"
+            r"(?:acip|ac|open|launch|start|da|de|ta|te)\s+"
+            r"(?P<body>.+)$"
+        ),
+        re.compile(r"^(?:search|find|ara|bul)\s+(?P<body>.+)$"),
+        re.compile(r"^(?P<body>.+)$"),
+    ]
+    for pattern in patterns:
+        match = pattern.match(folded)
+        if not match:
+            continue
+        body = match.group("body").strip()
+        direct_search_prefix = pattern.pattern.startswith("^(?:search|find|ara|bul)")
+        generic_trailing_search = pattern.pattern == "^(?P<body>.+)$"
+        if generic_trailing_search and re.search(r"\b(?:ac|open|launch|start)\b", body):
+            continue
+        query = body if direct_search_prefix else _strip_search_prefix(body)
+        if query is None:
+            allow_write_marker = bool(match.groupdict().get("browser") or match.groupdict().get("provider"))
+            query = _strip_search_marker(body, allow_write_marker=allow_write_marker)
+        if query is None:
+            continue
+        if not query:
+            return _clarification_plan(source_text, _language_for_text(text), "missing query for browser_search")
+        browser = match.groupdict().get("browser")
+        provider = match.groupdict().get("provider") or "google"
+        return _ready_browser_search_plan(
+            source_text=source_text,
+            language=_language_for_text(text),
+            query=query,
+            source_span=query,
+            preference=resolve_preferred_browser(explicit_browser=browser),
+            search_provider=provider,
+        )
+
+    return None
+
+
+def decompose_known_site_open(text: str) -> NormalizedPlan | None:
+    folded = _fold_text(text)
+    if not folded:
+        return None
+    patterns = [
+        re.compile(r"^(?P<target>.+?)\s+(?P<verb>ac|open|gir|git|go)$"),
+        re.compile(r"^(?P<verb>ac|open|go to|navigate)\s+(?P<target>.+?)$"),
+    ]
+    for pattern in patterns:
+        match = pattern.match(folded)
+        if not match:
+            continue
+        target = match.group("target").strip()
+        app = _canonical_app(target)
+        site = _canonical_site(target)
+        if app and not site:
+            return None
+        if site:
+            return _ready_open_url_plan(
+                source_text=text,
+                language=_language_for_text(text),
+                site=site,
+                source_span=target,
+                preference=resolve_preferred_browser(),
+            )
+    return None
+
+
 def decompose_open_type(text: str) -> NormalizedPlan | None:
     """Decompose high-confidence open-app + type commands without executing them."""
 
@@ -411,13 +708,29 @@ def decompose_open_search(text: str) -> NormalizedPlan | None:
 def decompose_command(text: str) -> NormalizedPlan | None:
     """Try deterministic decomposers in a stable safe order."""
 
-    lowered = text.strip().lower()
+    folded = _fold_text(text)
     click_tokens = ("click", "tıkla", "tikla", "tÄ±kla")
     unresolved_targets = ("that", "button", "buton", "ilk", "sonuca", "bu ", "şu ", "su ")
-    if any(token in lowered for token in click_tokens) and any(target in lowered for target in unresolved_targets):
+    if any(token in folded for token in click_tokens) and any(target in folded for target in unresolved_targets):
         return _clarification_plan(text, "unknown", "click target resolution is not implemented")
+    if _looks_mixed_destructive(text):
+        return NormalizedPlan(
+            plan_kind="deterministic_decomposition",
+            language=_language_for_text(text),
+            source_text=text,
+            status=PlanStatus.BLOCKED.value,
+            risk="critical",
+            steps=[],
+            ambiguities=[],
+            guard_notes=["mixed destructive command blocked before partial execution"],
+        )
 
-    for decomposer in (decompose_open_type, decompose_open_search):
+    for decomposer in (
+        decompose_open_type,
+        decompose_browser_search,
+        decompose_known_site_open,
+        decompose_open_search,
+    ):
         plan = decomposer(text)
         if plan is None:
             continue
@@ -475,6 +788,16 @@ def normalized_plan_to_intents(plan: NormalizedPlan, *, raw_text: str) -> list[I
                     "source_span": step.source_span,
                     "guard_notes": list(plan.guard_notes),
                     "ambiguities": list(plan.ambiguities),
+                    "route_kind": "browser_search"
+                    if step.intent == "search_web" and step.params.get("search_provider")
+                    else "browser_open"
+                    if step.intent == "open_url" and step.params.get("site")
+                    else step.intent,
+                    "preferred_browser": step.params.get("preferred_browser"),
+                    "search_provider": step.params.get("search_provider"),
+                    "browser_runtime": step.params.get("browser_runtime"),
+                    "controlled_browser": step.params.get("controlled_browser"),
+                    "target_site": step.params.get("site") if step.intent == "open_url" else None,
                 },
             )
         )

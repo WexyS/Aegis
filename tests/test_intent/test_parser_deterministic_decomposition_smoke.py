@@ -114,13 +114,13 @@ async def test_default_on_open_search_brave_turkish_is_deterministic(monkeypatch
 
     results = await _parse("brave açıp python nedir ara")
 
-    assert [result.intent for result in results] == ["open_app", "search_web"]
-    assert results[0].params["app"] == "brave"
-    assert results[1].params["query"] == "python nedir"
-    assert results[1].params["browser"] == "brave"
-    assert "brave" not in results[1].params["query"]
-    _assert_ready_metadata(results[0], step_index=0, step_count=2, source_span="brave")
-    _assert_ready_metadata(results[1], step_index=1, step_count=2, source_span="python nedir")
+    assert [result.intent for result in results] == ["search_web"]
+    assert results[0].params["query"] == "python nedir"
+    assert results[0].params["browser"] == "brave"
+    assert results[0].params["preferred_browser"] == "brave"
+    assert results[0].metadata["route_kind"] == "browser_search"
+    assert "brave" not in results[0].params["query"]
+    _assert_ready_metadata(results[0], step_index=0, step_count=1, source_span="python nedir")
 
 
 @pytest.mark.asyncio
@@ -129,13 +129,13 @@ async def test_default_on_open_search_chrome_turkish_keeps_query_clean(monkeypat
 
     results = await _parse("chrome aç ve python nedir ara")
 
-    assert [result.intent for result in results] == ["open_app", "search_web"]
-    assert results[0].params["app"] == "chrome"
-    assert results[1].params["query"] == "python nedir"
-    assert results[1].params["query"] != "ve python nedir"
-    assert results[1].params["browser"] == "chrome"
-    _assert_ready_metadata(results[0], step_index=0, step_count=2, source_span="chrome")
-    _assert_ready_metadata(results[1], step_index=1, step_count=2, source_span="python nedir")
+    assert [result.intent for result in results] == ["search_web"]
+    assert results[0].params["query"] == "python nedir"
+    assert results[0].params["query"] != "ve python nedir"
+    assert results[0].params["browser"] == "chrome"
+    assert results[0].params["preferred_browser"] == "chrome"
+    assert results[0].metadata["route_kind"] == "browser_search"
+    _assert_ready_metadata(results[0], step_index=0, step_count=1, source_span="python nedir")
 
 
 @pytest.mark.asyncio
@@ -144,11 +144,12 @@ async def test_default_on_open_search_brave_english_is_deterministic(monkeypatch
 
     results = await _parse("open brave and search python")
 
-    assert [result.intent for result in results] == ["open_app", "search_web"]
-    assert results[0].params["app"] == "brave"
-    assert results[1].params == {"query": "python", "browser": "brave"}
-    _assert_ready_metadata(results[0], step_index=0, step_count=2, source_span="brave")
-    _assert_ready_metadata(results[1], step_index=1, step_count=2, source_span="python")
+    assert [result.intent for result in results] == ["search_web"]
+    assert results[0].params["query"] == "python"
+    assert results[0].params["browser"] == "brave"
+    assert results[0].params["preferred_browser"] == "brave"
+    assert results[0].metadata["route_kind"] == "browser_search"
+    _assert_ready_metadata(results[0], step_index=0, step_count=1, source_span="python")
 
 
 @pytest.mark.asyncio
@@ -230,7 +231,7 @@ async def test_default_on_unrelated_text_falls_back_to_legacy_parser(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_default_on_known_site_open_search_falls_back_to_legacy_parser(
+async def test_default_on_known_site_open_search_keeps_google_as_provider_and_other_sites_legacy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _reload_default(monkeypatch)
@@ -242,6 +243,12 @@ async def test_default_on_known_site_open_search_falls_back_to_legacy_parser(
 
     for text, url, query in cases:
         results = await _parse(text)
+        if text.startswith("google"):
+            assert [result.intent for result in results] == ["search_web"]
+            assert results[0].params["query"] == query
+            assert results[0].params["search_provider"] == "google"
+            assert results[0].metadata["route_kind"] == "browser_search"
+            continue
         assert [result.intent for result in results] == ["open_url", "search_web"]
         assert results[0].params["url"] == url
         assert results[1].params["query"] == query
@@ -262,11 +269,11 @@ async def test_default_on_legacy_compound_search_tails_still_use_compound_parser
 
     for text, query in cases:
         results = await _parse(text)
-        assert [result.intent for result in results] == ["open_app", "search_web"]
-        assert results[0].params["app"] == "brave"
-        assert results[1].params == {"query": query, "browser": "brave"}
-        assert results[0].metadata["decomposition"] == "compound_app_search"
-        assert results[1].metadata["decomposition"] == "compound_app_search"
+        assert [result.intent for result in results] == ["search_web"]
+        assert results[0].params["query"] == query
+        assert results[0].params["browser"] == "brave"
+        assert results[0].params["preferred_browser"] == "brave"
+        assert results[0].metadata["route_kind"] == "browser_search"
 
 
 @pytest.mark.asyncio

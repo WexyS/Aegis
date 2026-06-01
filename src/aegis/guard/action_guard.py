@@ -77,6 +77,22 @@ class ActionGuard:
                 warnings.append(f"High click count: {count} clicks requested")
 
         # --- Rule 3: URL validation ---
+        if intent.intent in {"open_app", "focus_app"}:
+            app = str(intent.params.get("app") or "")
+            if (
+                intent.params.get("_app_known") is False
+                or intent.params.get("app_known") is False
+                or intent.params.get("unknown_app")
+                or _looks_like_search_phrase(app)
+            ):
+                return GuardResult(
+                    allowed=False,
+                    reason="Unknown or query-like app target cannot be executed as a local application",
+                    risk=RiskLevel.MEDIUM,
+                    warnings=[],
+                )
+
+        # --- Rule 3: URL validation ---
         if intent.intent == "open_url":
             url = intent.params.get("url", "")
             if not url:
@@ -206,6 +222,19 @@ class ActionGuard:
             requires_approval=False,
             warnings=warnings,
         )
+
+
+def _looks_like_search_phrase(value: str) -> bool:
+    lowered = value.lower()
+    markers = (
+        " ara",
+        " arat",
+        " search",
+        " find",
+        " googlela",
+        " diye",
+    )
+    return any(marker in lowered for marker in markers)
 
 
 # Singleton

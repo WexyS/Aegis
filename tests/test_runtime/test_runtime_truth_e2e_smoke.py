@@ -357,18 +357,20 @@ async def test_deterministic_open_search_flow_preserves_browser_context_without_
         "cmd-runtime-open-search",
     )
 
-    assert [intent.intent for intent in parsed] == ["open_app", "search_web"]
-    assert parsed[1].params["query"] == "python nedir"
-    assert parsed[1].params["browser"] == "brave"
-    assert [action.action for action in response.actions] == ["open_app", "search_web"]
-    assert response.actions[1].params["browser"] == "brave"
+    assert [intent.intent for intent in parsed] == ["search_web"]
+    assert parsed[0].params["query"] == "python nedir"
+    assert parsed[0].params["browser"] == "brave"
+    assert parsed[0].params["preferred_browser"] == "brave"
+    assert parsed[0].metadata["route_kind"] == "browser_search"
+    assert [action.action for action in response.actions] == ["search_web"]
+    assert response.actions[0].params["browser"] == "brave"
     assert response.status == CommandStatus.FAILED
 
     timeline = project_action_timeline(runtime_truth_harness.journal.recent_events(), session_id="session-runtime-truth")
-    assert [item["tool"] for item in timeline] == ["open_app", "search_web"]
-    assert timeline[1]["status"] == "approval_required"
-    assert timeline[1]["execution_evidence"]["verification_state"] == "approval_required"
-    assert timeline[1]["execution_evidence"]["observed"]["bot_challenge_detected"] is True
+    assert [item["tool"] for item in timeline] == ["search_web"]
+    assert timeline[0]["status"] == "approval_required"
+    assert timeline[0]["execution_evidence"]["verification_state"] == "approval_required"
+    assert timeline[0]["execution_evidence"]["observed"]["bot_challenge_detected"] is True
     _assert_terminal_event_evidence_matches_results(response, runtime_truth_harness.journal.recent_events())
 
     _, runtime_snapshot = ws_bridge._build_runtime_snapshot(runtime_truth_harness.journal)

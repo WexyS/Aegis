@@ -146,11 +146,13 @@ class IntentParser:
             
             if is_empty_url or is_unknown:
                 segment_text = self.normalize_text(str(res.raw_input or ""))
+                if self._looks_like_search_command(segment_text):
+                    continue
                 for k in ["premiere", "photoshop", "notepad", "calc", "brave"]:
                     if k in segment_text:
                         logger.warning("[PARSER] Final safety override to open_app (%s)", k)
                         res.intent = "open_app"
-                        res.params = {"app": k}
+                        res.params = {"app": k, "_app_known": True}
                         break
 
         # Tier 4 Enrichment: Inject Verification Metadata for deterministic tracking
@@ -251,7 +253,7 @@ class IntentParser:
                 IntentResult(
                     intent="open_app",
                     confidence=1.0,
-                    params={"app": app_id},
+                    params={"app": app_id, "_app_known": True},
                     risk=RiskLevel.MEDIUM,
                     source=IntentSource.RULE,
                     raw_input=raw_text,
@@ -280,6 +282,8 @@ class IntentParser:
         ]
 
         norm_text = self.normalize_text(text)
+        if self._looks_like_search_command(norm_text):
+            return intents
         has_app_keyword = any(k in norm_text for k in APP_KEYWORDS)
         has_open_verb = any(v in norm_text for v in ["aç", "open", "başlat", "launch"])
         
@@ -291,11 +295,25 @@ class IntentParser:
                 return [IntentResult(
                     intent="open_app",
                     confidence=1.0,
-                    params={"app": matched_app},
+                    params={"app": matched_app, "_app_known": True},
                     source=IntentSource.RULE,
                     raw_input=text
                 )]
         return intents
+
+    def _looks_like_search_command(self, text: str) -> bool:
+        lowered = text.lower()
+        markers = (
+            " ara",
+            " arat",
+            " arama yap",
+            " aramasÄ± yap",
+            " diye arat",
+            " search",
+            " find",
+            " googlela",
+        )
+        return any(marker in lowered for marker in markers)
 
     def parse_single(self, text: str) -> IntentResult:
         """Parse a single command segment into a structured IntentResult."""
@@ -393,6 +411,7 @@ class IntentParser:
             app_raw = groups["app"].strip()
             normalized_app = self.normalize_app_name(app_raw)
             params["app"] = normalized_app if normalized_app else app_raw
+            params["_app_known"] = bool(normalized_app or resolve_app_name(app_raw))
             logger.info("[PARSER] Detected app: %s -> %s", app_raw, params["app"])
 
         # Git command

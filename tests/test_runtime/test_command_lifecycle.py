@@ -341,6 +341,47 @@ class FailedEvidenceExecutor:
         )
 
 
+class BrowserFailedEvidenceExecutor:
+    async def execute(
+        self,
+        intent_result: IntentResult,
+        ctx: ExecutionContext,
+        cancellation_token=None,
+    ) -> ActionResult:
+        evidence = ExecutionEvidence(
+            action=intent_result.intent,
+            target=str(intent_result.params.get("url") or intent_result.intent),
+            target_type="browser",
+            method="negative_result",
+            verifier="executor-negative-evidence/1",
+            verification_state="failed",
+            verification_reason="tool_returned_error: Target page, context or browser has been closed",
+            started_at_ms=1,
+            completed_at_ms=2,
+            expected={"dispatch_succeeded": True, "verified_success": True},
+            observed={
+                "failure_kind": "tool_returned_error",
+                "dispatch_attempted": True,
+                "dispatch_succeeded": False,
+                "tool_response_returned": True,
+                "verified_success": False,
+                "recovery_attempted": True,
+                "recovery_attempt_count": 1,
+            },
+            warnings=["Target page, context or browser has been closed"],
+        )
+        return ActionResult(
+            action=intent_result.intent,
+            params=intent_result.params,
+            status=ActionStatus.FAILED,
+            success=False,
+            output="Target page, context or browser has been closed",
+            metrics=ReliabilityMetrics(determinism_score=0.0),
+            proof={"execution_evidence": evidence.model_dump()},
+            execution_evidence=evidence,
+        )
+
+
 class ProofBackedSideEffectExecutor:
     def __init__(self, proof_key: str) -> None:
         self.proof_key = proof_key
@@ -2061,6 +2102,35 @@ async def test_action_failed_protocol_event_receives_execution_evidence(monkeypa
     assert failed_payloads
     assert failed_payloads[0]["execution_evidence"].verification_state == "failed"
     assert failed_payloads[0]["execution_evidence"].process_alive is False
+
+
+@pytest.mark.asyncio
+async def test_failed_browser_dispatch_preserves_negative_execution_evidence(monkeypatch) -> None:
+    orchestrator = build_orchestrator(
+        intent_result("open_url", RiskLevel.LOW, {"url": "https://github.com"}),
+        executor=BrowserFailedEvidenceExecutor(),
+    )
+    failed_payloads: list[dict] = []
+
+    async def fake_emit_action_failed(**kwargs):
+        failed_payloads.append(kwargs)
+
+    monkeypatch.setattr(orchestrator_module.ws_bridge, "emit_action_failed", fake_emit_action_failed)
+
+    response = await orchestrator.process(CommandRequest(text="githuba gir"))
+
+    snapshot = get_approval_manager().snapshot()
+    assert response.status == CommandStatus.FAILED
+    assert response.actions[0].status == ActionStatus.FAILED
+    assert response.actions[0].execution_evidence is not None
+    assert response.actions[0].execution_evidence.verifier == "executor-negative-evidence/1"
+    assert response.actions[0].execution_evidence.verification_state == "failed"
+    assert response.actions[0].execution_evidence.observed["failure_kind"] == "tool_returned_error"
+    assert response.actions[0].execution_evidence.observed["recovery_attempted"] is True
+    assert failed_payloads
+    assert failed_payloads[0]["execution_evidence"].target_type == "browser"
+    assert failed_payloads[0]["execution_evidence"].verification_state == "failed"
+    assert snapshot["records"][-1]["status"] == CommandStatus.FAILED.value
 
 
 @pytest.mark.asyncio

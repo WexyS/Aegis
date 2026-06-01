@@ -41,24 +41,57 @@ def _valid_browser_url(value: str) -> Any | None:
     return parsed
 
 
-def _same_browser_url(requested_url: str, observed_url: str) -> bool:
+SAFE_HOST_EQUIVALENTS = {
+    frozenset({"google.com", "www.google.com"}),
+    frozenset({"github.com", "www.github.com"}),
+}
+
+
+def _equivalent_browser_hosts(requested_host: str, observed_host: str) -> bool:
+    requested = requested_host.lower().strip(".")
+    observed = observed_host.lower().strip(".")
+    if requested == observed:
+        return True
+    return frozenset({requested, observed}) in SAFE_HOST_EQUIVALENTS
+
+
+def _same_or_safe_upgraded_scheme(requested_scheme: str, observed_scheme: str) -> bool:
+    requested = requested_scheme.lower()
+    observed = observed_scheme.lower()
+    return requested == observed or requested == "http" and observed == "https"
+
+
+def _normalized_browser_path(path: str) -> str:
+    normalized = path or "/"
+    return "/" if normalized == "" else normalized.rstrip("/") or "/"
+
+
+def _browser_url_mismatch_reason(requested_url: str, observed_url: str) -> str | None:
     requested = _valid_browser_url(requested_url)
     observed = _valid_browser_url(observed_url)
-    if not requested or not observed:
-        return False
-    if requested.scheme.lower() != observed.scheme.lower():
-        return False
-    if (requested.hostname or "").lower() != (observed.hostname or "").lower():
-        return False
-    requested_path = requested.path or "/"
-    observed_path = observed.path or "/"
-    return requested_path == observed_path and requested.query == observed.query
+    if not requested:
+        return "requested_url_invalid"
+    if not observed:
+        return "observed_url_invalid"
+    if not _same_or_safe_upgraded_scheme(requested.scheme, observed.scheme):
+        return "scheme_mismatch"
+    if not _equivalent_browser_hosts(requested.hostname or "", observed.hostname or ""):
+        return "host_mismatch"
+    if _normalized_browser_path(requested.path) != _normalized_browser_path(observed.path):
+        return "path_mismatch"
+    if requested.query != observed.query:
+        return "query_mismatch"
+    return None
+
+
+def _same_browser_url(requested_url: str, observed_url: str) -> bool:
+    return _browser_url_mismatch_reason(requested_url, observed_url) is None
 
 
 def _google_search_query(value: str) -> str:
     parsed = urlparse(value)
-    host = parsed.netloc.lower()
-    if not host.endswith("google.com") or parsed.path != "/search":
+    host = (parsed.hostname or "").lower()
+    if not _equivalent_browser_hosts("www.google.com", host) or parsed.path != "/search":
         return ""
     return str(parse_qs(parsed.query).get("q", [""])[0]).strip()
 
@@ -71,6 +104,18 @@ def _bot_challenge_detected(value: str) -> bool:
         "unusual traffic",
         "robot",
         "bot challenge",
+    )
+    return any(marker in lowered for marker in markers)
+
+
+def _is_browser_lifecycle_failure(value: str) -> bool:
+    lowered = value.lower()
+    markers = (
+        "target page, context or browser has been closed",
+        "page has been closed",
+        "context has been closed",
+        "browser has been closed",
+        "target closed",
     )
     return any(marker in lowered for marker in markers)
 
@@ -253,18 +298,26 @@ def _browser_evidence(
     observed_url: str | None = None,
     click_before: Dict[str, Any] | None = None,
     click_after: Dict[str, Any] | None = None,
+    recovery_attempts: list[dict[str, Any]] | None = None,
 ) -> Dict[str, Any] | None:
     if intent not in {"open_url", "search_web", "scroll"}:
         if intent != "click":
             return None
     evidence: Dict[str, Any] = {"tool": intent}
+    recovery_attempt_list = list(recovery_attempts or [])
+    recovery_fields = {
+        "browser_recovery_attempted": bool(recovery_attempt_list),
+        "browser_recovery_attempt_count": len(recovery_attempt_list),
+        "browser_recovery_attempts": recovery_attempt_list,
+    }
     if intent == "open_url":
         requested_url = str(params.get("url", ""))
         observed = str(observed_url or "")
         requested_url_valid = _valid_browser_url(requested_url) is not None
         browser_context_observable = bool(observed)
         final_url_captured = bool(observed)
-        url_matches = _same_browser_url(requested_url, observed)
+        mismatch_reason = _browser_url_mismatch_reason(requested_url, observed)
+        url_matches = mismatch_reason is None
         dispatch_ok = True
         challenge = _bot_challenge_detected(observed) or _bot_challenge_detected(output_text)
         checks = [
@@ -327,9 +380,15 @@ def _browser_evidence(
             "requested_url_valid": requested_url_valid,
             "observed_url": observed,
             "final_url": observed,
+            "preferred_browser": params.get("preferred_browser"),
+            "browser_runtime": params.get("browser_runtime") or "controlled_browser",
+            "controlled_browser": bool(params.get("controlled_browser", True)),
+            "browser_preference_is_verification": False,
+            **recovery_fields,
             "browser_context_observable": browser_context_observable,
             "final_url_captured": final_url_captured,
             "url_matches_request": url_matches,
+            "url_mismatch_reason": mismatch_reason,
             "dispatch_ok": dispatch_ok,
             "bot_challenge_detected": challenge,
             "browser_verification_state": state,
@@ -341,8 +400,8 @@ def _browser_evidence(
         requested_url = f"https://www.google.com/search?q={quote_plus(query)}"
         observed = str(observed_url or "")
         observed_parsed = _valid_browser_url(observed)
-        provider_domain = (observed_parsed.netloc.lower() if observed_parsed else "")
-        provider = "google" if provider_domain.endswith("google.com") else ""
+        provider_domain = ((observed_parsed.hostname or "").lower() if observed_parsed else "")
+        provider = "google" if _equivalent_browser_hosts("www.google.com", provider_domain) else ""
         browser_context_observable = bool(observed)
         final_url_captured = bool(observed)
         query_present = bool(query)
@@ -420,6 +479,12 @@ def _browser_evidence(
             "final_url": observed,
             "provider": provider,
             "provider_domain": provider_domain,
+            "search_provider": params.get("search_provider") or "google",
+            "preferred_browser": params.get("preferred_browser"),
+            "browser_runtime": params.get("browser_runtime") or "controlled_browser",
+            "controlled_browser": bool(params.get("controlled_browser", True)),
+            "browser_preference_is_verification": False,
+            **recovery_fields,
             "browser_context_observable": browser_context_observable,
             "final_url_captured": final_url_captured,
             "observed_query": observed_query,
@@ -854,7 +919,9 @@ def _negative_execution_evidence(
     tool_response_returned: bool = False,
     before_write: Dict[str, Any] | None = None,
     warnings: list[str] | None = None,
+    recovery_attempts: list[dict[str, Any]] | None = None,
 ) -> ExecutionEvidence:
+    recovery_attempt_list = list(recovery_attempts or [])
     observed: dict[str, Any] = {
         "failure_kind": failure_kind,
         "error": reason,
@@ -862,6 +929,9 @@ def _negative_execution_evidence(
         "dispatch_attempted": dispatch_attempted,
         "dispatch_succeeded": dispatch_succeeded,
         "tool_response_returned": tool_response_returned,
+        "recovery_attempted": bool(recovery_attempt_list),
+        "recovery_attempt_count": len(recovery_attempt_list),
+        "recovery_attempts": recovery_attempt_list,
         "verified_success": False,
     }
     expected: dict[str, Any] = {
@@ -1163,8 +1233,17 @@ def _generic_execution_evidence_from_proof(
                     "dispatch_ok": browser.get("dispatch_ok"),
                     "provider": browser.get("provider"),
                     "provider_domain": browser.get("provider_domain"),
+                    "search_provider": browser.get("search_provider"),
+                    "preferred_browser": browser.get("preferred_browser"),
+                    "browser_runtime": browser.get("browser_runtime"),
+                    "controlled_browser": browser.get("controlled_browser"),
+                    "browser_preference_is_verification": browser.get("browser_preference_is_verification"),
+                    "browser_recovery_attempted": browser.get("browser_recovery_attempted"),
+                    "browser_recovery_attempt_count": browser.get("browser_recovery_attempt_count"),
+                    "browser_recovery_attempts": browser.get("browser_recovery_attempts"),
                     "observed_query": browser.get("observed_query"),
                     "url_matches_request": browser.get("url_matches_request"),
+                    "url_mismatch_reason": browser.get("url_mismatch_reason"),
                     "query_matches_observed_url": browser.get("query_matches_observed_url"),
                     "provider_matches_expected": browser.get("provider_matches_expected"),
                     "bot_challenge_detected": browser.get("bot_challenge_detected"),
@@ -1328,6 +1407,12 @@ class DeterministicExecutor:
 
     async def _get_page(self):
         """Lazy initialization of Playwright browser and page with Supervisor tracking."""
+        if self._page and hasattr(self._page, "is_closed"):
+            try:
+                if self._page.is_closed():
+                    await self._reset_browser_session()
+            except Exception:
+                await self._reset_browser_session()
         if self._page:
             return self._page
         from playwright.async_api import async_playwright
@@ -1345,6 +1430,30 @@ class DeterministicExecutor:
         supervisor.register_page(self._page)
         
         return self._page
+
+    async def _reset_browser_session(self) -> None:
+        for handle in (self._page, self._context, self._browser):
+            if not handle:
+                continue
+            try:
+                if hasattr(handle, "is_closed") and handle.is_closed():
+                    continue
+                close = getattr(handle, "close", None)
+                if close:
+                    result = close()
+                    if hasattr(result, "__await__"):
+                        await result
+            except Exception:
+                logger.debug("[BROWSER] Ignored browser reset close failure", exc_info=True)
+        try:
+            if self._playwright:
+                await self._playwright.stop()
+        except Exception:
+            logger.debug("[BROWSER] Ignored Playwright stop failure during reset", exc_info=True)
+        self._page = None
+        self._context = None
+        self._browser = None
+        self._playwright = None
 
     async def close(self):
         """Cleanup browser resources."""
@@ -1420,6 +1529,7 @@ class DeterministicExecutor:
 
         # 2. Predict Transition
         expected_transition = self.transition_model.predict_next_state(before_state, intent, params)
+        browser_recovery_attempts: list[dict[str, Any]] = []
         
         for attempt in range(self.max_retries + 1):
             if attempt > 0: await asyncio.sleep(self.base_delay * (2 ** (attempt - 1)))
@@ -1511,6 +1621,19 @@ class DeterministicExecutor:
                 output_text = str(output)
                 click_after = await _capture_click_context(intent, params, page)
                 if output_text.lower().startswith(("error", "failed", "read error", "write error")):
+                    if (
+                        intent in {"open_url", "search_web"}
+                        and _is_browser_lifecycle_failure(output_text)
+                        and attempt < self.max_retries
+                        and not browser_recovery_attempts
+                    ):
+                        browser_recovery_attempts.append({
+                            "attempt": len(browser_recovery_attempts) + 1,
+                            "failure": output_text,
+                            "recovery_reason": "closed_browser_lifecycle",
+                        })
+                        await self._reset_browser_session()
+                        continue
                     if intent == "open_app":
                         verifier_result = await Verifier.verify(intent, params, ctx)
                         verified_existing_evidence = _desktop_evidence_from_verification(
@@ -1600,6 +1723,7 @@ class DeterministicExecutor:
                             tool_response_returned=True,
                             before_write=write_before,
                             warnings=[output_text],
+                            recovery_attempts=browser_recovery_attempts,
                         )
                     failure_proof = {"execution_evidence": failure_evidence.model_dump()}
                     return ActionResult(
@@ -1670,6 +1794,7 @@ class DeterministicExecutor:
                     observed_url=str(getattr(page, "url", "")) if page is not None else None,
                     click_before=click_before,
                     click_after=click_after,
+                    recovery_attempts=browser_recovery_attempts,
                 )
                 if browser_evidence:
                     proof["browser_evidence"] = browser_evidence
@@ -1786,6 +1911,19 @@ class DeterministicExecutor:
                     )
 
             except Exception as e:
+                if (
+                    intent in {"open_url", "search_web"}
+                    and _is_browser_lifecycle_failure(str(e))
+                    and attempt < self.max_retries
+                    and not browser_recovery_attempts
+                ):
+                    browser_recovery_attempts.append({
+                        "attempt": len(browser_recovery_attempts) + 1,
+                        "failure": str(e),
+                        "recovery_reason": "closed_browser_lifecycle",
+                    })
+                    await self._reset_browser_session()
+                    continue
                 if attempt == self.max_retries:
                     evidence = _negative_execution_evidence(
                         intent,
@@ -1797,6 +1935,7 @@ class DeterministicExecutor:
                         dispatch_succeeded=False,
                         before_write=write_before,
                         warnings=[str(e)],
+                        recovery_attempts=browser_recovery_attempts,
                     )
                     return ActionResult(
                         action=intent, params=params, status=ActionStatus.FAILED, success=False,
@@ -1815,6 +1954,7 @@ class DeterministicExecutor:
             reason="Max retries exceeded or formal failure.",
             dispatch_attempted=True,
             dispatch_succeeded=False,
+            recovery_attempts=browser_recovery_attempts,
         )
         return ActionResult(
             action=intent, params=params, status=ActionStatus.FAILED, success=False,

@@ -35,7 +35,7 @@ class SearchWebTool(BaseTool):
             await page.goto(search_url, wait_until="networkidle")
             return f"Search opened: {query.strip()}"
         except Exception as e:
-            return f"Search error: {str(e)}"
+            return f"Error: Search failed: {str(e)}"
 
 class ClickTool(BaseTool):
     name = "click"

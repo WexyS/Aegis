@@ -668,6 +668,91 @@ class TestDeterministicExecutorContracts:
         assert result.execution_evidence.verification_state == "verified"
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("requested_url", "observed_url"),
+        [
+            ("https://github.com", "https://github.com/"),
+            ("http://github.com", "https://github.com/"),
+            ("https://google.com", "https://www.google.com/"),
+        ],
+    )
+    async def test_open_url_safe_canonicalization_is_verified(
+        self,
+        monkeypatch,
+        requested_url: str,
+        observed_url: str,
+    ) -> None:
+        class FakePage:
+            async def goto(self, url: str, wait_until: str = "networkidle") -> None:
+                self.url = observed_url
+
+        executor = DeterministicExecutor()
+
+        async def fake_get_page():
+            return FakePage()
+
+        monkeypatch.setattr(executor, "_get_page", fake_get_page)
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="open_url",
+            confidence=1.0,
+            params={"url": requested_url},
+            risk=RiskLevel.LOW,
+            raw_input=f"open {requested_url}",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        evidence = result.proof["browser_evidence"]
+        assert evidence["observed_url"] == observed_url
+        assert evidence["url_matches_request"] is True
+        assert evidence["url_mismatch_reason"] is None
+        assert evidence["browser_verification_state"] == "verified"
+        _assert_evidence_state_source_of_truth(result, expected_state="verified", expected_success=True)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("requested_url", "observed_url"),
+        [
+            ("https://google.com", "https://google.com.evil.test/"),
+            ("https://github.com", "https://github.com.evil.test/"),
+        ],
+    )
+    async def test_open_url_spoof_domains_are_unverified(
+        self,
+        monkeypatch,
+        requested_url: str,
+        observed_url: str,
+    ) -> None:
+        class FakePage:
+            async def goto(self, url: str, wait_until: str = "networkidle") -> None:
+                self.url = observed_url
+
+        executor = DeterministicExecutor()
+
+        async def fake_get_page():
+            return FakePage()
+
+        monkeypatch.setattr(executor, "_get_page", fake_get_page)
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="open_url",
+            confidence=1.0,
+            params={"url": requested_url},
+            risk=RiskLevel.LOW,
+            raw_input=f"open {requested_url}",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        evidence = result.proof["browser_evidence"]
+        assert evidence["observed_url"] == observed_url
+        assert evidence["url_matches_request"] is False
+        assert evidence["url_mismatch_reason"] == "host_mismatch"
+        assert evidence["browser_verification_state"] == "unverified"
+        _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
+
+    @pytest.mark.asyncio
     async def test_open_url_evidence_exists_but_observed_url_mismatch_is_not_verified_success(self, monkeypatch) -> None:
         class FakePage:
             async def goto(self, url: str, wait_until: str = "networkidle") -> None:
@@ -727,6 +812,96 @@ class TestDeterministicExecutorContracts:
         assert "browser dispatch failed" in result.output
 
     @pytest.mark.asyncio
+    async def test_browser_context_closed_recovers_once_then_verifies_final_url(self, monkeypatch) -> None:
+        class ClosedThenHealthyPage:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.url = ""
+
+            async def goto(self, url: str, wait_until: str = "networkidle") -> None:
+                self.calls += 1
+                if self.calls == 1:
+                    raise RuntimeError("Target page, context or browser has been closed")
+                self.url = url
+
+        page = ClosedThenHealthyPage()
+        resets: list[str] = []
+        executor = DeterministicExecutor()
+
+        async def fake_get_page():
+            return page
+
+        async def fake_reset_browser_session():
+            resets.append("reset")
+
+        monkeypatch.setattr(executor, "_get_page", fake_get_page)
+        monkeypatch.setattr(executor, "_reset_browser_session", fake_reset_browser_session)
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="open_url",
+            confidence=1.0,
+            params={"url": "https://example.com"},
+            risk=RiskLevel.LOW,
+            raw_input="open example",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert resets == ["reset"]
+        assert result.status == ActionStatus.EXECUTED
+        assert result.success is True
+        evidence = result.proof["browser_evidence"]
+        assert evidence["browser_recovery_attempted"] is True
+        assert evidence["browser_recovery_attempt_count"] == 1
+        assert "Target page, context or browser has been closed" in evidence["browser_recovery_attempts"][0]["failure"]
+        assert evidence["browser_verification_state"] == "verified"
+        assert result.execution_evidence is not None
+        assert result.execution_evidence.observed["browser_recovery_attempted"] is True
+        assert result.execution_evidence.verification_state == "verified"
+
+    @pytest.mark.asyncio
+    async def test_browser_context_closed_failure_emits_negative_evidence_after_single_recovery(
+        self,
+        monkeypatch,
+    ) -> None:
+        class AlwaysClosedPage:
+            async def goto(self, url: str, wait_until: str = "networkidle") -> None:
+                raise RuntimeError("Target page, context or browser has been closed")
+
+        resets: list[str] = []
+        executor = DeterministicExecutor()
+
+        async def fake_get_page():
+            return AlwaysClosedPage()
+
+        async def fake_reset_browser_session():
+            resets.append("reset")
+
+        monkeypatch.setattr(executor, "_get_page", fake_get_page)
+        monkeypatch.setattr(executor, "_reset_browser_session", fake_reset_browser_session)
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="open_url",
+            confidence=1.0,
+            params={"url": "https://example.com"},
+            risk=RiskLevel.LOW,
+            raw_input="open example",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        assert resets == ["reset"]
+        assert result.status == ActionStatus.FAILED
+        assert result.success is False
+        assert result.execution_evidence is not None
+        assert result.execution_evidence.verifier == "executor-negative-evidence/1"
+        assert result.execution_evidence.verification_state == "failed"
+        assert result.execution_evidence.observed["failure_kind"] == "tool_returned_error"
+        assert result.execution_evidence.observed["recovery_attempted"] is True
+        assert result.execution_evidence.observed["recovery_attempt_count"] == 1
+        assert "Target page, context or browser has been closed" in result.execution_evidence.observed["recovery_attempts"][0]["failure"]
+
+    @pytest.mark.asyncio
     async def test_search_web_query_missing_from_observable_url_is_unverified_not_success(self, monkeypatch) -> None:
         class FakePage:
             async def goto(self, url: str, wait_until: str = "networkidle") -> None:
@@ -753,6 +928,36 @@ class TestDeterministicExecutorContracts:
         evidence = result.proof["browser_evidence"]
         assert evidence["browser_verification_state"] == "unverified"
         assert evidence["query_matches_observed_url"] is False
+        _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
+
+    @pytest.mark.asyncio
+    async def test_search_web_spoofed_google_host_is_unverified_not_success(self, monkeypatch) -> None:
+        class FakePage:
+            async def goto(self, url: str, wait_until: str = "networkidle") -> None:
+                self.url = "https://www.google.com.evil.test/search?q=aegis+runtime"
+
+        executor = DeterministicExecutor()
+
+        async def fake_get_page():
+            return FakePage()
+
+        monkeypatch.setattr(executor, "_get_page", fake_get_page)
+        ctx = ExecutionContext.create_root()
+        intent = IntentResult(
+            intent="search_web",
+            confidence=1.0,
+            params={"query": "aegis runtime"},
+            risk=RiskLevel.LOW,
+            raw_input="aegis runtime search",
+        )
+
+        result = await executor.execute(intent, ctx)
+
+        evidence = result.proof["browser_evidence"]
+        assert evidence["provider"] == ""
+        assert evidence["provider_domain"] == "www.google.com.evil.test"
+        assert evidence["provider_matches_expected"] is False
+        assert evidence["browser_verification_state"] == "unverified"
         _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
 
     @pytest.mark.asyncio

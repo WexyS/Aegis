@@ -387,8 +387,10 @@ def test_decompose_command_routes_turkish_open_search() -> None:
 
     assert plan is not None
     assert plan.status == PlanStatus.READY.value
-    assert [step.intent for step in plan.steps] == ["open_app", "search_web"]
-    assert plan.steps[1].params == {"query": "python nedir", "browser": "brave"}
+    assert [step.intent for step in plan.steps] == ["search_web"]
+    assert plan.steps[0].params["query"] == "python nedir"
+    assert plan.steps[0].params["browser"] == "brave"
+    assert plan.steps[0].params["preferred_browser"] == "brave"
     assert validate_normalized_plan(plan).valid is True
 
 
@@ -406,8 +408,10 @@ def test_decompose_command_routes_english_open_search() -> None:
 
     assert plan is not None
     assert plan.status == PlanStatus.READY.value
-    assert [step.intent for step in plan.steps] == ["open_app", "search_web"]
-    assert plan.steps[1].params == {"query": "python", "browser": "brave"}
+    assert [step.intent for step in plan.steps] == ["search_web"]
+    assert plan.steps[0].params["query"] == "python"
+    assert plan.steps[0].params["browser"] == "brave"
+    assert plan.steps[0].params["preferred_browser"] == "brave"
 
 
 def test_decompose_command_unknown_open_type_returns_clarification_required() -> None:

@@ -127,9 +127,11 @@ class TestMultiStep:
 
     async def test_chain_ve(self) -> None:
         r = await self.parser.parse("google aç ve python ara")
-        assert len(r) == 2
-        assert r[0].intent == "open_url"
-        assert r[1].intent == "search_web"
+        assert len(r) == 1
+        assert r[0].intent == "search_web"
+        assert r[0].params["query"] == "python"
+        assert r[0].params["search_provider"] == "google"
+        assert r[0].metadata["route_kind"] == "browser_search"
 
     async def test_chain_sonra(self) -> None:
         r = await self.parser.parse("notepad aç sonra merhaba yaz")
@@ -140,13 +142,12 @@ class TestMultiStep:
     async def test_compound_browser_search_decomposes_app_and_query(self) -> None:
         r = await self.parser.parse("brave i açıp python nedir araması yap")
 
-        assert len(r) == 2
-        assert r[0].intent == "open_app"
-        assert r[0].params["app"] == "brave"
-        assert r[0].params["_process_name"] == "brave.exe"
-        assert r[1].intent == "search_web"
-        assert r[1].params["query"] == "python nedir"
-        assert r[1].params["browser"] == "brave"
+        assert len(r) == 1
+        assert r[0].intent == "search_web"
+        assert r[0].params["query"] == "python nedir"
+        assert r[0].params["browser"] == "brave"
+        assert r[0].params["preferred_browser"] == "brave"
+        assert r[0].metadata["route_kind"] == "browser_search"
 
     async def test_mixed_known_and_unknown_segments_are_not_silently_dropped(self) -> None:
         r = await self.parser.parse("notepad aç sonra xyzzy foobar baz")
@@ -292,10 +293,12 @@ class TestDeterministicDecompositionWiring:
 
         r = await self.parser.parse("brave açıp python nedir ara")
 
-        assert [item.intent for item in r] == ["open_app", "search_web"]
-        assert r[1].params["browser"] == "brave"
-        assert r[1].metadata["decomposition"] == "deterministic"
-        assert r[1].metadata["step_index"] == 1
+        assert [item.intent for item in r] == ["search_web"]
+        assert r[0].params["browser"] == "brave"
+        assert r[0].params["preferred_browser"] == "brave"
+        assert r[0].metadata["decomposition"] == "deterministic"
+        assert r[0].metadata["step_index"] == 0
+        assert r[0].metadata["route_kind"] == "browser_search"
 
     async def test_feature_flag_on_unrelated_text_falls_back_to_existing_parser(
         self, monkeypatch: pytest.MonkeyPatch

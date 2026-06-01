@@ -49,6 +49,7 @@ class Planner:
                 if resolved:
                     config = get_app_config(resolved)
                     intent.params["app"] = resolved
+                    intent.params["_app_known"] = True
                     if intent.intent == "open_app":
                         intent.params["_resolved_path"] = config.get("path")
                     intent.params["_process_name"] = config.get("process_name")
@@ -57,6 +58,7 @@ class Planner:
                     last_focus_keywords = config.get("window_keywords")
                     last_focus_process_name = config.get("process_name")
                 elif app_query:
+                    intent.params["_app_known"] = False
                     last_app = app_query
                     last_focus_keywords = [str(app_query)]
                     last_focus_process_name = str(app_query) if str(app_query).lower().endswith(".exe") else None
