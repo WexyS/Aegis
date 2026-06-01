@@ -674,6 +674,7 @@ class TestDeterministicExecutorContracts:
             ("https://github.com", "https://github.com/"),
             ("http://github.com", "https://github.com/"),
             ("https://google.com", "https://www.google.com/"),
+            ("https://www.google.com", "https://www.google.com/?zx=1780351336299"),
         ],
     )
     async def test_open_url_safe_canonicalization_is_verified(

@@ -46,6 +46,11 @@ SAFE_HOST_EQUIVALENTS = {
     frozenset({"github.com", "www.github.com"}),
 }
 
+SAFE_DYNAMIC_QUERY_PARAMS = {
+    ("google.com", "/"): {"zx"},
+    ("www.google.com", "/"): {"zx"},
+}
+
 
 def _equivalent_browser_hosts(requested_host: str, observed_host: str) -> bool:
     requested = requested_host.lower().strip(".")
@@ -66,6 +71,25 @@ def _normalized_browser_path(path: str) -> str:
     return "/" if normalized == "" else normalized.rstrip("/") or "/"
 
 
+def _browser_query_matches_or_safe_dynamic(requested: Any, observed: Any) -> bool:
+    if requested.query == observed.query:
+        return True
+    if requested.query:
+        return False
+    observed_query = parse_qs(observed.query, keep_blank_values=True)
+    if not observed_query:
+        return True
+    observed_host = (observed.hostname or "").lower().strip(".")
+    observed_path = _normalized_browser_path(observed.path)
+    allowed_params = SAFE_DYNAMIC_QUERY_PARAMS.get((observed_host, observed_path))
+    if not allowed_params:
+        return False
+    return set(observed_query).issubset(allowed_params) and all(
+        len(values) == 1 and bool(values[0])
+        for values in observed_query.values()
+    )
+
+
 def _browser_url_mismatch_reason(requested_url: str, observed_url: str) -> str | None:
     requested = _valid_browser_url(requested_url)
     observed = _valid_browser_url(observed_url)
@@ -79,7 +103,7 @@ def _browser_url_mismatch_reason(requested_url: str, observed_url: str) -> str |
         return "host_mismatch"
     if _normalized_browser_path(requested.path) != _normalized_browser_path(observed.path):
         return "path_mismatch"
-    if requested.query != observed.query:
+    if not _browser_query_matches_or_safe_dynamic(requested, observed):
         return "query_mismatch"
     return None
 
