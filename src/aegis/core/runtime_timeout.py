@@ -7,10 +7,13 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from aegis.core.commands import now_ms
+from aegis.core.protocol import Component, RuntimeEvent, Severity
 
 
 RUNTIME_TIMEOUT_DIAGNOSTICS_VERSION = "runtime-timeout-diagnostics/1"
 RUNTIME_TIMEOUT_DECISION_VERSION = "runtime-timeout-decision/1"
+TIMEOUT_EVENT_PROJECTION_VERSION = "backend-timeout-event-projection/1"
+TIMEOUT_PROJECTION_EVENT_TYPE = "TIMEOUT_OBSERVED"
 
 
 @unique
@@ -57,6 +60,33 @@ class RecoveryDisposition(str, Enum):
     VERIFIER_REMAINS_UNVERIFIED = "verifier_remains_unverified"
     RETRY_BOUNDARY_EXHAUSTED = "retry_boundary_exhausted"
     RESTORED_DECISION_REVIEW_REQUIRED = "restored_decision_review_required"
+
+
+@unique
+class TimeoutProjectionKind(str, Enum):
+    TIMEOUT_OBSERVED = "timeout_observed"
+    STALE_PRE_DISPATCH_OBSERVED = "stale_pre_dispatch_observed"
+    STALE_APPROVAL_OBSERVED = "stale_approval_observed"
+    STALE_CLARIFICATION_OBSERVED = "stale_clarification_observed"
+    EXECUTION_TIMEOUT_OBSERVED = "execution_timeout_observed"
+    BROWSER_TIMEOUT_OBSERVED = "browser_timeout_observed"
+    VERIFIER_TIMEOUT_OBSERVED = "verifier_timeout_observed"
+    EVIDENCE_RECORDING_TIMEOUT_OBSERVED = "evidence_recording_timeout_observed"
+    RETRY_EXHAUSTED_OBSERVED = "retry_exhausted_observed"
+    RESTORED_PENDING_STALE_OBSERVED = "restored_pending_stale_observed"
+    UNKNOWN_STALE_OBSERVED = "unknown_stale_observed"
+
+
+@unique
+class TimeoutProjectionScope(str, Enum):
+    COMMAND_LIFECYCLE = "command_lifecycle"
+    PENDING_DECISION = "pending_decision"
+    EXECUTION = "execution"
+    BROWSER = "browser"
+    VERIFIER = "verifier"
+    EVIDENCE = "evidence"
+    RETRY = "retry"
+    UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True)
@@ -170,6 +200,79 @@ class RuntimeTimeoutDecision:
     frontend_authority_allowed: bool = False
 
 
+@dataclass(frozen=True)
+class TimeoutEventProjectionInput:
+    timeout_input: RuntimePhaseTimeoutInput
+    observed_at_ms: int
+    trace_id: str | None = None
+    lifecycle_id: str | None = None
+    causation_id: str | None = None
+    session_id: str | None = None
+    sequence_num: int = 0
+    frontend_authority_claimed: bool = False
+
+
+@dataclass(frozen=True)
+class TimeoutOperatorAttention:
+    required: bool
+    suggested_operator_action: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class TimeoutJournalProjectionPlan:
+    event_type: str
+    append_only: bool = True
+    append_now: bool = False
+    journal_append_required_for_future_enforcement: bool = True
+    existing_history_mutation_allowed: bool = False
+    replay_safe: bool = True
+    mutation_performed: bool = False
+    reason: str = "projection_contract_only_no_journal_append"
+
+
+@dataclass(frozen=True)
+class TimeoutEventProjection:
+    projection_version: str
+    projection_id: str
+    projection_kind: TimeoutProjectionKind
+    projection_scope: TimeoutProjectionScope
+    payload: Mapping[str, Any]
+    runtime_event: RuntimeEvent
+    journal_plan: TimeoutJournalProjectionPlan
+    operator_attention: TimeoutOperatorAttention
+    read_only: bool = True
+    mutation_performed: bool = False
+    runtime_dispatch_allowed: bool = False
+    approval_grant: bool = False
+    capability_grant: bool = False
+    lease_grant: bool = False
+    verified_success: bool = False
+    evidence_created: bool = False
+    frontend_authority: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", MappingProxyType(deepcopy(dict(self.payload))))
+
+
+@dataclass(frozen=True)
+class TimeoutProjectionDecision:
+    scan_version: str
+    projection_created: bool
+    reason: str
+    timeout_decision: RuntimeTimeoutDecision
+    projection: TimeoutEventProjection | None = None
+    read_only: bool = True
+    mutation_performed: bool = False
+    runtime_dispatch_allowed: bool = False
+    approval_grant: bool = False
+    capability_grant: bool = False
+    lease_grant: bool = False
+    verified_success: bool = False
+    evidence_created: bool = False
+    frontend_authority: bool = False
+
+
 def evaluate_runtime_timeout(
     timeout_input: RuntimePhaseTimeoutInput,
     *,
@@ -260,15 +363,29 @@ def build_runtime_timeout_diagnostics(
     budget = budget or DEFAULT_RUNTIME_TIMEOUT_BUDGET
     generated_at = generated_at_ms if generated_at_ms is not None else now_ms()
     records = _command_records(commands_snapshot)
-    decisions = [
-        evaluate_runtime_timeout(
-            runtime_timeout_input_from_command_record(record, evaluated_at_ms=generated_at),
-            budget=budget,
-        )
+    timeout_inputs = [
+        runtime_timeout_input_from_command_record(record, evaluated_at_ms=generated_at)
         for record in records
         if _record_is_timeout_relevant(record)
     ]
+    decisions = [evaluate_runtime_timeout(timeout_input, budget=budget) for timeout_input in timeout_inputs]
     findings = [decision.finding for decision in decisions if decision.finding is not None]
+    projection_decisions = [
+        build_timeout_event_projection(
+            TimeoutEventProjectionInput(
+                timeout_input=timeout_input,
+                observed_at_ms=generated_at,
+                trace_id=_string_or_none(timeout_input.metadata.get("trace_id")),
+                lifecycle_id=_string_or_none(timeout_input.metadata.get("lifecycle_id")),
+                session_id=_string_or_none(timeout_input.metadata.get("session_id")),
+                frontend_authority_claimed=timeout_input.frontend_authority_claimed,
+            ),
+            budget=budget,
+            timeout_decision=decision,
+        )
+        for timeout_input, decision in zip(timeout_inputs, decisions)
+    ]
+    projections = [item.projection for item in projection_decisions if item.projection is not None]
     status = "fail" if any(finding.severity == "fail" for finding in findings) else "warning" if findings else "ok"
     return {
         "scan_version": RUNTIME_TIMEOUT_DIAGNOSTICS_VERSION,
@@ -282,6 +399,28 @@ def build_runtime_timeout_diagnostics(
         "finding_count": len(findings),
         "overdue_count": sum(1 for decision in decisions if decision.overdue),
         "retry_exhausted_count": sum(1 for decision in decisions if decision.retry_exhausted),
+        "timeout_projection_count": len(projections),
+        "stale_pending_projection_count": sum(
+            1
+            for projection in projections
+            if projection.projection_scope == TimeoutProjectionScope.PENDING_DECISION
+        ),
+        "stale_execution_projection_count": sum(
+            1
+            for projection in projections
+            if projection.projection_scope
+            in {
+                TimeoutProjectionScope.EXECUTION,
+                TimeoutProjectionScope.BROWSER,
+                TimeoutProjectionScope.VERIFIER,
+                TimeoutProjectionScope.EVIDENCE,
+                TimeoutProjectionScope.RETRY,
+            }
+        ),
+        "projection_status": status,
+        "projection_mutation_performed": False,
+        "projection_dispatch_allowed": False,
+        "projection_approval_grant_exposed": False,
         "negative_evidence_required_count": sum(
             1
             for decision in decisions
@@ -298,6 +437,8 @@ def build_runtime_timeout_diagnostics(
             "no_verifier_success": True,
             "no_process_or_browser_kill": True,
             "retry_requires_runtime_policy": True,
+            "projection_does_not_append_journal": True,
+            "projection_existing_history_mutation_allowed": False,
         },
         "actions_performed": [],
         "guidance": [
@@ -307,10 +448,132 @@ def build_runtime_timeout_diagnostics(
             "Browser timeout diagnostics preserve metadata and do not kill browser or process state.",
         ],
         "decisions": [_to_plain(decision) for decision in decisions[:max_records]],
+        "projections": [_to_plain(projection) for projection in projections[:max_records]],
         "findings": [_to_plain(finding) for finding in findings[:max_records]],
         "omitted_decision_count": max(0, len(decisions) - max_records),
+        "omitted_projection_count": max(0, len(projections) - max_records),
         "omitted_finding_count": max(0, len(findings) - max_records),
     }
+
+
+def build_timeout_event_projection(
+    projection_input: TimeoutEventProjectionInput,
+    *,
+    budget: RuntimeTimeoutBudget | None = None,
+    timeout_decision: RuntimeTimeoutDecision | None = None,
+) -> TimeoutProjectionDecision:
+    budget = budget or DEFAULT_RUNTIME_TIMEOUT_BUDGET
+    timeout_decision = timeout_decision or evaluate_runtime_timeout(projection_input.timeout_input, budget=budget)
+    if timeout_decision.finding is None:
+        reason = "no_backend_timeout_finding_to_project"
+        if projection_input.frontend_authority_claimed or projection_input.timeout_input.frontend_authority_claimed:
+            reason = "frontend_timeout_authority_rejected_without_backend_timeout_finding"
+        return TimeoutProjectionDecision(
+            scan_version=TIMEOUT_EVENT_PROJECTION_VERSION,
+            projection_created=False,
+            reason=reason,
+            timeout_decision=timeout_decision,
+        )
+
+    timeout_input = projection_input.timeout_input
+    projection_kind = _projection_kind(timeout_decision.timeout_kind)
+    projection_scope = _projection_scope(timeout_decision)
+    budget_ms = _projection_budget_ms(timeout_input, budget=budget, phase=timeout_decision.phase)
+    lifecycle_id = (
+        projection_input.lifecycle_id
+        or _string_or_none(timeout_input.metadata.get("lifecycle_id"))
+        or timeout_input.command_id
+    )
+    stale_decision_kind = _stale_decision_kind(timeout_decision.phase)
+    evidence_required = bool(timeout_input.evidence_required or timeout_decision.finding.requires_negative_evidence)
+    operator_attention = TimeoutOperatorAttention(
+        required=timeout_decision.fallback_plan.operator_attention_required,
+        suggested_operator_action=_suggested_operator_action(timeout_decision),
+        reason=timeout_decision.finding.reason,
+    )
+    journal_plan = TimeoutJournalProjectionPlan(event_type=TIMEOUT_PROJECTION_EVENT_TYPE)
+    projection_id = (
+        f"timeout-projection:{timeout_input.command_id}:"
+        f"{projection_kind.value}:{projection_input.observed_at_ms}"
+    )
+    payload = {
+        "projection_version": TIMEOUT_EVENT_PROJECTION_VERSION,
+        "projection_id": projection_id,
+        "projection_kind": projection_kind.value,
+        "projection_scope": projection_scope.value,
+        "command_id": timeout_input.command_id,
+        "lifecycle_id": lifecycle_id,
+        "source_timeout_kind": timeout_decision.timeout_kind.value,
+        "source_phase": timeout_decision.phase.value,
+        "observed_at": projection_input.observed_at_ms,
+        "started_at": timeout_input.started_at_ms,
+        "updated_at": timeout_input.updated_at_ms,
+        "deadline_at": timeout_decision.deadline_at_ms,
+        "elapsed_ms": timeout_decision.elapsed_ms,
+        "budget_ms": budget_ms,
+        "dispatch_attempted": timeout_decision.dispatch_attempted,
+        "dispatch_succeeded": timeout_decision.dispatch_succeeded,
+        "verification_attempted": timeout_input.verification_attempted,
+        "verification_state": timeout_decision.verification_state,
+        "verified_success": False,
+        "evidence_created": False,
+        "evidence_required": evidence_required,
+        "requires_operator_attention": operator_attention.required,
+        "suggested_operator_action": operator_attention.suggested_operator_action,
+        "recovery_proposal": tuple(timeout_decision.fallback_plan.actions),
+        "retry_count": timeout_decision.retry_count,
+        "max_retries": timeout_decision.max_retries,
+        "stale_decision_kind": stale_decision_kind,
+        "approval_grant": False,
+        "capability_grant": False,
+        "lease_grant": False,
+        "runtime_dispatch_allowed": False,
+        "execution_permission": "not_granted_by_timeout_projection",
+        "mutation_performed": False,
+        "frontend_authority": False,
+        "journal_append_required_for_future_enforcement": True,
+        "existing_history_mutation_allowed": False,
+        "replay_safe": True,
+        "not_executed": True,
+        "executed": False,
+        "projection_only": True,
+        "journal_plan": _to_plain(journal_plan),
+    }
+    if timeout_input.browser_metadata:
+        payload["browser_metadata"] = dict(timeout_input.browser_metadata)
+    if timeout_input.bot_challenge_detected:
+        payload["bot_challenge_detected"] = True
+
+    _assert_timeout_projection_payload_is_non_authoritative(payload)
+    event = RuntimeEvent(
+        type=TIMEOUT_PROJECTION_EVENT_TYPE,
+        timestamp=int(projection_input.observed_at_ms),
+        trace_id=projection_input.trace_id,
+        causation_id=projection_input.causation_id,
+        session_id=projection_input.session_id,
+        source=Component.SYSTEM.value,
+        severity=Severity.WARNING.value,
+        sequence_num=max(0, int(projection_input.sequence_num)),
+        runtime_phase=timeout_decision.phase.value,
+        payload=payload,
+    )
+    projection = TimeoutEventProjection(
+        projection_version=TIMEOUT_EVENT_PROJECTION_VERSION,
+        projection_id=projection_id,
+        projection_kind=projection_kind,
+        projection_scope=projection_scope,
+        payload=payload,
+        runtime_event=event,
+        journal_plan=journal_plan,
+        operator_attention=operator_attention,
+    )
+    return TimeoutProjectionDecision(
+        scan_version=TIMEOUT_EVENT_PROJECTION_VERSION,
+        projection_created=True,
+        reason="backend_timeout_finding_projected_as_non_executing_event",
+        timeout_decision=timeout_decision,
+        projection=projection,
+    )
 
 
 def runtime_timeout_input_from_command_record(
@@ -362,6 +625,115 @@ def _coerce_phase(value: TimeoutPhase | str) -> TimeoutPhase:
         return TimeoutPhase(str(value))
     except ValueError:
         return TimeoutPhase.UNKNOWN
+
+
+def _projection_kind(timeout_kind: TimeoutKind) -> TimeoutProjectionKind:
+    return {
+        TimeoutKind.PRE_DISPATCH_STALE: TimeoutProjectionKind.STALE_PRE_DISPATCH_OBSERVED,
+        TimeoutKind.APPROVAL_STALE: TimeoutProjectionKind.STALE_APPROVAL_OBSERVED,
+        TimeoutKind.CLARIFICATION_STALE: TimeoutProjectionKind.STALE_CLARIFICATION_OBSERVED,
+        TimeoutKind.EXECUTION_TIMEOUT: TimeoutProjectionKind.EXECUTION_TIMEOUT_OBSERVED,
+        TimeoutKind.BROWSER_DISPATCH_TIMEOUT: TimeoutProjectionKind.BROWSER_TIMEOUT_OBSERVED,
+        TimeoutKind.VERIFIER_TIMEOUT: TimeoutProjectionKind.VERIFIER_TIMEOUT_OBSERVED,
+        TimeoutKind.EVIDENCE_RECORDING_TIMEOUT: TimeoutProjectionKind.EVIDENCE_RECORDING_TIMEOUT_OBSERVED,
+        TimeoutKind.RETRY_EXHAUSTED: TimeoutProjectionKind.RETRY_EXHAUSTED_OBSERVED,
+        TimeoutKind.RESTORED_PENDING_STALE: TimeoutProjectionKind.RESTORED_PENDING_STALE_OBSERVED,
+        TimeoutKind.UNKNOWN_STALE: TimeoutProjectionKind.UNKNOWN_STALE_OBSERVED,
+    }.get(timeout_kind, TimeoutProjectionKind.TIMEOUT_OBSERVED)
+
+
+def _projection_scope(decision: RuntimeTimeoutDecision) -> TimeoutProjectionScope:
+    if decision.timeout_kind in {
+        TimeoutKind.APPROVAL_STALE,
+        TimeoutKind.CLARIFICATION_STALE,
+        TimeoutKind.RESTORED_PENDING_STALE,
+    }:
+        return TimeoutProjectionScope.PENDING_DECISION
+    if decision.timeout_kind == TimeoutKind.BROWSER_DISPATCH_TIMEOUT:
+        return TimeoutProjectionScope.BROWSER
+    if decision.timeout_kind == TimeoutKind.VERIFIER_TIMEOUT:
+        return TimeoutProjectionScope.VERIFIER
+    if decision.timeout_kind == TimeoutKind.EVIDENCE_RECORDING_TIMEOUT:
+        return TimeoutProjectionScope.EVIDENCE
+    if decision.timeout_kind == TimeoutKind.RETRY_EXHAUSTED:
+        return TimeoutProjectionScope.RETRY
+    if decision.timeout_kind == TimeoutKind.EXECUTION_TIMEOUT:
+        return TimeoutProjectionScope.EXECUTION
+    if decision.timeout_kind == TimeoutKind.PRE_DISPATCH_STALE:
+        return TimeoutProjectionScope.COMMAND_LIFECYCLE
+    return TimeoutProjectionScope.UNKNOWN
+
+
+def _projection_budget_ms(
+    timeout_input: RuntimePhaseTimeoutInput,
+    *,
+    budget: RuntimeTimeoutBudget,
+    phase: TimeoutPhase,
+) -> int | None:
+    basis = _age_basis(timeout_input, phase=phase)
+    if timeout_input.deadline_at_ms is not None and basis is not None:
+        return max(0, timeout_input.deadline_at_ms - basis)
+    if basis is not None:
+        return budget.budget_for(phase)
+    return None
+
+
+def _stale_decision_kind(phase: TimeoutPhase) -> str | None:
+    if phase == TimeoutPhase.APPROVAL_PENDING:
+        return "approval"
+    if phase == TimeoutPhase.CLARIFICATION_PENDING:
+        return "clarification"
+    if phase == TimeoutPhase.RESTORED_PENDING:
+        return "restored_pending"
+    return None
+
+
+def _suggested_operator_action(decision: RuntimeTimeoutDecision) -> str:
+    if decision.timeout_kind == TimeoutKind.PRE_DISPATCH_STALE:
+        return "review_command_lifecycle"
+    if decision.timeout_kind in {
+        TimeoutKind.APPROVAL_STALE,
+        TimeoutKind.CLARIFICATION_STALE,
+        TimeoutKind.RESTORED_PENDING_STALE,
+    }:
+        return "review_pending_decision"
+    if decision.timeout_kind in {
+        TimeoutKind.EXECUTION_TIMEOUT,
+        TimeoutKind.BROWSER_DISPATCH_TIMEOUT,
+        TimeoutKind.EVIDENCE_RECORDING_TIMEOUT,
+    }:
+        return "inspect_execution_evidence_boundary"
+    if decision.timeout_kind == TimeoutKind.VERIFIER_TIMEOUT:
+        return "review_verifier_evidence"
+    if decision.timeout_kind == TimeoutKind.RETRY_EXHAUSTED:
+        return "review_retry_policy"
+    return "inspect_runtime_lifecycle"
+
+
+def _assert_timeout_projection_payload_is_non_authoritative(value: Any) -> None:
+    if isinstance(value, dict):
+        forbidden_true = (
+            "success",
+            "verified",
+            "verified_success",
+            "approval_grant",
+            "capability_grant",
+            "lease_grant",
+            "runtime_dispatch_allowed",
+            "mutation_performed",
+            "frontend_authority",
+            "evidence_created",
+        )
+        if "execution_evidence" in value:
+            raise ValueError("timeout projection cannot include execution_evidence")
+        for key in forbidden_true:
+            if value.get(key) is True:
+                raise ValueError(f"timeout projection cannot set {key}=true")
+        for nested in value.values():
+            _assert_timeout_projection_payload_is_non_authoritative(nested)
+    elif isinstance(value, (list, tuple)):
+        for nested in value:
+            _assert_timeout_projection_payload_is_non_authoritative(nested)
 
 
 DEFAULT_RUNTIME_TIMEOUT_BUDGET = RuntimeTimeoutBudget(
@@ -669,3 +1041,7 @@ def _int_or_zero(value: Any) -> int:
         return max(0, int(value))
     except (TypeError, ValueError):
         return 0
+
+
+def _string_or_none(value: Any) -> str | None:
+    return value if isinstance(value, str) and value.strip() else None

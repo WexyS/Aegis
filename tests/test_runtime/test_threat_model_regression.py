@@ -23,8 +23,10 @@ from aegis.core.non_executable_runtime_adapter import (
 from aegis.core.protocol import ProtocolEventType, reset_sequence_for_testing
 from aegis.core.runtime_timeout import (
     RuntimePhaseTimeoutInput,
+    TimeoutEventProjectionInput,
     TimeoutKind,
     TimeoutPhase,
+    build_timeout_event_projection,
     evaluate_runtime_timeout,
 )
 from aegis.core.schemas import ActionResult, CommandRequest, GuardResult, IntentResult, ReliabilityMetrics
@@ -534,6 +536,50 @@ def test_threat_runtime_timeout_payload_cannot_grant_frontend_authority_or_succe
     assert decision.fallback_plan.approval_granted is False
     assert decision.fallback_plan.verified_success is False
     assert decision.fallback_plan.mutation_performed is False
+
+
+def test_threat_timeout_projection_payload_cannot_grant_authority_or_execution():
+    decision = build_timeout_event_projection(
+        TimeoutEventProjectionInput(
+            timeout_input=RuntimePhaseTimeoutInput(
+                command_id="cmd-threat-timeout-projection",
+                phase=TimeoutPhase.EXECUTING,
+                evaluated_at_ms=10_000,
+                started_at_ms=1_000,
+                updated_at_ms=1_000,
+                deadline_at_ms=2_000,
+                dispatch_attempted=True,
+                dispatch_succeeded=True,
+                verification_state="verified",
+                frontend_authority_claimed=True,
+                metadata={
+                    "frontend_timeout_authority": True,
+                    "approval_grant": True,
+                    "capability_grant": True,
+                    "lease_grant": True,
+                    "runtime_dispatch_allowed": True,
+                    "verified_success": True,
+                },
+            ),
+            observed_at_ms=10_000,
+            frontend_authority_claimed=True,
+        )
+    )
+
+    assert decision.projection_created is True
+    payload = decision.projection.payload
+    assert payload["not_executed"] is True
+    assert payload["executed"] is False
+    assert payload["approval_grant"] is False
+    assert payload["capability_grant"] is False
+    assert payload["lease_grant"] is False
+    assert payload["runtime_dispatch_allowed"] is False
+    assert payload["verified_success"] is False
+    assert payload["evidence_created"] is False
+    assert payload["frontend_authority"] is False
+    assert payload["mutation_performed"] is False
+    assert payload["journal_plan"]["append_now"] is False
+    assert "execution_evidence" not in payload
 
 
 def test_threat_lifecycle_resolution_wording_keeps_execution_separate_from_resolution():

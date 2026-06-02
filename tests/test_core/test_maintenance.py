@@ -384,12 +384,24 @@ def test_maintenance_scan_surfaces_read_only_runtime_timeout_diagnostics() -> No
     assert diagnostics["mutation_performed"] is False
     assert diagnostics["status"] == "fail"
     assert diagnostics["finding_count"] == 1
+    assert diagnostics["timeout_projection_count"] == 1
+    assert diagnostics["stale_execution_projection_count"] == 1
+    assert diagnostics["stale_pending_projection_count"] == 0
+    assert diagnostics["projection_mutation_performed"] is False
+    assert diagnostics["projection_dispatch_allowed"] is False
+    assert diagnostics["projection_approval_grant_exposed"] is False
     assert diagnostics["negative_evidence_required_count"] == 1
     assert diagnostics["timeout_kind_counts"]["browser_dispatch_timeout"] == 1
+    assert diagnostics["projections"][0]["payload"]["projection_kind"] == "browser_timeout_observed"
+    assert diagnostics["projections"][0]["payload"]["runtime_dispatch_allowed"] is False
+    assert diagnostics["projections"][0]["payload"]["approval_grant"] is False
+    assert diagnostics["projections"][0]["payload"]["mutation_performed"] is False
+    assert diagnostics["projections"][0]["journal_plan"]["append_now"] is False
     assert diagnostics["safety"]["no_auto_approval"] is True
     assert diagnostics["safety"]["no_auto_resume"] is True
     assert diagnostics["safety"]["no_runtime_dispatch"] is True
     assert diagnostics["safety"]["no_process_or_browser_kill"] is True
+    assert diagnostics["safety"]["projection_does_not_append_journal"] is True
     assert diagnostics["actions_performed"] == []
     assert report["summary"]["component_statuses"]["runtime_timeout_diagnostics"] == "fail"
     assert "runtime_timeout_diagnostics" in report["checks"]["read_only_contract"]["allowed_observations"]
