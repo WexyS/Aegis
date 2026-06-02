@@ -31,8 +31,8 @@ from aegis.core.runtime_timeout import (
 )
 from aegis.core.schemas import ActionResult, CommandRequest, GuardResult, IntentResult, ReliabilityMetrics
 from aegis.executor import desktop_verifier
-from aegis.executor.deterministic_executor import _browser_provider_interstitial
 from aegis.executor.desktop_verifier import verification_to_execution_evidence
+from aegis.executor.provider_interstitials import classify_provider_interstitial
 from aegis.orchestrator import orchestrator as orchestrator_module
 from aegis.orchestrator.orchestrator import Orchestrator
 from aegis.tools.desktop_tools import FocusTool, OpenAppTool
@@ -540,10 +540,10 @@ def test_threat_runtime_timeout_payload_cannot_grant_frontend_authority_or_succe
 
 
 def test_threat_provider_interstitial_is_not_timeout_without_backend_deadline():
-    interstitial = _browser_provider_interstitial(
+    interstitial = classify_provider_interstitial(
+        "https://www.google.com/sorry/index?continue=https://www.google.com/search%3Fq%3Daegis%2Bruntime",
         requested_provider="google",
         requested_url="https://www.google.com/search?q=aegis+runtime",
-        observed_url="https://www.google.com/sorry/index?continue=https://www.google.com/search%3Fq%3Daegis%2Bruntime",
     )
 
     decision = evaluate_runtime_timeout(
@@ -557,18 +557,18 @@ def test_threat_provider_interstitial_is_not_timeout_without_backend_deadline():
             dispatch_attempted=True,
             dispatch_succeeded=True,
             verification_state="approval_required",
-            bot_challenge_detected=interstitial["blocked_by_bot_challenge"],
+            bot_challenge_detected=interstitial.blocked_by_bot_challenge,
             browser_metadata={
                 "requested_provider": "google",
                 "requested_url": "https://www.google.com/search?q=aegis+runtime",
                 "final_url": "https://www.google.com/sorry/index?continue=https://www.google.com/search%3Fq%3Daegis%2Bruntime",
-                "provider_interstitial_detected": interstitial["provider_interstitial_detected"],
-                "provider_interstitial_reason": interstitial["provider_interstitial_reason"],
+                "provider_interstitial_detected": interstitial.detected,
+                "provider_interstitial_reason": interstitial.reason,
             },
         )
     )
 
-    assert interstitial["provider_interstitial_detected"] is True
+    assert interstitial.detected is True
     assert decision.timeout_kind is TimeoutKind.NONE
     assert decision.finding is None
     assert decision.verified_success is False

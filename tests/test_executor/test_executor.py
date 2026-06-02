@@ -18,9 +18,9 @@ from aegis.core.schemas import IntentResult
 from aegis.core.state_manager import AegisStateSnapshot
 from aegis.executor.deterministic_executor import get_deterministic_executor
 from aegis.executor.deterministic_executor import DeterministicExecutor
-from aegis.executor.deterministic_executor import _browser_provider_interstitial
 from aegis.executor.deterministic_executor import _type_evidence
 from aegis.executor.desktop_verifier import DesktopObservation, DesktopTarget, DesktopVerificationResult
+from aegis.executor.provider_interstitials import classify_provider_interstitial
 
 
 def _snapshot(*, hwnd: int | None, pid: int | None = 1234, focus_stable: bool = True) -> AegisStateSnapshot:
@@ -1066,8 +1066,11 @@ class TestDeterministicExecutorContracts:
         evidence = result.proof["browser_evidence"]
         assert evidence["bot_challenge_detected"] is True
         assert evidence["provider_interstitial_detected"] is True
+        assert evidence["provider_interstitial_provider"] == "google"
         assert evidence["provider_interstitial_type"] == "bot_challenge"
         assert evidence["provider_interstitial_reason"] == "google_sorry_bot_challenge"
+        assert evidence["provider_interstitial_host_matched"] is True
+        assert evidence["provider_interstitial_spoof_rejected"] is False
         assert evidence["blocked_by_bot_challenge"] is True
         assert evidence["search_verification_blocked_by_provider"] is True
         assert evidence["verification_blocker"] == "search_verification_blocked_by_provider"
@@ -1102,30 +1105,75 @@ class TestDeterministicExecutorContracts:
         observed = result.execution_evidence.observed
         assert observed["bot_challenge_detected"] is True
         assert observed["provider_interstitial_detected"] is True
+        assert observed["provider_interstitial_provider"] == "google"
         assert observed["provider_interstitial_reason"] == "google_sorry_bot_challenge"
+        assert observed["provider_interstitial_host_matched"] is True
+        assert observed["provider_interstitial_spoof_rejected"] is False
         assert observed["search_verification_blocked_by_provider"] is True
         assert observed["verification_blocker"] == "search_verification_blocked_by_provider"
         assert observed["fallback_enabled"] is False
         assert observed["fallback_attempted"] is False
         assert observed["verified_success"] is False
 
-    def test_provider_interstitial_classifier_requires_expected_google_host(self) -> None:
-        google_challenge = _browser_provider_interstitial(
+    @pytest.mark.parametrize(
+        "observed_url",
+        [
+            "https://www.google.com/sorry?continue=https://www.google.com/search%3Fq%3Daegis%2Bruntime",
+            "https://www.google.com/sorry/index?continue=https://www.google.com/search%3Fq%3Daegis%2Bruntime",
+            "https://google.com/sorry/index?continue=https://www.google.com/search%3Fq%3Daegis%2Bruntime",
+        ],
+    )
+    def test_provider_interstitial_registry_classifies_google_sorry_paths(self, observed_url: str) -> None:
+        google_challenge = classify_provider_interstitial(
+            observed_url,
             requested_provider="google",
             requested_url="https://www.google.com/search?q=aegis+runtime",
-            observed_url="https://www.google.com/sorry/index?continue=https://www.google.com/search%3Fq%3Daegis%2Bruntime",
         )
-        assert google_challenge["provider_interstitial_detected"] is True
-        assert google_challenge["provider_interstitial_reason"] == "google_sorry_bot_challenge"
-        assert google_challenge["blocked_by_bot_challenge"] is True
+        fields = google_challenge.to_evidence_fields()
 
-        spoofed_challenge_path = _browser_provider_interstitial(
+        assert google_challenge.detected is True
+        assert google_challenge.provider == "google"
+        assert google_challenge.reason == "google_sorry_bot_challenge"
+        assert google_challenge.interstitial_type == "bot_challenge"
+        assert google_challenge.host_matched is True
+        assert google_challenge.spoof_rejected is False
+        assert google_challenge.blocked_by_bot_challenge is True
+        assert google_challenge.fallback_allowed is False
+        assert google_challenge.fallback_attempted is False
+        assert google_challenge.verified_success is False
+        assert fields["provider_interstitial_detected"] is True
+        assert fields["provider_interstitial_reason"] == "google_sorry_bot_challenge"
+        assert fields["blocked_by_bot_challenge"] is True
+        assert fields["fallback_enabled"] is False
+        assert fields["fallback_attempted"] is False
+
+    def test_provider_interstitial_registry_rejects_spoof_and_unrelated_urls(self) -> None:
+        spoofed_challenge_path = classify_provider_interstitial(
+            "https://www.google.com.evil.test/sorry/index?continue=https://www.google.com/search%3Fq%3Daegis%2Bruntime",
             requested_provider="google",
             requested_url="https://www.google.com/search?q=aegis+runtime",
-            observed_url="https://www.google.com.evil.test/sorry/index?continue=https://www.google.com/search%3Fq%3Daegis%2Bruntime",
         )
-        assert spoofed_challenge_path["provider_interstitial_detected"] is False
-        assert spoofed_challenge_path["blocked_by_bot_challenge"] is False
+        unrelated_google = classify_provider_interstitial(
+            "https://www.google.com/search?q=aegis+runtime",
+            requested_provider="google",
+            requested_url="https://www.google.com/search?q=aegis+runtime",
+        )
+        generic_mismatch = classify_provider_interstitial(
+            "https://unexpected.example/sorry/index",
+            requested_provider="google",
+            requested_url="https://www.google.com/search?q=aegis+runtime",
+        )
+
+        assert spoofed_challenge_path.detected is False
+        assert spoofed_challenge_path.spoof_rejected is True
+        assert spoofed_challenge_path.blocked_by_bot_challenge is False
+        assert spoofed_challenge_path.verified_success is False
+        assert unrelated_google.detected is False
+        assert unrelated_google.spoof_rejected is False
+        assert unrelated_google.blocked_by_bot_challenge is False
+        assert generic_mismatch.detected is False
+        assert generic_mismatch.spoof_rejected is False
+        assert generic_mismatch.blocked_by_bot_challenge is False
 
     @pytest.mark.asyncio
     async def test_scroll_success_includes_browser_evidence(self, monkeypatch) -> None:
