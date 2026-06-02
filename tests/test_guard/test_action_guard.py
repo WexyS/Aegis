@@ -29,16 +29,17 @@ class TestGuard:
         r = self.guard.evaluate(intent)
         assert r.allowed is False
 
-    def test_allows_normal_clicks(self) -> None:
+    def test_blocks_normal_clicks_because_generic_click_is_not_registered(self) -> None:
         intent = IntentResult(intent="click", confidence=1.0, params={"count": 5}, risk=RiskLevel.MEDIUM, raw_input="5 kere tıkla")
         r = self.guard.evaluate(intent)
-        assert r.allowed is True
+        assert r.allowed is False
+        assert "not registered" in r.reason
 
-    def test_warns_on_medium_risk(self) -> None:
+    def test_blocks_medium_risk_click_before_warning_path(self) -> None:
         intent = IntentResult(intent="click", confidence=1.0, params={"count": 3}, risk=RiskLevel.MEDIUM, raw_input="3 kere tıkla")
         r = self.guard.evaluate(intent)
-        assert r.allowed is True
-        assert any("Medium risk" in w for w in r.warnings)
+        assert r.allowed is False
+        assert "not registered" in r.reason
 
     def test_blocks_bad_url_scheme(self) -> None:
         intent = IntentResult(intent="open_url", confidence=1.0, params={"url": "file:///etc/passwd"}, risk=RiskLevel.LOW, raw_input="test")

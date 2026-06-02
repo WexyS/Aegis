@@ -39,24 +39,14 @@ class SearchWebTool(BaseTool):
 
 class ClickTool(BaseTool):
     name = "click"
-    description = "Click an element by CSS selector or coordinates."
+    description = "Quarantined legacy generic click stub."
 
     async def run(self, selector: str = None, x: int = None, y: int = None, page=None, **kwargs) -> str:
         self.log_action(selector=selector, x=x, y=y)
-        if not page:
-            return "Error: Browser page not initialized."
-        
-        try:
-            if selector:
-                await page.wait_for_selector(selector, timeout=5000)
-                await page.click(selector)
-                return f"Clicked element: {selector}"
-            elif x is not None and y is not None:
-                await page.mouse.click(x, y)
-                return f"Clicked coordinates: {x}, {y}"
-            return "Error: Neither selector nor coordinates provided for click."
-        except Exception as e:
-            return f"Click error: {str(e)}"
+        return (
+            "Error: generic click is quarantined and non-dispatchable until "
+            "explicit browser_click/desktop_click target-resolution gates exist."
+        )
 
 class ScrollTool(BaseTool):
     name = "scroll"

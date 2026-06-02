@@ -15,6 +15,10 @@ from aegis.core.policy_boundary import (
 )
 
 
+def test_generic_click_is_not_dispatchable_policy_surface() -> None:
+    assert "click" not in POLICY_DISPATCHABLE_TOOL_NAMES
+
+
 def test_policy_boundary_allows_ready_decision_only_after_policy_classification() -> None:
     decision = classify_intent_risk("open_app", {"app": "notepad"})
 

@@ -21,7 +21,7 @@ from aegis.tools.file_tools import (
 from aegis.tools.git_tools import GitActionTool
 from aegis.tools.shell_tools import RunCommandTool
 from aegis.tools.system_tools import GeneralChatTool
-from aegis.tools.web_tools import ClickTool, OpenURLTool, ReadPageTool, ScrollTool, SearchWebTool
+from aegis.tools.web_tools import OpenURLTool, ReadPageTool, ScrollTool, SearchWebTool
 
 
 TOOLS = {
@@ -33,7 +33,6 @@ TOOLS = {
     # Web
     "open_url": OpenURLTool(),
     "search_web": SearchWebTool(),
-    "click": ClickTool(),
     "scroll": ScrollTool(),
     "read_page": ReadPageTool(),
     # File
@@ -98,7 +97,6 @@ TOOL_SPECS: dict[str, ToolSpec] = {
     "type": _spec("type", "desktop", "Type text into the focused target.", RiskLevel.MEDIUM, timeout_seconds=10, evidence_policy="desktop_verifier", side_effecting=True, input_schema=_object({"text": {"type": "string"}}, ["text"])),
     "open_url": _spec("open_url", "web", "Open a URL in the controlled browser.", RiskLevel.LOW, timeout_seconds=15, evidence_policy="browser_context", side_effecting=True, input_schema=_object({"url": {"type": "string"}}, ["url"])),
     "search_web": _spec("search_web", "web", "Search the web in the controlled browser.", RiskLevel.LOW, timeout_seconds=20, evidence_policy="read_only_hash", input_schema=_object({"query": {"type": "string"}}, ["query"])),
-    "click": _spec("click", "web", "Click a browser element or coordinate.", RiskLevel.MEDIUM, timeout_seconds=8, evidence_policy="browser_context", side_effecting=True),
     "scroll": _spec("scroll", "web", "Scroll the active browser page.", RiskLevel.LOW, timeout_seconds=5, evidence_policy="browser_context", side_effecting=True),
     "read_page": _spec("read_page", "web", "Read the active browser page text.", RiskLevel.LOW, timeout_seconds=10, evidence_policy="read_only_hash"),
     "list_directory": _spec("list_directory", "file", "List files and folders under a directory.", RiskLevel.LOW, timeout_seconds=10, evidence_policy="read_only_hash"),

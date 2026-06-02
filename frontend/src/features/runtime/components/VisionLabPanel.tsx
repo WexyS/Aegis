@@ -1,18 +1,9 @@
-import React, { useState } from 'react';
-import { Eye, Focus, ScanLine, Maximize, Play, Square } from 'lucide-react';
+import React from 'react';
+import { Eye, Focus, ScanLine, Maximize, Lock } from 'lucide-react';
 import { useRuntimeStore } from '@/store/useRuntimeStore';
-import { getVisionStreamUrl } from '@/lib/api';
 
 export const VisionLabPanel = () => {
-  const [feedFailed, setFeedFailed] = useState(false);
-  const { activeApp, visionFeedEnabled, setVisionFeedEnabled } = useRuntimeStore();
-  const visionStreamUrl = getVisionStreamUrl();
-
-  const toggleFeed = () => {
-    const next = !visionFeedEnabled;
-    if (next) setFeedFailed(false);
-    setVisionFeedEnabled(next);
-  };
+  const { activeApp } = useRuntimeStore();
 
   return (
     <div className="flex-1 p-5 lg:p-6 space-y-6 overflow-y-auto custom-scrollbar relative flex flex-col">
@@ -22,15 +13,15 @@ export const VisionLabPanel = () => {
         </div>
         <div className="flex-1">
           <h2 className="text-lg font-bold tracking-widest text-white uppercase">Vision Lab</h2>
-          <p className="text-xs text-foreground/40 font-mono">Semantic Screen Analysis & Anchors</p>
+          <p className="text-xs text-foreground/40 font-mono">Future-gated screen analysis boundary</p>
         </div>
         <div className="flex gap-2">
           <button 
-            onClick={toggleFeed}
-            className={`p-2 rounded-md border flex items-center gap-2 transition-colors ${visionFeedEnabled ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300' : 'bg-white/5 border-white/10 text-foreground/50 hover:bg-white/10'}`}
+            disabled
+            className="p-2 rounded-md border flex items-center gap-2 bg-white/5 border-white/10 text-foreground/40 cursor-not-allowed"
           >
-            {visionFeedEnabled ? <Square size={14} className="fill-current" /> : <Play size={14} className="fill-current" />}
-            <span className="text-[10px] font-bold uppercase tracking-widest">{visionFeedEnabled ? 'Stop Feed' : 'Start Feed'}</span>
+            <Lock size={14} />
+            <span className="text-[10px] font-bold uppercase tracking-widest">Future-Gated</span>
           </button>
         </div>
       </div>
@@ -41,34 +32,21 @@ export const VisionLabPanel = () => {
           <div className="p-4 border-b border-white/5 flex items-center justify-between bg-black/20">
             <div className="flex items-center gap-2 text-[10px] font-mono text-emerald-400">
               <span className="relative flex h-2 w-2">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 ${!visionFeedEnabled && 'hidden'}`}></span>
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${visionFeedEnabled ? 'bg-emerald-500' : 'bg-foreground/20'}`}></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-foreground/20"></span>
               </span>
-              {visionFeedEnabled ? 'LIVE DESKTOP FEED' : 'FEED OFFLINE'}
+              VISION FEED DISABLED
             </div>
             <Maximize size={14} className="text-foreground/40 hover:text-white cursor-pointer transition-colors" />
           </div>
           
           <div className="flex-1 bg-black/60 relative flex items-center justify-center overflow-hidden">
-            {visionFeedEnabled && !feedFailed ? (
-              <>
-                {/* eslint-disable-next-line @next/next/no-img-element -- Live runtime vision stream must preserve native img streaming and feed failure handling. */}
-                <img 
-                  src={visionStreamUrl}
-                  alt="Live Vision Feed" 
-                  className="absolute inset-0 w-full h-full object-contain"
-                  onError={() => setFeedFailed(true)}
-                />
-                <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none mix-blend-overlay" />
-              </>
-            ) : visionFeedEnabled && feedFailed ? (
-              <div className="flex flex-col items-center justify-center">
-                <Eye size={48} className="text-emerald-500/20 mb-4" />
-                <div className="text-foreground/40 text-xs font-mono uppercase tracking-widest">Feed Offline</div>
-              </div>
-            ) : (
-              <div className="text-foreground/20 text-xs font-mono">NO SIGNAL</div>
-            )}
+            <div className="flex flex-col items-center justify-center gap-3 px-6 text-center">
+              <Eye size={48} className="text-foreground/15" />
+              <div className="text-foreground/40 text-xs font-mono uppercase tracking-widest">Vision future-gated</div>
+              <p className="max-w-md text-[11px] leading-relaxed text-foreground/45 font-mono">
+                Live screen capture is disabled by default. The frontend cannot enable vision without an explicit backend boundary.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -89,7 +67,7 @@ export const VisionLabPanel = () => {
               <ScanLine size={14} /> Semantic Context
             </h3>
             <p className="text-[11px] leading-relaxed text-foreground/70 font-mono">
-              Validator output will appear here after a backend verification event.
+              Vision output is unavailable until a backend-gated vision boundary exists.
             </p>
           </section>
         </div>

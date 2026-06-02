@@ -118,6 +118,7 @@ class ModelSettings(BaseModel):
 class FeatureFlags(BaseModel):
     cloud_fallback: bool = False
     multimodal: bool = False
+    vision_feed: bool = False
     speech_io: bool = False
     agent_loop: bool = False
     deterministic_decomposition: bool = False
@@ -161,6 +162,7 @@ class EnvOverrides(BaseSettings):
     aegis_code_model: str = "qwen2.5-coder:14b"
     aegis_embed_model: str = "nomic-embed-text"
     aegis_cloud_enabled: bool = False
+    aegis_vision_feed: bool = Field(False, validation_alias="AEGIS_VISION_FEED")
     enable_deterministic_decomposition: bool | None = Field(
         None,
         validation_alias="ENABLE_DETERMINISTIC_DECOMPOSITION",
@@ -229,6 +231,7 @@ def load_settings(force_reload: bool = False) -> AegisSettings:
     # Features
     if env_overrides.aegis_cloud_enabled:
         _settings.features.cloud_fallback = True
+    _settings.features.vision_feed = env_overrides.aegis_vision_feed
     if env_overrides.enable_deterministic_decomposition is not None:
         _settings.features.deterministic_decomposition = env_overrides.enable_deterministic_decomposition
 

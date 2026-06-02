@@ -22,7 +22,6 @@ POLICY_DISPATCHABLE_TOOL_NAMES = {
     "scroll",
     "search_web",
     "open_url",
-    "click",
     "type",
     "open_app",
     "focus_app",
@@ -33,7 +32,6 @@ POLICY_DISPATCHABLE_TOOL_NAMES = {
 }
 
 SIDE_EFFECTING_TOOL_NAMES = {
-    "click",
     "type",
     "write_file",
     "create_file",

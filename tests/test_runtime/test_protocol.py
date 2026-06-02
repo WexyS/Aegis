@@ -27,6 +27,7 @@ FRONTEND_DASHBOARD = ROOT / "frontend" / "src" / "app" / "page.tsx"
 FRONTEND_RUNTIME_STATS = ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "RuntimeStatsPanel.tsx"
 FRONTEND_API = ROOT / "frontend" / "src" / "lib" / "api.ts"
 FRONTEND_VISION = ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "VisionLabPanel.tsx"
+FRONTEND_CHAOS = ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "ChaosShieldPanel.tsx"
 FRONTEND_TIMELINE = ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "ScientificTimeline.tsx"
 
 NON_EXECUTABLE_PROTOCOL_EVENTS = {
@@ -473,9 +474,10 @@ def test_frontend_runtime_telemetry_is_unavailable_until_backend_data_arrives() 
     assert "Unavailable" in stats_source
 
 
-def test_frontend_vision_stream_uses_configured_backend_url() -> None:
+def test_frontend_vision_feed_is_disabled_and_future_gated_by_default() -> None:
     api_source = FRONTEND_API.read_text(encoding="utf-8")
     dashboard_source = FRONTEND_DASHBOARD.read_text(encoding="utf-8")
+    store_source = FRONTEND_RUNTIME_STORE.read_text(encoding="utf-8")
     vision_source = FRONTEND_VISION.read_text(encoding="utf-8")
 
     assert "export const API_URL" in api_source
@@ -483,11 +485,23 @@ def test_frontend_vision_stream_uses_configured_backend_url() -> None:
     assert "new URL('/vision/stream', API_URL)" in api_source
     assert "http://127.0.0.1:8400/vision/stream" not in dashboard_source
     assert "http://127.0.0.1:8400/vision/stream" not in vision_source
-    assert "src={visionStreamUrl}" in dashboard_source
-    assert "src={visionStreamUrl}" in vision_source
-    assert "visionFeedEnabled" in dashboard_source
-    assert "visionFeedEnabled" in vision_source
-    assert "setVisionFeedEnabled" in vision_source
+    assert "visionFeedEnabled: false" in store_source
+    assert "setVisionFeedEnabled: () => set({ visionFeedEnabled: false })" in store_source
+    assert "src={visionStreamUrl}" not in dashboard_source
+    assert "src={visionStreamUrl}" not in vision_source
+    assert "LIVE DESKTOP FEED" not in vision_source
+    assert "Vision future-gated" in dashboard_source
+    assert "Vision future-gated" in vision_source
+
+
+def test_frontend_raw_controls_are_disabled_not_authoritative() -> None:
+    chaos_source = FRONTEND_CHAOS.read_text(encoding="utf-8")
+
+    assert "sendCommand" not in chaos_source
+    assert "/force_idle" not in chaos_source
+    assert "/reset_memory" not in chaos_source
+    assert "RAW CONTROLS QUARANTINED" in chaos_source
+    assert "Raw frontend control commands are quarantined" in chaos_source
 
 
 def test_frontend_maintenance_actions_are_backend_proposal_driven() -> None:

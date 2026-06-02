@@ -161,7 +161,7 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
   lastMaintenanceScan: null,
   appRegistry: null,
   toolRegistry: null,
-  visionFeedEnabled: true,
+  visionFeedEnabled: false,
   currentState: RuntimeState.IDLE,
   isExecuting: false,
   recoveryDepth: 0,
@@ -285,7 +285,7 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
   setMaintenanceScan: (report) => set({ lastMaintenanceScan: report }),
   setAppRegistry: (registry) => set({ appRegistry: registry }),
   setToolRegistry: (registry) => set({ toolRegistry: registry }),
-  setVisionFeedEnabled: (enabled) => set({ visionFeedEnabled: enabled }),
+  setVisionFeedEnabled: () => set({ visionFeedEnabled: false }),
 
   transitionTo: (newState, payload = {}) => {
     const { currentState } = get();

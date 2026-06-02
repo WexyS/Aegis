@@ -103,6 +103,10 @@ _CONTROL_PLANE_EVENT_TYPES = {
     ProtocolEventType.SYSTEM_ONLINE.value,
     ProtocolEventType.SNAPSHOT_CREATED.value,
 }
+RAW_CONTROL_COMMANDS = {
+    "/force_idle": "raw control command is quarantined; runtime state cannot be forced by frontend text",
+    "/reset_memory": "raw control command is quarantined; memory reset is not a frontend-authorized runtime action",
+}
 
 
 @dataclass(frozen=True)
@@ -861,14 +865,36 @@ async def _process_command(sid: str, data: dict):
     logger.info(f"[WS] Received command from {sid}: {text} (mode: {mode_str})")
     
     try:
-        if text == "/force_idle":
-            logger.warning("[WS] EMERGENCY HALT triggered by client.")
-            current = get_runtime_authority(_session_id).current_state()
-            await emit_state_change(current.value, RuntimeState.IDLE.value, reason="Emergency halt")
-            return
-            
-        if text == "/reset_memory":
-            logger.warning("[WS] CONTEXT RESET triggered by client.")
+        if text in RAW_CONTROL_COMMANDS:
+            trace_id = str(uuid4())
+            logger.warning("[WS] Raw control command quarantined: %s", text)
+            record = get_approval_manager().create_received(text)
+            blocked = get_approval_manager().mark_blocked(
+                record.command_id,
+                trace_id=trace_id,
+                risk_level=RiskLevel.HIGH,
+                reason=RAW_CONTROL_COMMANDS[text],
+                verification_state="unverified",
+            )
+            blocked.metadata.update(
+                {
+                    "not_executed": True,
+                    "mutation_performed": False,
+                    "raw_control_quarantined": True,
+                    "frontend_authority": False,
+                    "control_command": text,
+                    "mode": mode_str,
+                }
+            )
+            await emit_command_status(
+                command_id=blocked.command_id,
+                status=blocked.status,
+                trace_id=blocked.trace_id,
+                risk_level=blocked.risk_level,
+                reason=blocked.reason,
+                verification_state=blocked.verification_state,
+            )
+            await _emit_snapshot(to=sid)
             return
 
         record = get_approval_manager().create_received(text)

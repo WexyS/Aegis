@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import pytest
+
 from aegis.tools.registry import (
+    get_tool,
     get_tool_registry_snapshot,
     get_tool_spec,
     list_tools,
     validate_registry_drift,
 )
+from aegis.tools.web_tools import ClickTool
 
 
 def test_tool_registry_contract_has_no_config_drift() -> None:
@@ -27,6 +31,29 @@ def test_tool_registry_snapshot_is_backend_source_of_truth() -> None:
     assert snapshot["registered_count"] == len(list_tools())
     assert any(tool["name"] == "run_command" for tool in snapshot["tools"])
     assert any(tool["name"] == "list_directory" for tool in snapshot["tools"])
+    assert all(tool["name"] != "click" for tool in snapshot["tools"])
+
+
+def test_generic_click_is_quarantined_out_of_runtime_registry() -> None:
+    assert get_tool("click") is None
+    assert get_tool_spec("click") is None
+    assert "click" not in list_tools()
+
+
+@pytest.mark.asyncio
+async def test_legacy_click_tool_stub_cannot_perform_browser_click() -> None:
+    class FakePage:
+        def __init__(self) -> None:
+            self.clicked = False
+
+        async def click(self, selector: str) -> None:
+            self.clicked = True
+
+    page = FakePage()
+    output = await ClickTool().run(selector="#submit", page=page)
+
+    assert output.startswith("Error: generic click is quarantined")
+    assert page.clicked is False
 
 
 def test_tool_specs_capture_risk_approval_and_evidence_policy() -> None:

@@ -32,6 +32,7 @@ memory:
 features:
   cloud_fallback: false
   multimodal: false
+  vision_feed: false
   speech_io: false
   agent_loop: false
   deterministic_decomposition: true

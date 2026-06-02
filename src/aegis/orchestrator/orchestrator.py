@@ -233,6 +233,12 @@ class PlanSimulator:
     def simulate(self, plan: List[IntentResult]) -> Dict[str, Any]:
         blockers = []
         for i, intent in enumerate(plan):
+            if intent.intent == "click":
+                # Generic click is not a dispatchable runtime tool, but it must
+                # reach the guard quarantine path so Aegis records the precise
+                # approval/clarification/block lifecycle instead of a generic
+                # simulator rejection.
+                continue
             if intent.intent not in self.allowed_tools:
                 blockers.append(f"Step {i}: Tool '{intent.intent}' not allowed.")
                 continue

@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from aegis.api import ws_bridge
-from aegis.core.constants import RiskLevel
+from aegis.core.constants import CommandStatus, RiskLevel
 from aegis.core.commands import get_approval_manager
 from aegis.core.action_timeline import project_action_timeline
 from aegis.core.guard_policy import GuardDecision, classify_intent_risk
@@ -813,6 +813,47 @@ async def test_approve_command_reports_queue_full_instead_of_silently_dropping(m
     assert any(event[0] == ProtocolEventType.COMMAND_BLOCKED for event in emitted)
     assert any(event[0] == ProtocolEventType.DETERMINISM_BREACH for event in emitted)
     assert queue.qsize() == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw_text", ["/force_idle", "/reset_memory"])
+async def test_raw_control_command_is_blocked_without_state_transition_or_queue(monkeypatch, raw_text: str) -> None:
+    manager = get_approval_manager()
+    manager.reset_for_tests()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+    emitted_statuses = []
+    snapshots = []
+
+    async def forbidden_state_change(*args, **kwargs):
+        raise AssertionError("raw control commands must not force runtime state transitions")
+
+    async def fake_emit_command_status(**kwargs):
+        emitted_statuses.append(kwargs)
+
+    async def fake_emit_snapshot(*, to: str, last_sequence_num: int = 0):
+        snapshots.append((to, last_sequence_num))
+
+    monkeypatch.setattr(ws_bridge, "_command_queue", queue)
+    monkeypatch.setattr(ws_bridge, "emit_state_change", forbidden_state_change)
+    monkeypatch.setattr(ws_bridge, "emit_command_status", fake_emit_command_status)
+    monkeypatch.setattr(ws_bridge, "_emit_snapshot", fake_emit_snapshot)
+
+    await ws_bridge._process_command("sid-control", {"payload": {"text": raw_text, "mode": "raw"}})
+
+    snapshot = manager.snapshot()
+    records = snapshot["records"]
+    assert queue.qsize() == 0
+    assert len(records) == 1
+    record = records[0]
+    assert record["text"] == raw_text
+    assert record["status"] == CommandStatus.BLOCKED.value
+    assert record["verification_state"] == "unverified"
+    assert record["metadata"]["not_executed"] is True
+    assert record["metadata"]["mutation_performed"] is False
+    assert record["metadata"]["raw_control_quarantined"] is True
+    assert record["metadata"]["frontend_authority"] is False
+    assert emitted_statuses[0]["status"] == CommandStatus.BLOCKED
+    assert snapshots == [("sid-control", 0)]
 
 
 @pytest.mark.asyncio

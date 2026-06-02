@@ -1089,7 +1089,7 @@ class TestDeterministicExecutorContracts:
         assert evidence["amount"] == 300
 
     @pytest.mark.asyncio
-    async def test_click_coordinates_success_includes_browser_evidence(self, monkeypatch) -> None:
+    async def test_generic_click_coordinates_are_not_dispatchable_in_executor(self, monkeypatch) -> None:
         class FakeMouse:
             def __init__(self) -> None:
                 self.clicks: list[tuple[int, int]] = []
@@ -1110,7 +1110,7 @@ class TestDeterministicExecutorContracts:
         executor = DeterministicExecutor()
 
         async def fake_get_page():
-            return page
+            raise AssertionError("generic click must not acquire a browser page")
 
         monkeypatch.setattr(executor, "_get_page", fake_get_page)
         ctx = ExecutionContext.create_root()
@@ -1124,18 +1124,15 @@ class TestDeterministicExecutorContracts:
 
         result = await executor.execute(intent, ctx)
 
-        assert result.status == ActionStatus.EXECUTED
-        assert result.success is True
-        assert page.mouse.clicks == [(10, 20)]
-        evidence = result.proof["browser_evidence"]
-        assert evidence["tool"] == "click"
-        assert evidence["coordinates"] == {"x": 10, "y": 20}
-        assert evidence["before"]["target"]["text"] == "Run"
-        assert evidence["after"]["target"]["tag"] == "BUTTON"
+        assert result.status == ActionStatus.FAILED
+        assert result.success is False
+        assert page.mouse.clicks == []
+        evidence = result.proof["execution_evidence"]
+        assert evidence["observed"]["failure_kind"] == "unknown_tool"
+        assert evidence["observed"]["dispatch_attempted"] is False
         assert result.execution_evidence is not None
         assert result.execution_evidence.action == "click"
-        assert result.execution_evidence.target_type == "browser"
-        assert result.execution_evidence.verification_state == "verified"
+        assert result.execution_evidence.verification_state == "failed"
 
     @pytest.mark.asyncio
     async def test_write_file_success_includes_write_evidence(self) -> None:

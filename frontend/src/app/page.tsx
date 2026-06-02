@@ -20,7 +20,6 @@ import { ToolRegistryPanel } from '@/features/runtime/components/ToolRegistryPan
 import { SystemOverview } from '@/features/dashboard/components/SystemOverview';
 
 import { connectRuntime, disconnectRuntime } from '@/lib/socket';
-import { getVisionStreamUrl } from '@/lib/api';
 
 export default function AegisDashboard() {
   const { activeTab } = useUIStore();
@@ -33,14 +32,12 @@ export default function AegisDashboard() {
     runtimeIntegrity = 'unverified',
     lastSequenceNum,
     currentState,
-    visionFeedEnabled,
   } = useRuntimeStore();
   const memoryPressureLabel = memoryPercent === undefined ? 'Unavailable' : `${memoryPercent.toFixed(1)}%`;
   const memoryPressureWidth = memoryPercent === undefined ? 0 : Math.min(memoryPercent, 100);
   const sequenceLabel = lastSequenceNum === undefined ? 'Unavailable' : lastSequenceNum;
   const rttLabel = wsRttMs === undefined ? 'Unavailable' : `${wsRttMs}ms`;
   const determinismLabel = determinismScore === undefined ? 'Unavailable' : `${(determinismScore * 100).toFixed(1)}%`;
-  const visionStreamUrl = getVisionStreamUrl();
 
   React.useEffect(() => {
     connectRuntime();
@@ -121,23 +118,13 @@ export default function AegisDashboard() {
               <Eye size={12} /> Vision Context
             </h3>
             <div className="aspect-video rounded-lg bg-black/30 border border-white/10 flex flex-col items-center justify-center overflow-hidden relative group">
-              {visionFeedEnabled && (
-                // eslint-disable-next-line @next/next/no-img-element -- Live runtime vision stream must preserve native img streaming and fallback behavior.
-                <img
-                  src={visionStreamUrl}
-                  alt="Live Vision Feed"
-                  className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500 mix-blend-screen"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                    const fallback = e.currentTarget.parentElement?.querySelector('.fallback');
-                    if (fallback) fallback.classList.remove('hidden');
-                  }}
-                />
-              )}
-              <div className={`fallback ${visionFeedEnabled ? 'hidden' : 'flex'} flex-col items-center justify-center z-10`}>
+              <div className="fallback flex flex-col items-center justify-center z-10 px-4 text-center">
                 <Eye className="text-foreground/15" size={24} />
                 <div className="mt-3 text-[9px] font-mono text-foreground/30 uppercase tracking-widest">
-                  {visionFeedEnabled ? 'Feed Offline' : 'No Signal'}
+                  Vision future-gated
+                </div>
+                <div className="mt-2 text-[9px] font-mono text-foreground/25 uppercase tracking-widest">
+                  No live desktop feed by default
                 </div>
               </div>
             </div>

@@ -57,7 +57,7 @@ class TestCommandEndpoint:
             assert data["intent"] == "click"
             assert data["status"] == "blocked"
             assert data["actions"][0]["status"] == "blocked"
-            assert "exceeds maximum" in data["actions"][0]["output"]
+            assert "not registered in the canonical tool registry" in data["actions"][0]["output"]
 
     @pytest.mark.asyncio
     async def test_forbidden_write_path_blocks_instead_of_crashing_parser(self) -> None:

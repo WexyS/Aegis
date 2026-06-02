@@ -805,7 +805,7 @@ def _shell_evidence(intent: str, params: Dict[str, Any], output_text: str) -> Di
 DESKTOP_EVIDENCE_TOOLS = {"open_app", "focus_app", "close_app"}
 PROOF_EVIDENCE_KEYS = ("read_only_evidence", "browser_evidence", "write_evidence", "type_evidence", "git_evidence", "shell_evidence")
 FILE_EVIDENCE_TOOLS = {"read_file", "write_file", "create_file", "edit_file", "delete_file", "move_file"}
-BROWSER_EVIDENCE_TOOLS = {"open_url", "search_web", "click", "scroll", "read_page"}
+BROWSER_EVIDENCE_TOOLS = {"open_url", "search_web", "scroll", "read_page"}
 
 
 def _close_evidence_updates(close_attempts: list[dict[str, Any]] | None) -> dict[str, Any]:
@@ -1595,7 +1595,7 @@ class DeterministicExecutor:
                 if tool_spec and intent == "run_command" and "timeout_seconds" not in call_params:
                     call_params["timeout_seconds"] = tool_spec.timeout_seconds
                 page = None
-                if intent in ["open_url", "search_web", "click", "scroll", "read_page"]:
+                if intent in ["open_url", "search_web", "scroll", "read_page"]:
                     page = await self._get_page()
                     call_params["page"] = page
                 close_attempts: list[dict[str, Any]] = []

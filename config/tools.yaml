@@ -59,15 +59,6 @@ tools:
     evidence_policy: read_only_hash
     dry_run_supported: false
 
-  click:
-    category: web
-    risk: medium
-    requires_approval: true
-    timeout_seconds: 8.0
-    cancellation_supported: false
-    evidence_policy: browser_context
-    dry_run_supported: false
-
   scroll:
     category: web
     risk: low
