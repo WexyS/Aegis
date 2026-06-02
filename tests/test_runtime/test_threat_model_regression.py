@@ -31,6 +31,7 @@ from aegis.core.runtime_timeout import (
 )
 from aegis.core.schemas import ActionResult, CommandRequest, GuardResult, IntentResult, ReliabilityMetrics
 from aegis.executor import desktop_verifier
+from aegis.executor.deterministic_executor import _browser_provider_interstitial
 from aegis.executor.desktop_verifier import verification_to_execution_evidence
 from aegis.orchestrator import orchestrator as orchestrator_module
 from aegis.orchestrator.orchestrator import Orchestrator
@@ -536,6 +537,43 @@ def test_threat_runtime_timeout_payload_cannot_grant_frontend_authority_or_succe
     assert decision.fallback_plan.approval_granted is False
     assert decision.fallback_plan.verified_success is False
     assert decision.fallback_plan.mutation_performed is False
+
+
+def test_threat_provider_interstitial_is_not_timeout_without_backend_deadline():
+    interstitial = _browser_provider_interstitial(
+        requested_provider="google",
+        requested_url="https://www.google.com/search?q=aegis+runtime",
+        observed_url="https://www.google.com/sorry/index?continue=https://www.google.com/search%3Fq%3Daegis%2Bruntime",
+    )
+
+    decision = evaluate_runtime_timeout(
+        RuntimePhaseTimeoutInput(
+            command_id="cmd-threat-google-sorry",
+            phase=TimeoutPhase.VERIFYING,
+            evaluated_at_ms=10_000,
+            started_at_ms=9_000,
+            updated_at_ms=9_000,
+            deadline_at_ms=None,
+            dispatch_attempted=True,
+            dispatch_succeeded=True,
+            verification_state="approval_required",
+            bot_challenge_detected=interstitial["blocked_by_bot_challenge"],
+            browser_metadata={
+                "requested_provider": "google",
+                "requested_url": "https://www.google.com/search?q=aegis+runtime",
+                "final_url": "https://www.google.com/sorry/index?continue=https://www.google.com/search%3Fq%3Daegis%2Bruntime",
+                "provider_interstitial_detected": interstitial["provider_interstitial_detected"],
+                "provider_interstitial_reason": interstitial["provider_interstitial_reason"],
+            },
+        )
+    )
+
+    assert interstitial["provider_interstitial_detected"] is True
+    assert decision.timeout_kind is TimeoutKind.NONE
+    assert decision.finding is None
+    assert decision.verified_success is False
+    assert decision.runtime_dispatch_allowed is False
+    assert "bot_challenge_is_verifier_evidence_not_timeout_without_elapsed_deadline" in decision.notes
 
 
 def test_threat_timeout_projection_payload_cannot_grant_authority_or_execution():

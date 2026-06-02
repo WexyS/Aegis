@@ -120,16 +120,69 @@ def _google_search_query(value: str) -> str:
     return str(parse_qs(parsed.query).get("q", [""])[0]).strip()
 
 
-def _bot_challenge_detected(value: str) -> bool:
-    lowered = value.lower()
-    markers = (
-        "/sorry/",
-        "captcha",
-        "unusual traffic",
-        "robot",
-        "bot challenge",
-    )
-    return any(marker in lowered for marker in markers)
+BROWSER_PROVIDER_INTERSTITIAL_CLASSIFICATION_VERSION = "browser-provider-interstitial/1"
+
+
+def _provider_interstitial_absent() -> dict[str, Any]:
+    return {
+        "classification_version": BROWSER_PROVIDER_INTERSTITIAL_CLASSIFICATION_VERSION,
+        "provider_interstitial_detected": False,
+        "provider_interstitial_type": None,
+        "provider_interstitial_reason": None,
+        "blocked_by_bot_challenge": False,
+        "search_verification_blocked_by_provider": False,
+        "verification_blocker": None,
+        "operator_message": None,
+        "operator_suggestion": None,
+        "fallback_available": False,
+        "fallback_enabled": False,
+        "fallback_attempted": False,
+        "fallback_requires_operator_decision": True,
+    }
+
+
+def _browser_provider_interstitial(
+    *,
+    requested_provider: str,
+    requested_url: str,
+    observed_url: str,
+) -> dict[str, Any]:
+    requested = _valid_browser_url(requested_url)
+    observed = _valid_browser_url(observed_url)
+    if not requested or not observed:
+        return _provider_interstitial_absent()
+
+    requested_host = requested.hostname or ""
+    observed_host = observed.hostname or ""
+    provider = requested_provider.lower().strip()
+    expected_google = provider == "google" or _equivalent_browser_hosts("www.google.com", requested_host)
+    observed_google = _equivalent_browser_hosts("www.google.com", observed_host)
+    observed_path = _normalized_browser_path(observed.path).lower()
+    google_sorry_path = observed_path == "/sorry" or observed_path.startswith("/sorry/")
+
+    if expected_google and observed_google and google_sorry_path:
+        return {
+            "classification_version": BROWSER_PROVIDER_INTERSTITIAL_CLASSIFICATION_VERSION,
+            "provider_interstitial_detected": True,
+            "provider_interstitial_type": "bot_challenge",
+            "provider_interstitial_reason": "google_sorry_bot_challenge",
+            "blocked_by_bot_challenge": True,
+            "search_verification_blocked_by_provider": True,
+            "verification_blocker": "search_verification_blocked_by_provider",
+            "operator_message": (
+                "Browser/search verification was blocked by a Google provider interstitial/bot challenge; "
+                "Aegis did not bypass it or mark the search as verified."
+            ),
+            "operator_suggestion": (
+                "retry_later_or_use_another_configured_provider_or_open_manually"
+            ),
+            "fallback_available": False,
+            "fallback_enabled": False,
+            "fallback_attempted": False,
+            "fallback_requires_operator_decision": True,
+        }
+
+    return _provider_interstitial_absent()
 
 
 def _is_browser_lifecycle_failure(value: str) -> bool:
@@ -343,7 +396,12 @@ def _browser_evidence(
         mismatch_reason = _browser_url_mismatch_reason(requested_url, observed)
         url_matches = mismatch_reason is None
         dispatch_ok = True
-        challenge = _bot_challenge_detected(observed) or _bot_challenge_detected(output_text)
+        interstitial = _browser_provider_interstitial(
+            requested_provider=str(params.get("search_provider") or ""),
+            requested_url=requested_url,
+            observed_url=observed,
+        )
+        challenge = bool(interstitial["blocked_by_bot_challenge"])
         checks = [
             _evidence_check(
                 "browser_requested_url_valid",
@@ -384,8 +442,18 @@ def _browser_evidence(
                 "browser_no_bot_challenge",
                 not challenge,
                 False,
-                challenge,
-                "Bot/CAPTCHA challenge pages require user approval instead of automatic success.",
+                {
+                    "bot_challenge_detected": challenge,
+                    "provider_interstitial_reason": interstitial["provider_interstitial_reason"],
+                },
+                "Provider bot-challenge/interstitial pages require operator review instead of automatic success.",
+            ),
+            _evidence_check(
+                "browser_no_provider_interstitial",
+                not interstitial["provider_interstitial_detected"],
+                False,
+                interstitial["provider_interstitial_detected"],
+                "Provider interstitial pages block browser URL verification until a future explicit policy supports continuation.",
             ),
         ]
         verified = bool(
@@ -398,6 +466,15 @@ def _browser_evidence(
         )
         state = "approval_required" if challenge else "verified" if verified else "unverified"
         failed_checks = [str(check["check_name"]) for check in checks if check["passed"] is False]
+        verification_reason = (
+            "browser URL matched request"
+            if state == "verified"
+            else (
+                f"browser verification blocked by provider interstitial: {interstitial['provider_interstitial_reason']}"
+                if interstitial["provider_interstitial_detected"]
+                else f"browser URL verification failed: {', '.join(failed_checks)}"
+            )
+        )
         evidence.update({
             "url": requested_url,
             "requested_url": requested_url,
@@ -415,8 +492,10 @@ def _browser_evidence(
             "url_mismatch_reason": mismatch_reason,
             "dispatch_ok": dispatch_ok,
             "bot_challenge_detected": challenge,
+            "verified_success": verified,
+            **interstitial,
             "browser_verification_state": state,
-            "browser_verification_reason": "browser URL matched request" if state == "verified" else f"browser URL verification failed: {', '.join(failed_checks)}",
+            "browser_verification_reason": verification_reason,
             "verification_checks": checks,
         })
     if intent == "search_web":
@@ -433,7 +512,13 @@ def _browser_evidence(
         query_matches = bool(observed_query and observed_query == query)
         provider_matches = provider == "google"
         dispatch_ok = True
-        challenge = _bot_challenge_detected(observed) or _bot_challenge_detected(output_text)
+        requested_provider = str(params.get("search_provider") or "google")
+        interstitial = _browser_provider_interstitial(
+            requested_provider=requested_provider,
+            requested_url=requested_url,
+            observed_url=observed,
+        )
+        challenge = bool(interstitial["blocked_by_bot_challenge"])
         checks = [
             _evidence_check(
                 "search_query_present",
@@ -481,8 +566,18 @@ def _browser_evidence(
                 "browser_no_bot_challenge",
                 not challenge,
                 False,
-                challenge,
-                "Bot/CAPTCHA challenge pages require user approval instead of automatic success.",
+                {
+                    "bot_challenge_detected": challenge,
+                    "provider_interstitial_reason": interstitial["provider_interstitial_reason"],
+                },
+                "Provider bot-challenge/interstitial pages require operator review instead of automatic success.",
+            ),
+            _evidence_check(
+                "browser_no_provider_interstitial",
+                not interstitial["provider_interstitial_detected"],
+                False,
+                interstitial["provider_interstitial_detected"],
+                "Provider interstitial pages block search verification until a future explicit policy supports continuation.",
             ),
         ]
         verified = bool(
@@ -496,14 +591,24 @@ def _browser_evidence(
         )
         state = "approval_required" if challenge else "verified" if verified else "unverified"
         failed_checks = [str(check["check_name"]) for check in checks if check["passed"] is False]
+        verification_reason = (
+            "search query matched observed URL"
+            if state == "verified"
+            else (
+                f"search verification blocked by provider interstitial: {interstitial['provider_interstitial_reason']}"
+                if interstitial["provider_interstitial_detected"]
+                else f"search URL verification failed: {', '.join(failed_checks)}"
+            )
+        )
         evidence.update({
             "query": query,
             "requested_url": requested_url,
+            "requested_search_url": requested_url,
             "observed_url": observed,
             "final_url": observed,
             "provider": provider,
             "provider_domain": provider_domain,
-            "search_provider": params.get("search_provider") or "google",
+            "search_provider": requested_provider,
             "preferred_browser": params.get("preferred_browser"),
             "browser_runtime": params.get("browser_runtime") or "controlled_browser",
             "controlled_browser": bool(params.get("controlled_browser", True)),
@@ -517,8 +622,10 @@ def _browser_evidence(
             "query_matches_observed_url": query_matches,
             "dispatch_ok": dispatch_ok,
             "bot_challenge_detected": challenge,
+            "verified_success": verified,
+            **interstitial,
             "browser_verification_state": state,
-            "browser_verification_reason": "search query matched observed URL" if state == "verified" else f"search URL verification failed: {', '.join(failed_checks)}",
+            "browser_verification_reason": verification_reason,
             "verification_checks": checks,
         })
     if intent == "scroll":
@@ -1246,8 +1353,12 @@ def _generic_execution_evidence_from_proof(
                 target = str(browser.get("requested_url") or target)
                 expected = {
                     "requested_url": browser.get("requested_url"),
+                    "requested_search_url": browser.get("requested_search_url"),
                     "query": browser.get("query"),
                     "bot_challenge_detected": False,
+                    "provider_interstitial_detected": False,
+                    "fallback_enabled": False,
+                    "verified_success": True,
                 }
                 observed = {
                     "observed_url": browser.get("observed_url"),
@@ -1271,6 +1382,20 @@ def _generic_execution_evidence_from_proof(
                     "query_matches_observed_url": browser.get("query_matches_observed_url"),
                     "provider_matches_expected": browser.get("provider_matches_expected"),
                     "bot_challenge_detected": browser.get("bot_challenge_detected"),
+                    "provider_interstitial_detected": browser.get("provider_interstitial_detected"),
+                    "provider_interstitial_type": browser.get("provider_interstitial_type"),
+                    "provider_interstitial_reason": browser.get("provider_interstitial_reason"),
+                    "blocked_by_bot_challenge": browser.get("blocked_by_bot_challenge"),
+                    "search_verification_blocked_by_provider": browser.get("search_verification_blocked_by_provider"),
+                    "verification_blocker": browser.get("verification_blocker"),
+                    "operator_message": browser.get("operator_message"),
+                    "operator_suggestion": browser.get("operator_suggestion"),
+                    "fallback_available": browser.get("fallback_available"),
+                    "fallback_enabled": browser.get("fallback_enabled"),
+                    "fallback_attempted": browser.get("fallback_attempted"),
+                    "fallback_requires_operator_decision": browser.get("fallback_requires_operator_decision"),
+                    "verified_success": browser.get("verified_success"),
+                    "classification_version": browser.get("classification_version"),
                 }
                 verification_checks = list(browser.get("verification_checks") or [])
     elif proof_key == "write_evidence":

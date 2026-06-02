@@ -18,6 +18,7 @@ from aegis.core.schemas import IntentResult
 from aegis.core.state_manager import AegisStateSnapshot
 from aegis.executor.deterministic_executor import get_deterministic_executor
 from aegis.executor.deterministic_executor import DeterministicExecutor
+from aegis.executor.deterministic_executor import _browser_provider_interstitial
 from aegis.executor.deterministic_executor import _type_evidence
 from aegis.executor.desktop_verifier import DesktopObservation, DesktopTarget, DesktopVerificationResult
 
@@ -620,10 +621,17 @@ class TestDeterministicExecutorContracts:
         assert browser_evidence["provider_domain"] == "www.google.com"
         assert browser_evidence["browser_context_observable"] is True
         assert browser_evidence["dispatch_ok"] is True
+        assert browser_evidence["provider_interstitial_detected"] is False
+        assert browser_evidence["bot_challenge_detected"] is False
+        assert browser_evidence["fallback_enabled"] is False
+        assert browser_evidence["fallback_attempted"] is False
+        assert browser_evidence["verified_success"] is True
         assert browser_evidence["browser_verification_state"] == "verified"
         assert result.execution_evidence is not None
         assert result.execution_evidence.verifier == "browser-url-gate/1"
         assert result.execution_evidence.verification_state == "verified"
+        assert result.execution_evidence.expected["provider_interstitial_detected"] is False
+        assert result.execution_evidence.observed["provider_interstitial_detected"] is False
 
     @pytest.mark.asyncio
     async def test_open_url_success_includes_browser_evidence(self, monkeypatch) -> None:
@@ -708,6 +716,7 @@ class TestDeterministicExecutorContracts:
         assert evidence["observed_url"] == observed_url
         assert evidence["url_matches_request"] is True
         assert evidence["url_mismatch_reason"] is None
+        assert evidence["provider_interstitial_detected"] is False
         assert evidence["browser_verification_state"] == "verified"
         _assert_evidence_state_source_of_truth(result, expected_state="verified", expected_success=True)
 
@@ -750,6 +759,9 @@ class TestDeterministicExecutorContracts:
         assert evidence["observed_url"] == observed_url
         assert evidence["url_matches_request"] is False
         assert evidence["url_mismatch_reason"] == "host_mismatch"
+        assert evidence["provider_interstitial_detected"] is False
+        assert evidence["bot_challenge_detected"] is False
+        assert evidence["blocked_by_bot_challenge"] is False
         assert evidence["browser_verification_state"] == "unverified"
         _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
 
@@ -958,6 +970,9 @@ class TestDeterministicExecutorContracts:
         assert evidence["provider"] == ""
         assert evidence["provider_domain"] == "www.google.com.evil.test"
         assert evidence["provider_matches_expected"] is False
+        assert evidence["provider_interstitial_detected"] is False
+        assert evidence["bot_challenge_detected"] is False
+        assert evidence["blocked_by_bot_challenge"] is False
         assert evidence["browser_verification_state"] == "unverified"
         _assert_evidence_state_source_of_truth(result, expected_state="unverified", expected_success=False)
 
@@ -1050,8 +1065,67 @@ class TestDeterministicExecutorContracts:
         assert result.status == ActionStatus.EXECUTED
         evidence = result.proof["browser_evidence"]
         assert evidence["bot_challenge_detected"] is True
+        assert evidence["provider_interstitial_detected"] is True
+        assert evidence["provider_interstitial_type"] == "bot_challenge"
+        assert evidence["provider_interstitial_reason"] == "google_sorry_bot_challenge"
+        assert evidence["blocked_by_bot_challenge"] is True
+        assert evidence["search_verification_blocked_by_provider"] is True
+        assert evidence["verification_blocker"] == "search_verification_blocked_by_provider"
+        assert evidence["requested_url"] == "https://www.google.com/search?q=aegis+runtime"
+        assert evidence["requested_search_url"] == "https://www.google.com/search?q=aegis+runtime"
+        assert evidence["observed_url"] == "https://www.google.com/sorry/index?continue=https://www.google.com/search%3Fq%3Daegis%2Bruntime"
+        assert evidence["final_url"] == evidence["observed_url"]
+        assert evidence["search_provider"] == "google"
+        assert evidence["query"] == "aegis runtime"
+        assert evidence["dispatch_ok"] is True
+        assert evidence["verified_success"] is False
+        assert evidence["fallback_available"] is False
+        assert evidence["fallback_enabled"] is False
+        assert evidence["fallback_attempted"] is False
+        assert evidence["fallback_requires_operator_decision"] is True
+        assert "provider interstitial" in evidence["operator_message"]
+        assert "retry_later" in evidence["operator_suggestion"]
+        assert "browser_no_bot_challenge" in [
+            check["check_name"]
+            for check in evidence["verification_checks"]
+            if check["passed"] is False
+        ]
+        assert "browser_no_provider_interstitial" in [
+            check["check_name"]
+            for check in evidence["verification_checks"]
+            if check["passed"] is False
+        ]
         assert evidence["browser_verification_state"] == "approval_required"
+        assert "search verification blocked by provider interstitial" in evidence["browser_verification_reason"]
         _assert_evidence_state_source_of_truth(result, expected_state="approval_required", expected_success=False)
+        assert result.execution_evidence is not None
+        observed = result.execution_evidence.observed
+        assert observed["bot_challenge_detected"] is True
+        assert observed["provider_interstitial_detected"] is True
+        assert observed["provider_interstitial_reason"] == "google_sorry_bot_challenge"
+        assert observed["search_verification_blocked_by_provider"] is True
+        assert observed["verification_blocker"] == "search_verification_blocked_by_provider"
+        assert observed["fallback_enabled"] is False
+        assert observed["fallback_attempted"] is False
+        assert observed["verified_success"] is False
+
+    def test_provider_interstitial_classifier_requires_expected_google_host(self) -> None:
+        google_challenge = _browser_provider_interstitial(
+            requested_provider="google",
+            requested_url="https://www.google.com/search?q=aegis+runtime",
+            observed_url="https://www.google.com/sorry/index?continue=https://www.google.com/search%3Fq%3Daegis%2Bruntime",
+        )
+        assert google_challenge["provider_interstitial_detected"] is True
+        assert google_challenge["provider_interstitial_reason"] == "google_sorry_bot_challenge"
+        assert google_challenge["blocked_by_bot_challenge"] is True
+
+        spoofed_challenge_path = _browser_provider_interstitial(
+            requested_provider="google",
+            requested_url="https://www.google.com/search?q=aegis+runtime",
+            observed_url="https://www.google.com.evil.test/sorry/index?continue=https://www.google.com/search%3Fq%3Daegis%2Bruntime",
+        )
+        assert spoofed_challenge_path["provider_interstitial_detected"] is False
+        assert spoofed_challenge_path["blocked_by_bot_challenge"] is False
 
     @pytest.mark.asyncio
     async def test_scroll_success_includes_browser_evidence(self, monkeypatch) -> None:
