@@ -21,6 +21,12 @@ from aegis.core.non_executable_runtime_adapter import (
     project_non_executable_events_to_snapshot,
 )
 from aegis.core.protocol import ProtocolEventType, reset_sequence_for_testing
+from aegis.core.runtime_timeout import (
+    RuntimePhaseTimeoutInput,
+    TimeoutKind,
+    TimeoutPhase,
+    evaluate_runtime_timeout,
+)
 from aegis.core.schemas import ActionResult, CommandRequest, GuardResult, IntentResult, ReliabilityMetrics
 from aegis.executor import desktop_verifier
 from aegis.executor.desktop_verifier import verification_to_execution_evidence
@@ -493,6 +499,41 @@ def test_threat_maintenance_scan_and_app_discovery_remain_read_only(monkeypatch)
         assert proposal["requires_approval"] is True
         assert proposal["read_only"] is True
         assert proposal["dry_run_preview"]["would_mutate"] is False
+
+
+def test_threat_runtime_timeout_payload_cannot_grant_frontend_authority_or_success():
+    decision = evaluate_runtime_timeout(
+        RuntimePhaseTimeoutInput(
+            command_id="cmd-threat-timeout",
+            phase=TimeoutPhase.EXECUTING,
+            evaluated_at_ms=10_000,
+            started_at_ms=1_000,
+            updated_at_ms=1_000,
+            deadline_at_ms=2_000,
+            dispatch_attempted=True,
+            dispatch_succeeded=True,
+            verification_state="verified",
+            frontend_authority_claimed=True,
+            metadata={
+                "frontend_timeout_authority": True,
+                "approval_granted": True,
+                "runtime_dispatch_allowed": True,
+                "verified_success": True,
+            },
+        )
+    )
+
+    assert decision.timeout_kind is TimeoutKind.EXECUTION_TIMEOUT
+    assert "frontend_timeout_authority_rejected" in decision.notes
+    assert decision.runtime_dispatch_allowed is False
+    assert decision.approval_granted is False
+    assert decision.auto_resume_allowed is False
+    assert decision.frontend_authority_allowed is False
+    assert decision.verified_success is False
+    assert decision.fallback_plan.runtime_dispatch_allowed is False
+    assert decision.fallback_plan.approval_granted is False
+    assert decision.fallback_plan.verified_success is False
+    assert decision.fallback_plan.mutation_performed is False
 
 
 def test_threat_lifecycle_resolution_wording_keeps_execution_separate_from_resolution():

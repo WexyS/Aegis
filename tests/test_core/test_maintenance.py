@@ -341,6 +341,65 @@ def test_maintenance_scan_surfaces_read_only_pending_decision_hygiene() -> None:
     assert manager.snapshot()["pending_approvals"] == []
 
 
+def test_maintenance_scan_surfaces_read_only_runtime_timeout_diagnostics() -> None:
+    manager = get_approval_manager()
+    manager.reset_for_tests()
+    try:
+        record = manager.create_received("open https://example.com", command_id="cmd-maintenance-timeout")
+        record.status = CommandStatus.RUNNING
+        record.active = True
+        record.created_at = 1_000
+        record.updated_at = 1_000
+        record.metadata.update({
+            "runtime_timeout_phase": "browser_dispatching",
+            "deadline_at_ms": 2_000,
+            "dispatch_attempted": True,
+            "intent": "open_url",
+            "requested_url": "https://example.com",
+            "final_url": "https://example.com/",
+        })
+
+        report = maintenance.run_read_only_maintenance_scan(
+            runtime_snapshot={
+                "session_id": "test-runtime-timeout-diagnostics",
+                "last_event_sequence": 0,
+                "queue_depth": 0,
+                "queue_capacity": 1,
+                "recovery_depth": 0,
+            },
+            websocket_clients=None,
+        )
+        record_after_scan = manager.get("cmd-maintenance-timeout").to_dict()
+    finally:
+        manager.reset_for_tests()
+
+    diagnostics = report["checks"]["runtime_timeout_diagnostics"]
+    finding = next(
+        item for item in report["findings"]
+        if item["finding_id"] == "runtime.timeout.diagnostics_attention"
+    )
+
+    assert diagnostics["scan_version"] == "runtime-timeout-diagnostics/1"
+    assert diagnostics["read_only"] is True
+    assert diagnostics["mutation_performed"] is False
+    assert diagnostics["status"] == "fail"
+    assert diagnostics["finding_count"] == 1
+    assert diagnostics["negative_evidence_required_count"] == 1
+    assert diagnostics["timeout_kind_counts"]["browser_dispatch_timeout"] == 1
+    assert diagnostics["safety"]["no_auto_approval"] is True
+    assert diagnostics["safety"]["no_auto_resume"] is True
+    assert diagnostics["safety"]["no_runtime_dispatch"] is True
+    assert diagnostics["safety"]["no_process_or_browser_kill"] is True
+    assert diagnostics["actions_performed"] == []
+    assert report["summary"]["component_statuses"]["runtime_timeout_diagnostics"] == "fail"
+    assert "runtime_timeout_diagnostics" in report["checks"]["read_only_contract"]["allowed_observations"]
+    assert finding["read_only"] is True
+    assert finding["evidence"]["negative_evidence_required_count"] == 1
+    assert record_after_scan["status"] == CommandStatus.RUNNING.value
+    assert record_after_scan["active"] is True
+    assert record_after_scan["metadata"]["dispatch_attempted"] is True
+
+
 def test_maintenance_scan_surfaces_evidence_current_historical_unknown_split(monkeypatch, tmp_path) -> None:
     current_missing = create_event(
         ProtocolEventType.ACTION_FAILED,

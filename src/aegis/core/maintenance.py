@@ -16,6 +16,7 @@ from aegis.core.journal_cleanup import build_runtime_replay_gap_diagnostics
 from aegis.core.maintenance_actions import build_maintenance_action_proposals
 from aegis.core.pending_decision_hygiene import build_pending_decision_hygiene_report
 from aegis.core.runtime_authority import peek_runtime_authority
+from aegis.core.runtime_timeout import build_runtime_timeout_diagnostics
 from aegis.core.system_diagnostics import (
     collect_network_port_snapshot,
     collect_process_resource_snapshot,
@@ -126,6 +127,7 @@ def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
 
     evidence_audit = checks["evidence_audit"]
     pending_decision_hygiene = checks["pending_decision_hygiene"]
+    runtime_timeout_diagnostics = checks["runtime_timeout_diagnostics"]
     replay_diagnostics = checks["replay_diagnostics"]
     command_lifecycle = checks["command_lifecycle"]
     runtime_snapshot = checks["runtime_snapshot"]
@@ -163,9 +165,11 @@ def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
     lifecycle_blocker_count = 1 if command_lifecycle.get("status") == "fail" else 0
     runtime_snapshot_blocker_count = 1 if runtime_snapshot.get("status") == "fail" else 0
     pending_decision_blocker_count = pending_count
+    runtime_timeout_blocker_count = _int_count(runtime_timeout_diagnostics.get("finding_count"))
     current_blocker_count = (
         current_evidence_failure_count
         + pending_decision_blocker_count
+        + runtime_timeout_blocker_count
         + lifecycle_blocker_count
         + runtime_snapshot_blocker_count
     )
@@ -204,6 +208,7 @@ def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
         unknown_era_evidence_issue_count=unknown_era_evidence_issue_count,
         replay_historical_debt_present=replay_historical_debt_present,
         pending_decision_blocker_count=pending_decision_blocker_count,
+        runtime_timeout_blocker_count=runtime_timeout_blocker_count,
         system_resource_warning_count=system_resource_warning_count,
     )
 
@@ -217,6 +222,7 @@ def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
         "current_evidence_failure_count": current_evidence_failure_count,
         "current_missing_evidence_count": current_missing_evidence_count,
         "pending_decision_blocker_count": pending_decision_blocker_count,
+        "runtime_timeout_blocker_count": runtime_timeout_blocker_count,
         "restored_pending_count": restored_pending_count,
         "current_session_pending_count": current_pending_count,
         "historical_evidence_debt_count": historical_evidence_debt_count,
@@ -232,6 +238,7 @@ def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
         "component_inputs": {
             "evidence_audit": evidence_audit.get("status"),
             "pending_decision_hygiene": pending_decision_hygiene.get("status"),
+            "runtime_timeout_diagnostics": runtime_timeout_diagnostics.get("status"),
             "command_lifecycle": command_lifecycle.get("status"),
             "runtime_snapshot": runtime_snapshot.get("status"),
             "replay_diagnostics": replay_status,
@@ -279,6 +286,7 @@ def _runtime_health_summary(checks: dict[str, Any]) -> dict[str, Any]:
         "environment": checks["environment"]["overall_status"],
         "command_lifecycle": checks["command_lifecycle"]["status"],
         "pending_decision_hygiene": checks["pending_decision_hygiene"]["status"],
+        "runtime_timeout_diagnostics": checks["runtime_timeout_diagnostics"]["status"],
         "runtime_snapshot": checks["runtime_snapshot"]["status"],
         "replay_diagnostics": checks["replay_diagnostics"]["status"],
         "websocket": checks["websocket"]["status"],
@@ -359,6 +367,7 @@ def _read_only_contract() -> dict[str, Any]:
             "event_journal_snapshot",
             "runtime_replay_gap_diagnostics",
             "pending_decision_hygiene_diagnostics",
+            "runtime_timeout_diagnostics",
             "evidence_audit_classification",
             "recent_event_tail",
             "tool_registry_snapshot",
@@ -508,6 +517,28 @@ def _findings_from_checks(checks: dict[str, Any]) -> list[dict[str, Any]]:
             recommendation=(
                 "Review restored decisions through backend lifecycle controls; do not hide, delete, "
                 "or bulk-resolve them without a future explicit operator-confirmed hygiene flow."
+            ),
+        ))
+
+    runtime_timeout_diagnostics = checks["runtime_timeout_diagnostics"]
+    if int(runtime_timeout_diagnostics.get("finding_count") or 0) > 0:
+        findings.append(_finding(
+            "runtime.timeout.diagnostics_attention",
+            category="runtime",
+            severity="fail" if runtime_timeout_diagnostics.get("status") == "fail" else "warning",
+            source="checks.runtime_timeout_diagnostics.finding_count",
+            reason="Runtime timeout diagnostics classified overdue or retry-exhausted command lifecycle phases.",
+            evidence={
+                "finding_count": runtime_timeout_diagnostics.get("finding_count"),
+                "overdue_count": runtime_timeout_diagnostics.get("overdue_count"),
+                "retry_exhausted_count": runtime_timeout_diagnostics.get("retry_exhausted_count"),
+                "negative_evidence_required_count": runtime_timeout_diagnostics.get("negative_evidence_required_count"),
+                "phase_counts": runtime_timeout_diagnostics.get("phase_counts", {}),
+                "timeout_kind_counts": runtime_timeout_diagnostics.get("timeout_kind_counts", {}),
+            },
+            recommendation=(
+                "Review the backend command lifecycle snapshot; timeout fallback cannot approve, resume, "
+                "dispatch, retry, kill browser/process state, or mark verifier success."
             ),
         ))
 
@@ -825,6 +856,7 @@ def _closure_readiness_recommendations(
     unknown_era_evidence_issue_count: int,
     replay_historical_debt_present: bool,
     pending_decision_blocker_count: int,
+    runtime_timeout_blocker_count: int,
     system_resource_warning_count: int,
 ) -> list[str]:
     recommendations = []
@@ -832,6 +864,8 @@ def _closure_readiness_recommendations(
         recommendations.append("Current runtime blockers require investigation before closure.")
     if pending_decision_blocker_count:
         recommendations.append("Pending decisions require backend lifecycle resolution; no auto-resolution was performed.")
+    if runtime_timeout_blocker_count:
+        recommendations.append("Runtime timeout diagnostics require operator review; no fallback execution was performed.")
     if current_evidence_failure_count:
         recommendations.append("Current evidence failures remain visible and must not be marked verified without evidence.")
     if historical_evidence_debt_count:
@@ -899,6 +933,7 @@ def run_read_only_maintenance_scan(
     )
     command_lifecycle = _command_lifecycle_snapshot(commands)
     pending_decision_hygiene = build_pending_decision_hygiene_report(commands)
+    runtime_timeout_diagnostics = build_runtime_timeout_diagnostics(commands)
     runtime_snapshot_check = _runtime_snapshot_report(runtime_snapshot, journal)
     websocket = _websocket_report(
         session_id=effective_session_id,
@@ -953,6 +988,7 @@ def run_read_only_maintenance_scan(
         "read_only_contract": read_only_contract,
         "command_lifecycle": command_lifecycle,
         "pending_decision_hygiene": pending_decision_hygiene,
+        "runtime_timeout_diagnostics": runtime_timeout_diagnostics,
         "runtime_snapshot": runtime_snapshot_check,
         "websocket": websocket,
         "action_timeline": action_timeline,
