@@ -21,6 +21,10 @@ from aegis.core.non_executable_runtime_adapter import (
     project_non_executable_events_to_snapshot,
 )
 from aegis.core.protocol import ProtocolEventType, reset_sequence_for_testing
+from aegis.core.repo_audit_inventory_runner_readiness import (
+    REPO_AUDIT_INVENTORY_RUNNER_EXECUTION_PERMISSION,
+    validate_repo_audit_inventory_runner_readiness,
+)
 from aegis.core.runtime_timeout import (
     RuntimePhaseTimeoutInput,
     TimeoutEventProjectionInput,
@@ -461,6 +465,74 @@ def test_threat_journal_cleanup_readiness_does_not_mutate_history_or_expose_exec
     assert readiness["mutation_performed"] is False
     assert readiness["compaction_execution_allowed"] is False
     assert readiness["in_place_mutation_allowed"] is False
+
+
+def test_threat_repo_audit_runner_readiness_rejects_frontend_model_and_read_claims():
+    decision = validate_repo_audit_inventory_runner_readiness(
+        {
+            "request_id": "threat:repo-audit-runner-readiness",
+            "project_ref": "project:aegis",
+            "repo_id": "WexyS/Aegis",
+            "repo_name": "Aegis",
+            "repo_root_ref": "workspace:aegis",
+            "tenant_scope": "local",
+            "namespace": "repo_audit",
+            "read_plan_ref": "repo-audit-read-plan:threat",
+            "runner_scope": ["metadata_only_runner_readiness"],
+            "file_access_mode": "future_read_only",
+            "path_normalization_policy": "relative_path_only",
+            "secret_exclusion_policy": "deny_by_default",
+            "generated_artifact_policy": "deny_by_default",
+            "runtime_journal_policy": "blocked",
+            "log_policy": "blocked",
+            "dependency_policy": "blocked",
+            "build_artifact_policy": "blocked",
+            "model_artifact_policy": "blocked",
+            "vector_db_policy": "blocked",
+            "hidden_path_policy": "explicit_future_gate_required",
+            "symlink_policy": "explicit_future_gate_required",
+            "content_logging_policy": "no_raw_content_logging",
+            "redaction_policy": "redaction_required",
+            "privacy_class": "project_internal",
+            "data_sensitivity": "source_code",
+            "budget_policy": {
+                "max_file_count": 1,
+                "max_file_size_bytes": 1000,
+                "max_total_bytes": 1000,
+                "budget_policy": "human_review_required_above_limits",
+            },
+            "evidence_expectation": ["file_read_attempt_evidence_expected"],
+            "verifier_expectation": ["path_within_repo_root_verifier"],
+            "planned_targets": [
+                {
+                    "original_path": "src/aegis/core/repo_audit_pack.py",
+                    "normalized_relative_path": "src/aegis/core/repo_audit_pack.py",
+                    "category": "future_read_candidate",
+                    "expected_evidence": ["file_read_attempt_evidence_expected"],
+                    "expected_verifier": ["path_within_repo_root_verifier"],
+                }
+            ],
+            "frontend_authority": True,
+            "requested_models": ["model-said-ready"],
+            "file_read_performed": True,
+            "read_result_created": True,
+            "claims": ["proof file content", "official audit result"],
+            "execution_permission": REPO_AUDIT_INVENTORY_RUNNER_EXECUTION_PERMISSION,
+        }
+    )
+
+    assert decision.readiness_status == "blocked_by_unsafe_related_decision"
+    assert "frontend_authority_not_allowed" in decision.failure_reasons
+    assert "model_call_request_denied" in decision.failure_reasons
+    assert "file_read_request_denied" in decision.failure_reasons
+    assert "read_result_creation_denied" in decision.failure_reasons
+    assert "proof_file_content_claim_denied" in decision.failure_reasons
+    assert "official_audit_result_claim_denied" in decision.failure_reasons
+    assert decision.runtime_dispatch_allowed is False
+    assert decision.file_read_performed is False
+    assert decision.read_result_created is False
+    assert decision.evidence_provided_by_readiness is False
+    assert decision.verifier_success is False
     for forbidden_name in (
         "execute_runtime_journal_compaction",
         "apply_runtime_journal_compaction",

@@ -175,6 +175,85 @@ HUMAN_REVIEW_FAILURES = {
     "source_inventory_requires_human_review",
 }
 
+SECRET_PATH_MARKERS = {
+    ".env",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "password",
+    "credential",
+    "credentials",
+    "private_key",
+    "private",
+}
+
+SECRET_PATH_SUFFIXES = {
+    ".env",
+    ".env.local",
+    ".key",
+    ".pem",
+    ".p12",
+    ".pfx",
+}
+
+RUNTIME_JOURNAL_PREFIXES = {
+    "runtime/",
+    "journal/",
+    "journals/",
+    "evidence/",
+    "replay/",
+    "archive/",
+    "archives/",
+}
+
+LOG_PREFIXES = {"logs/", "log/"}
+
+DEPENDENCY_PREFIXES = {
+    ".git/",
+    ".hg/",
+    ".svn/",
+    ".venv/",
+    "venv/",
+    "node_modules/",
+}
+
+BUILD_CACHE_PREFIXES = {
+    ".next/",
+    "dist/",
+    "build/",
+    "coverage/",
+    ".pytest_cache/",
+    "__pycache__/",
+    ".mypy_cache/",
+    ".ruff_cache/",
+    "cache/",
+    "tmp/",
+    "temp/",
+    "scratch/",
+}
+
+MODEL_PREFIXES = {"model/", "models/", "datasets/", "dataset/", "artifacts/"}
+VECTOR_PREFIXES = {"vector_db/", "vectordb/", "vectors/"}
+MODEL_SUFFIXES = {".gguf", ".safetensors", ".onnx"}
+VECTOR_SUFFIXES = {".sqlite", ".db"}
+BROWSER_OUTPUT_PREFIXES = {
+    "screenshots/",
+    "browser-output/",
+    "browser_outputs/",
+    "playwright-report/",
+    "test-results/",
+}
+BROWSER_OUTPUT_SUFFIXES = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".mp4",
+}
+
 
 @dataclass(frozen=True)
 class RepoAuditInventoryRunnerReadinessFailure:
@@ -913,6 +992,14 @@ def _validate_targets(
                 "planned_targets",
                 "denied or future-gated read-plan targets cannot become planned reads",
             )
+        denied_category = _forbidden_path_category(target.original_path)
+        if denied_category is not None:
+            _add_failure(
+                failures,
+                f"planned_target_path_denied_{denied_category}",
+                "planned_targets",
+                "planned read target path is denied by runner readiness path policy",
+            )
         _validate_target_truth_claims(target, "planned_targets", failures)
     for target in denied_targets:
         _validate_target_truth_claims(target, "denied_targets", failures)
@@ -938,6 +1025,13 @@ def _validate_targets(
                 f"future_gated_target_category_denied_{target.category}",
                 "future_gated_targets",
                 "future-gated target category is not recognized",
+            )
+        if not target.human_review_required:
+            _add_failure(
+                failures,
+                "future_gated_target_human_review_required",
+                "future_gated_targets",
+                "future-gated target must preserve human-review requirement",
             )
 
 
@@ -1007,6 +1101,17 @@ def _validate_read_plan_decision(
             "read_plan_decision_has_failures",
             "read_plan_decision.failure_reasons",
             "read plan failures block runner readiness",
+        )
+    execution_permission = _text(_field(decision, "execution_permission"))
+    if execution_permission not in {
+        "",
+        "not_granted_by_repo_audit_read_plan",
+    }:
+        _add_failure(
+            failures,
+            "read_plan_execution_permission_claim_denied",
+            "read_plan_decision.execution_permission",
+            "read plan cannot grant execution permission to runner readiness",
         )
     for field_name in (
         "repo_scan_performed",
@@ -1100,6 +1205,33 @@ def _validate_related_decision(
             f"{prefix}_decision",
             f"{prefix} decision cannot grant runner readiness permissions",
         )
+    behavior_fields = (
+        "actual_source_inventory_performed",
+        "repo_scan_performed",
+        "file_read_performed",
+        "filesystem_traversal_performed",
+        "stat_performed",
+        "file_stat_performed",
+        "git_command_performed",
+        "test_execution_performed",
+        "subprocess_performed",
+        "model_call_performed",
+        "tool_call_performed",
+        "api_call_performed",
+        "mcp_call_performed",
+        "memory_access_performed",
+        "report_generated",
+        "export_performed",
+        "runner_executed",
+        "read_result_created",
+    )
+    if any(_bool_field(decision, field_name) for field_name in behavior_fields):
+        _add_failure(
+            failures,
+            f"{prefix}_behavior_claim_denied",
+            f"{prefix}_decision",
+            f"{prefix} decision cannot claim executed runner, read, scan, tool, report, or export behavior",
+        )
     evidence_fields = (
         "evidence_provided_by_pack_output",
         "evidence_provided_by_readiness",
@@ -1125,6 +1257,35 @@ def _validate_related_decision(
             f"{prefix}_evidence_claim_denied",
             f"{prefix}_decision",
             f"{prefix} decision cannot create runner readiness evidence",
+        )
+    proof_or_certification_fields = (
+        "proof_file_content",
+        "proof_tests_passed",
+        "proof_code_safe",
+        "proof_secure",
+        "proof_compliant",
+        "certification_claim",
+        "developer_work_passport_certification",
+        "proof_of_quality",
+        "hidden_monitoring",
+        "surveillance_mode",
+        "worker_monitoring",
+        "productivity_score",
+        "legal_certification",
+        "security_certification",
+        "compliance_certification",
+        "court_admissible",
+        "court_admissible_claim",
+        "official_audit_result",
+        "signed_report",
+        "report_signed",
+    )
+    if any(_bool_field(decision, field_name) for field_name in proof_or_certification_fields):
+        _add_failure(
+            failures,
+            f"{prefix}_proof_or_certification_claim_denied",
+            f"{prefix}_decision",
+            f"{prefix} decision cannot create proof, certification, surveillance, or official audit claims",
         )
     if _bool_field(decision, "verifier_success") or _bool_field(
         decision,
@@ -1223,6 +1384,8 @@ def _readiness_status(
     if "missing_verifier_expectation" in reasons:
         return "blocked_by_missing_verifier_expectation"
     for category, status in DENIED_TARGET_STATUS.items():
+        if f"planned_target_path_denied_{category}" in reasons:
+            return status
         if f"{category}_preserved" in reasons:
             return status
     if {
@@ -1252,6 +1415,7 @@ def _readiness_status(
         reason.startswith("content_")
         or reason.endswith("_logging_denied")
         or reason == "raw_content_logging_default_denied"
+        or reason == "secret_logging_denied"
         for reason in reasons
     ):
         return "blocked_by_content_logging_policy"
@@ -1262,6 +1426,8 @@ def _readiness_status(
         return "blocked_by_redaction_policy"
     if any(reason.startswith("planned_target_category_denied_") for reason in reasons):
         return "blocked_by_unsafe_related_decision"
+    if "future_gated_target_human_review_required" in reasons:
+        return "readiness_ready_requires_human_review"
     if any(
         reason.endswith("_claim_denied")
         or reason.endswith("_request_denied")
@@ -1445,6 +1611,84 @@ def _readiness_category(category: str) -> str:
     if category.startswith("denied_"):
         return "denied_target_preserved"
     return "unknown_target_preserved"
+
+
+def _forbidden_path_category(path: str) -> str | None:
+    raw_path = _text(path).replace("\\", "/")
+    if not raw_path:
+        return "denied_unknown"
+    if any(ord(character) < 32 for character in raw_path):
+        return "denied_unknown"
+    lowered_raw = raw_path.lower()
+    if lowered_raw.startswith(("file://", "http://", "https://", "s3://", "gs://")):
+        return "denied_external_path"
+    if _is_drive_root(raw_path):
+        return "denied_external_path"
+    if raw_path.startswith("//"):
+        return "denied_external_path"
+    if raw_path.startswith("/") or _is_windows_absolute_path(raw_path):
+        return "denied_external_path"
+    if raw_path.startswith("~"):
+        return "denied_external_path"
+
+    normalized = _collapse_slashes(raw_path)
+    lowered = normalized.lower()
+    if any(part == ".." for part in lowered.split("/")):
+        return "denied_traversal_path"
+    if _is_secret_path(lowered):
+        return "denied_secret_path"
+    if _starts_with_any(lowered, LOG_PREFIXES) or lowered.endswith(".log"):
+        return "denied_log_path"
+    if _starts_with_any(lowered, RUNTIME_JOURNAL_PREFIXES) or "runtime_events.jsonl" in lowered:
+        return "denied_runtime_journal"
+    if _starts_with_any(lowered, DEPENDENCY_PREFIXES):
+        return "denied_dependency_path"
+    if _starts_with_any(lowered, BUILD_CACHE_PREFIXES):
+        return "denied_build_cache"
+    if _starts_with_any(lowered, MODEL_PREFIXES) or _ends_with_any(lowered, MODEL_SUFFIXES):
+        return "denied_model_artifact"
+    if _starts_with_any(lowered, VECTOR_PREFIXES) or _ends_with_any(lowered, VECTOR_SUFFIXES):
+        return "denied_vector_db"
+    if _starts_with_any(lowered, BROWSER_OUTPUT_PREFIXES) or _ends_with_any(
+        lowered,
+        BROWSER_OUTPUT_SUFFIXES,
+    ):
+        return "denied_generated_artifact"
+    if any(part.startswith(".") for part in lowered.split("/")):
+        return "denied_hidden_path"
+    return None
+
+
+def _is_secret_path(lowered_path: str) -> bool:
+    filename = lowered_path.rsplit("/", 1)[-1]
+    return (
+        filename in SECRET_PATH_SUFFIXES
+        or any(lowered_path.endswith(suffix) for suffix in SECRET_PATH_SUFFIXES)
+        or any(marker in lowered_path for marker in SECRET_PATH_MARKERS)
+    )
+
+
+def _is_drive_root(path: str) -> bool:
+    if len(path) == 2 and path[1] == ":":
+        return True
+    return len(path) == 3 and path[1] == ":" and path[2] == "/"
+
+
+def _is_windows_absolute_path(path: str) -> bool:
+    return len(path) > 2 and path[1] == ":" and path[2] == "/"
+
+
+def _collapse_slashes(path: str) -> str:
+    pieces = [piece for piece in path.split("/") if piece]
+    return "/".join(pieces)
+
+
+def _starts_with_any(value: str, prefixes: set[str]) -> bool:
+    return any(value.startswith(prefix) for prefix in prefixes)
+
+
+def _ends_with_any(value: str, suffixes: set[str]) -> bool:
+    return any(value.endswith(suffix) for suffix in suffixes)
 
 
 def _source_refs(value: Any) -> tuple[RepoAuditInventoryRunnerSourceRef, ...]:

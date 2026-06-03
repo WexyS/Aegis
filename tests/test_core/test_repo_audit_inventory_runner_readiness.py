@@ -191,6 +191,27 @@ def _validate(request: dict[str, object], **related_decisions: object):
     return validate_repo_audit_inventory_runner_readiness(request, **related_decisions)
 
 
+def _tampered_read_plan(**overrides: object) -> SimpleNamespace:
+    base = _read_plan()
+    data = dict(base.__dict__)
+    data.update(overrides)
+    return SimpleNamespace(**data)
+
+
+def _target(category: str, path: str, **overrides: object) -> dict[str, object]:
+    target: dict[str, object] = {
+        "original_path": path,
+        "normalized_relative_path": path,
+        "category": category,
+        "decision_reason": f"{category}_test",
+        "expected_evidence": ["file_read_attempt_evidence_expected"],
+        "expected_verifier": ["path_within_repo_root_verifier"],
+        "human_review_required": True,
+    }
+    target.update(overrides)
+    return target
+
+
 def test_valid_minimal_runner_readiness_is_non_authoritative() -> None:
     decision = _validate(_request(), read_plan_decision=_read_plan())
 
@@ -415,8 +436,9 @@ def test_denied_target_in_planned_targets_is_rejected() -> None:
         )
     )
 
-    assert decision.readiness_status == "blocked_by_unsafe_related_decision"
+    assert decision.readiness_status == "blocked_by_secret_policy"
     assert "planned_target_category_denied_denied_secret_path" in decision.failure_reasons
+    assert "planned_target_path_denied_denied_secret_path" in decision.failure_reasons
     assert decision.planned_targets == ()
     assert decision.future_read_attempt_envelopes == ()
 
@@ -485,6 +507,288 @@ def test_unsafe_read_plan_decision_is_rejected() -> None:
     assert decision.readiness_status == "blocked_by_missing_read_plan"
     assert "read_plan_runtime_dispatch_attempt_denied" in decision.failure_reasons
     assert "read_plan_unsafe_contract_claim_denied" in decision.failure_reasons
+
+
+def test_tampered_read_plan_execution_permission_claim_is_rejected() -> None:
+    read_plan = _tampered_read_plan(execution_permission="granted_by_tampered_read_plan")
+
+    decision = _validate(_request(), read_plan_decision=read_plan)
+
+    assert decision.readiness_status == "blocked_by_missing_read_plan"
+    assert "read_plan_execution_permission_claim_denied" in decision.failure_reasons
+    assert decision.runtime_dispatch_allowed is False
+    assert decision.execution_permission == REPO_AUDIT_INVENTORY_RUNNER_EXECUTION_PERMISSION
+
+
+@pytest.mark.parametrize(
+    ("field", "reason"),
+    [
+        ("runtime_dispatch_allowed", "read_plan_runtime_dispatch_attempt_denied"),
+        ("file_read_performed", "read_plan_unsafe_behavior_claim_denied"),
+        ("filesystem_traversal_performed", "read_plan_unsafe_behavior_claim_denied"),
+        ("stat_performed", "read_plan_unsafe_behavior_claim_denied"),
+        ("report_generated", "read_plan_unsafe_behavior_claim_denied"),
+        ("export_performed", "read_plan_unsafe_behavior_claim_denied"),
+        ("source_existence_proven", "read_plan_evidence_claim_denied"),
+        ("file_content_observed", "read_plan_evidence_claim_denied"),
+        ("evidence_provided_by_read_plan", "read_plan_evidence_claim_denied"),
+        ("verifier_success", "read_plan_verifier_success_claim_denied"),
+        ("proof_file_content", "read_plan_proof_or_certification_claim_denied"),
+        ("certification_claim", "read_plan_proof_or_certification_claim_denied"),
+        ("official_audit_result", "read_plan_proof_or_certification_claim_denied"),
+    ],
+)
+def test_tampered_read_plan_behavior_proof_evidence_and_verifier_claims_block(
+    field: str,
+    reason: str,
+) -> None:
+    decision = _validate(_request(), read_plan_decision=_tampered_read_plan(**{field: True}))
+
+    assert reason in decision.failure_reasons
+    assert decision.runtime_dispatch_allowed is False
+    assert decision.file_read_performed is False
+    assert decision.evidence_provided_by_readiness is False
+    assert decision.verifier_success is False
+
+
+def test_tampered_read_plan_cannot_launder_denied_path_into_planned_targets() -> None:
+    read_plan = _tampered_read_plan(
+        planned_targets=(
+            SimpleNamespace(
+                original_path=".env",
+                normalized_relative_path=".env",
+                category="future_read_candidate",
+                decision_reason="tampered_future_read_candidate",
+                expected_evidence=("file_read_attempt_evidence_expected",),
+                expected_verifier=("path_within_repo_root_verifier",),
+                source_existence_proven=False,
+                file_content_observed=False,
+                file_read_performed=False,
+                evidence_provided_by_read_plan=False,
+                verifier_success=False,
+            ),
+        ),
+        denied_targets=(),
+        future_gated_targets=(),
+    )
+
+    decision = _validate(_request(), read_plan_decision=read_plan)
+
+    assert decision.readiness_status == "blocked_by_secret_policy"
+    assert "planned_target_path_denied_denied_secret_path" in decision.failure_reasons
+    assert decision.planned_targets == ()
+    assert decision.future_read_attempt_envelopes == ()
+
+
+@pytest.mark.parametrize(
+    ("category", "status"),
+    [
+        ("denied_secret_path", "blocked_by_secret_policy"),
+        ("denied_runtime_journal", "blocked_by_runtime_journal_policy"),
+        ("denied_log_path", "blocked_by_log_policy"),
+        ("denied_dependency_path", "blocked_by_dependency_policy"),
+        ("denied_build_cache", "blocked_by_build_artifact_policy"),
+        ("denied_model_artifact", "blocked_by_model_artifact_policy"),
+        ("denied_vector_db", "blocked_by_vector_db_policy"),
+        ("denied_external_path", "blocked_by_unsafe_read_plan"),
+        ("denied_traversal_path", "blocked_by_unsafe_read_plan"),
+        ("denied_hidden_path", "blocked_by_hidden_path_policy"),
+        ("denied_symlink", "blocked_by_symlink_policy"),
+    ],
+)
+def test_denied_read_plan_target_categories_remain_denied(category: str, status: str) -> None:
+    decision = _validate(
+        _request(denied_targets=[_target(category, "blocked/path.txt")])
+    )
+
+    assert decision.readiness_status == status
+    assert f"{category}_preserved" in decision.failure_reasons
+    assert decision.planned_targets == ()
+    assert decision.future_read_attempt_envelopes == ()
+
+
+@pytest.mark.parametrize(
+    ("path", "reason", "status"),
+    [
+        (".env", "planned_target_path_denied_denied_secret_path", "blocked_by_secret_policy"),
+        ("credentials/token.txt", "planned_target_path_denied_denied_secret_path", "blocked_by_secret_policy"),
+        ("logs/runtime_events.jsonl", "planned_target_path_denied_denied_log_path", "blocked_by_log_policy"),
+        ("journal/runtime.jsonl", "planned_target_path_denied_denied_runtime_journal", "blocked_by_runtime_journal_policy"),
+        ("evidence/action.json", "planned_target_path_denied_denied_runtime_journal", "blocked_by_runtime_journal_policy"),
+        ("replay/session.jsonl", "planned_target_path_denied_denied_runtime_journal", "blocked_by_runtime_journal_policy"),
+        (".git/config", "planned_target_path_denied_denied_dependency_path", "blocked_by_dependency_policy"),
+        (".venv/pyvenv.cfg", "planned_target_path_denied_denied_dependency_path", "blocked_by_dependency_policy"),
+        ("node_modules/pkg/index.js", "planned_target_path_denied_denied_dependency_path", "blocked_by_dependency_policy"),
+        (".next/server/app.js", "planned_target_path_denied_denied_build_cache", "blocked_by_build_artifact_policy"),
+        ("dist/app.js", "planned_target_path_denied_denied_build_cache", "blocked_by_build_artifact_policy"),
+        ("models/local.gguf", "planned_target_path_denied_denied_model_artifact", "blocked_by_model_artifact_policy"),
+        ("vector_db/index.sqlite", "planned_target_path_denied_denied_vector_db", "blocked_by_vector_db_policy"),
+        ("screenshots/home.png", "planned_target_path_denied_denied_generated_artifact", "blocked_by_generated_artifact_policy"),
+        ("C:/Users/nemes/Desktop/Aegis/README.md", "planned_target_path_denied_denied_external_path", "blocked_by_unsafe_read_plan"),
+        ("//server/share/README.md", "planned_target_path_denied_denied_external_path", "blocked_by_unsafe_read_plan"),
+        ("~/Aegis/README.md", "planned_target_path_denied_denied_external_path", "blocked_by_unsafe_read_plan"),
+        ("src/../secret.py", "planned_target_path_denied_denied_traversal_path", "blocked_by_unsafe_read_plan"),
+        ("src/aegis/core/\x00bad.py", "planned_target_path_denied_denied_unknown", "blocked_by_unsafe_read_plan"),
+    ],
+)
+def test_path_policy_chain_blocks_forbidden_planned_target_paths(
+    path: str,
+    reason: str,
+    status: str,
+) -> None:
+    decision = _validate(
+        _request(planned_targets=[_target("future_read_candidate", path)])
+    )
+
+    assert decision.readiness_status == status
+    assert reason in decision.failure_reasons
+    assert decision.planned_targets == ()
+    assert decision.future_read_attempt_envelopes == ()
+
+
+@pytest.mark.parametrize(
+    "category",
+    [
+        "future_gated_hidden_path",
+        "future_gated_symlink",
+        "future_gated_large_file",
+        "future_gated_sensitive_path",
+    ],
+)
+def test_future_gated_target_categories_remain_gated_and_do_not_create_attempts(
+    category: str,
+) -> None:
+    decision = _validate(
+        _request(
+            future_gated_targets=[
+                _target(
+                    category,
+                    "src/aegis/core/repo_audit_pack.py",
+                    future_gate_reason=f"{category}_requires_future_gate",
+                )
+            ]
+        )
+    )
+
+    assert decision.readiness_status == "readiness_ready_requires_human_review"
+    assert decision.future_gated_targets[0].category == category
+    assert decision.future_gated_targets[0].human_review_required is True
+    assert decision.planned_targets == ()
+    assert decision.future_read_attempt_envelopes == ()
+
+
+def test_future_gated_target_without_human_review_is_flagged() -> None:
+    decision = _validate(
+        _request(
+            future_gated_targets=[
+                _target(
+                    "future_gated_sensitive_path",
+                    "src/aegis/core/repo_audit_pack.py",
+                    human_review_required=False,
+                )
+            ]
+        )
+    )
+
+    assert decision.readiness_status == "readiness_ready_requires_human_review"
+    assert "future_gated_target_human_review_required" in decision.failure_reasons
+    assert decision.future_read_attempt_envelopes == ()
+
+
+def test_secret_logging_must_remain_disabled() -> None:
+    decision = _validate(
+        _request(secrets_never_logged=False),
+        read_plan_decision=_read_plan(),
+    )
+
+    assert decision.readiness_status == "blocked_by_content_logging_policy"
+    assert "secret_logging_denied" in decision.failure_reasons
+    assert decision.content_policy.secrets_never_logged is False
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "actual_source_inventory_performed",
+        "file_read_performed",
+        "filesystem_traversal_performed",
+        "file_stat_performed",
+        "git_command_performed",
+        "test_execution_performed",
+        "model_call_performed",
+        "tool_call_performed",
+        "api_call_performed",
+        "mcp_call_performed",
+        "memory_access_performed",
+    ],
+)
+def test_source_inventory_behavior_claims_are_rejected(field: str) -> None:
+    source_inventory = _unsafe_related_decision(**{field: True})
+
+    decision = _validate(
+        _request(),
+        read_plan_decision=_read_plan(),
+        source_inventory_decision=source_inventory,
+    )
+
+    assert decision.readiness_status == "blocked_by_unsafe_related_decision"
+    assert "source_inventory_behavior_claim_denied" in decision.failure_reasons
+    assert decision.file_read_performed is False
+
+
+@pytest.mark.parametrize(
+    ("argument_name", "expected_prefix", "claims"),
+    [
+        (
+            "repo_audit_decision",
+            "repo_audit",
+            {"proof_file_content": True, "certification_claim": True},
+        ),
+        (
+            "mission_control_decision",
+            "mission_control",
+            {"approval_grant": True, "lease_grant": True},
+        ),
+        (
+            "tool_simulation_decision",
+            "tool_simulation",
+            {"dispatch_performed": True, "tool_call_performed": True},
+        ),
+        (
+            "developer_work_passport_decision",
+            "developer_work_passport",
+            {"developer_work_passport_certification": True, "hidden_monitoring": True},
+        ),
+        (
+            "compliance_evidence_decision",
+            "compliance_evidence",
+            {"legal_certification": True, "court_admissible": True},
+        ),
+        (
+            "plugin_review_decision",
+            "plugin_review",
+            {"plugin_execution_allowed": True, "dynamic_import_allowed": True},
+        ),
+    ],
+)
+def test_related_decision_domain_specific_bypass_claims_are_rejected(
+    argument_name: str,
+    expected_prefix: str,
+    claims: dict[str, object],
+) -> None:
+    decision = _validate(
+        _request(),
+        read_plan_decision=_read_plan(),
+        **{argument_name: _unsafe_related_decision(**claims)},
+    )
+
+    assert decision.readiness_status == "blocked_by_unsafe_related_decision"
+    assert (
+        f"{expected_prefix}_permission_claim_denied" in decision.failure_reasons
+        or f"{expected_prefix}_behavior_claim_denied" in decision.failure_reasons
+        or f"{expected_prefix}_proof_or_certification_claim_denied" in decision.failure_reasons
+    )
+    assert decision.runtime_dispatch_allowed is False
 
 
 @pytest.mark.parametrize(

@@ -270,7 +270,35 @@ Scope expansion requires a future explicit gate.
   memory, and execution claims rejected
 - input and supplied-decision immutability
 
-## 21. Intentionally Not Done
+## 21. V2 Enforcement Hardening
+
+`Repo Audit Pack Read-Only Inventory Runner Readiness v2 / Runner Contract
+Enforcement Tests` added cross-contract enforcement coverage and narrow pure
+hardening.
+
+Additional enforcement:
+
+- tampered read-plan execution permission claims are rejected
+- read-plan behavior, proof, certification, report, export, evidence, and
+  verifier-success claims are rejected
+- planned target paths are syntactically rechecked so secret, runtime,
+  journal, evidence, replay, log, dependency, build/cache, model, vector,
+  browser-output, external, absolute, UNC, home-relative, traversal, control,
+  and hidden paths cannot be laundered into planned reads
+- denied targets remain denied by category
+- future-gated targets preserve human-review requirements
+- source inventory and related decisions cannot claim live read, traversal,
+  stat, git, test, model, tool, API, MCP, memory, report, export, proof,
+  certification, surveillance, plugin execution, dynamic import, marketplace
+  publication, evidence, verifier success, or dispatch behavior
+- a threat-model regression rejects frontend/model/caller claims that a read
+  already happened
+
+This hardening is still metadata-only. It does not add a runner, endpoint,
+runtime wiring, filesystem access, evidence, verifier success, report, export,
+approval, lease, or capability grant.
+
+## 22. Intentionally Not Done
 
 - no actual repo scanning
 - no live file reads
@@ -289,7 +317,7 @@ Scope expansion requires a future explicit gate.
 - no evidence or verifier success
 - no approvals, leases, capabilities, or execution permission
 
-## 22. Future Real Read-Only Runner Notes
+## 23. Future Real Read-Only Runner Notes
 
 A future runner sprint should remain separate and must require:
 
@@ -306,7 +334,7 @@ A future runner sprint should remain separate and must require:
 - content logging and redaction verifier
 - post-run audit showing no forbidden paths were read
 
-## 23. Remaining Risks
+## 24. Remaining Risks
 
 - This contract only validates metadata shape and related-decision safety.
 - It cannot prove a future implementation will enforce the same rules.
