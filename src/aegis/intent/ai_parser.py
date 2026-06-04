@@ -40,8 +40,12 @@ class AIParser:
     def __init__(self) -> None:
         self.llm = get_llm()
 
-    async def parse(self, text: str) -> list[IntentResult]:
+    async def parse(self, text: str, *, model_call_authorized: bool = False) -> list[IntentResult]:
         """Send text to LLM and parse the JSON response with validation."""
+        if not model_call_authorized:
+            logger.warning("[AI-PARSER] Model call not authorized; returning no AI intents.")
+            return []
+
         logger.info("[AI-PARSER] Attempting AI parse for: %r", text)
         
         # Using chat model for general intent parsing
@@ -135,8 +139,18 @@ class AIParser:
             return RiskLevel.LOW
         return RiskLevel.NONE
 
-    async def fix_execution_failure(self, failed_intent: IntentResult, error_message: str) -> list[IntentResult]:
+    async def fix_execution_failure(
+        self,
+        failed_intent: IntentResult,
+        error_message: str,
+        *,
+        model_call_authorized: bool = False,
+    ) -> list[IntentResult]:
         """Attempt to fix a failed execution step using AI."""
+        if not model_call_authorized:
+            logger.warning("[AI-PARSER] Model self-healing not authorized; returning no alternative intents.")
+            return []
+
         logger.info("[AI-PARSER] Attempting self-healing for failed step: %s", failed_intent.intent)
         
         prompt = f"""

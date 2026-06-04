@@ -84,7 +84,13 @@ class IntentParser:
         text = text.lower().strip()
         return APP_ALIASES.get(text)
 
-    async def parse(self, text: str, model: str | None = None) -> list[IntentResult]:
+    async def parse(
+        self,
+        text: str,
+        model: str | None = None,
+        *,
+        model_call_authorized: bool = False,
+    ) -> list[IntentResult]:
         """Parse user input into one or more structured IntentResults."""
         # Safety check: should already be clean from the API layer
         if text.startswith("b'") or text.startswith('b"'):
@@ -93,6 +99,11 @@ class IntentParser:
             text = clean_text(text)
             
         logger.info("[PARSER] Input: %r", text)
+        if model:
+            logger.info(
+                "[PARSER] Ignoring legacy model hint %r; model calls require Model Auto Mode authorization.",
+                model,
+            )
 
         if get_settings().features.deterministic_decomposition:
             deterministic = self._parse_deterministic_decomposition(text)
@@ -127,14 +138,16 @@ class IntentParser:
 
         # 4. AI Fallback: ONLY if the entire command is unrecognized
         if all(r.intent == "unknown" for r in results):
-            if get_settings().features.agent_loop:
+            if get_settings().features.agent_loop and model_call_authorized:
                 logger.info("[PARSER] Rule-based system could not identify ANY segment. Falling back to AI as last resort...")
                 from aegis.intent.ai_parser import get_ai_parser
-                ai_results = await get_ai_parser().parse(text)
+                ai_results = await get_ai_parser().parse(text, model_call_authorized=True)
                 if ai_results:
                     results = ai_results
             else:
-                logger.info("[PARSER] AI fallback disabled; returning deterministic unknown intent.")
+                logger.info(
+                    "[PARSER] AI fallback disabled or not authorized; returning deterministic unknown intent."
+                )
             
         # 5. FINAL SAFETY NET: Force-fix empty open_url or incorrectly routed apps
         # We do this at the very end to catch ANY escape from rule/AI logic

@@ -435,7 +435,7 @@ class Orchestrator:
         
         try:
             # INITIAL PLANNING
-            intents = await self.parser.parse(current_goal, model=routing.planner_model)
+            intents = await self.parser.parse(current_goal)
             if intents:
                 primary_intent = intents[0].intent
             await ws_bridge.emit_event(
