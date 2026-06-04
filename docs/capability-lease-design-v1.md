@@ -1,377 +1,393 @@
 # Capability Lease Design v1
 
-## 1. Decision
+## Decision
 
-- Decision: `LEASE_DESIGN_DOCUMENTED_ONLY`
-- Recorded at: `2026-06-01T02:06:42+03:00`
-- Repository checkpoint before sprint: `a2c761a09ff5b2ffdb173df5823c4e4c6f63ea45`
-- Foundation tag: `foundation-v1-baseline`
-- Foundation tag target: `2662d5de0be805985d095c83a2f11c646a4b6fc2`
+- Decision: `CAPABILITY_LEASE_CONTRACT_WITH_TESTS`
+- Contract version: `capability-lease-design/1`
+- Implementation surface: `src/aegis/core/capability_lease.py`
+- Test surface: `tests/test_core/test_capability_lease.py`
+- Previous sprint: `LOCAL_PROVIDER_HEALTH_READINESS_WITH_TESTS`
 
-This sprint defines the future capability lease model as a design contract only.
-It does not add runtime lease enforcement, dispatch behavior, executor/planner
-integration, MCP/tool integration, Memory OS, Model Router, plugin/skill
-execution, vertical pack behavior, cleanup/archive/compaction execution, or any
-new permission grant.
+This sprint adds a pure capability lease candidate contract. It does not create
+lease storage, issue leases, activate leases, use leases, implement approval UI,
+run runtime execution, probe providers, call models, read repo files, retrieve
+memory, retrieve context, query web, execute plugins/playbooks/rollback, call
+tools/MCP/APIs, or mutate runtime, journal, evidence, or replay state.
 
-## 2. Purpose and Non-Goals
+## Scope
 
-A future capability lease is a scoped, temporary, revocable,
-provenance-backed permission contract. It is intended to connect a backend
-policy decision, risk tier, capability category, approval record when required,
-evidence expectation, expiry, audit record, and revocation state.
+The contract validates caller-supplied lease candidate metadata only. It can
+classify lease subject, risk tier, scope, bounded duration, bounded action
+count, revocability, source/provenance refs, required related decisions,
+blockers, lifecycle state, and future gates.
 
-A lease is not:
+Every `CapabilityLeaseDecision` preserves:
 
-- execution by itself
-- approval by itself unless explicitly tied to an approval event
-- evidence
-- verifier success
-- frontend authority
-- model, memory, context, plugin, skill, or MCP authority
-- a bypass around runtime policy checks
-- a broad permanent permission
-- a cleanup/archive/compaction action
-
-Even a future active lease must be rechecked against backend policy and runtime
-state at use time. The lease design never makes approval alone, policy alone, or
-context alone into execution permission.
-
-## 3. Relationship to Current Policy-as-Code
-
-Authoritative current policy extension surface:
-
-- `src/aegis/core/policy_boundary.py`
-- `POST_FOUNDATION_POLICY_VERSION=post-foundation-policy-extension/1`
-- `evaluate_capability_policy_contract()`
-
-Current policy extension behavior:
-
+- `authority=false`
 - `runtime_dispatch_allowed=false`
-- `execution_permission=not_granted_by_policy_extension`
-- unknown capability is denied
-- unknown risk tier is denied
-- untrusted authority is denied
-- side-effecting risk without approval is denied
-- executable action without evidence expectation is denied
-- cleanup archive/compaction without operator boundary is denied
+- `execution_permission=not_granted_by_capability_lease`
+- `approval_grant=false`
+- `capability_grant=false`
+- `lease_grant=false`
+- `lease_active=false`
+- `lease_created=false`
+- `lease_used=false`
+- `evidence_provided_by_lease=false`
+- `verifier_success=false`
+- `mutation_performed=false`
+- `frontend_authority=false`
+- `model_call_allowed=false`
+- `provider_probe_allowed=false`
+- `repo_file_read_allowed=false`
+- `memory_write_allowed=false`
+- `memory_retrieval_allowed=false`
+- `context_retrieval_allowed=false`
+- `web_query_allowed=false`
+- `plugin_execution_allowed=false`
+- `playbook_execution_allowed=false`
+- `rollback_execution_allowed=false`
+- `external_agent_tracking_allowed=false`
+- `data_sent_external=false`
 
-Future relationship:
+## Why Capability Leases Exist
 
-- Policy may decide whether a lease proposal is eligible for review.
-- Policy does not automatically create, activate, extend, or refresh a lease.
-- A lease does not override policy.
-- Runtime must re-check policy at lease use time in a later explicit integration
-  sprint.
-- Policy helper output remains non-dispatchable until a later runtime boundary
-  explicitly wires enforcement and tests.
+Aegis will eventually need a way to reduce approval fatigue for repeated,
+low-risk, narrowly scoped actions. Lease candidates can describe what a future
+operator-approved lease might cover before actual lease issuance exists.
 
-## 4. Lease Lifecycle
+Capability leases are relevant for future:
 
-| State | Creator | Can authorize runtime dispatch? | Required audit/evidence | Allowed transitions | Forbidden transitions |
-| --- | --- | --- | --- | --- | --- |
-| `proposed` | backend policy review flow or operator request, future only | no | proposal provenance and policy rule reference | `pending_approval`, `denied`, `invalid`, `superseded` | `active` without policy and approval checks |
-| `pending_approval` | backend approval lifecycle, future only | no | approval request id, policy rule, risk tier, scope | `active`, `denied`, `expired`, `revoked`, `invalid` | dispatch or use before approval resolution |
-| `active` | backend lease authority after policy and approval gates, future only | not in this sprint; future use still requires recheck | activation audit, approval event if required, evidence expectation | `consumed`, `expired`, `revoked`, `superseded` | scope expansion, silent refresh, use after expiry/revocation |
-| `expired` | time-bound lease evaluator, future only | no | expiry audit | `superseded` through a new proposal only | refresh in place, dispatch, reuse |
-| `revoked` | operator or backend policy authority, future only | no | revocation actor, reason, timestamp | `superseded` through a new proposal only | dispatch, reuse, automatic unrevocation |
-| `consumed` | future lease use recorder | no unless remaining uses exist in a new evaluated state | use audit and evidence refs | `expired`, `revoked`, `superseded` | hidden reuse beyond `max_uses` |
-| `denied` | backend policy or approval lifecycle | no | denial reason and source | `superseded` through a new proposal only | activation without a new policy review |
-| `invalid` | schema/policy/runtime validator | no | validation failure details | `superseded` through a corrected proposal only | dispatch, approval reuse, silent repair |
-| `superseded` | backend lease authority, future only | no | replacement lease reference | none, except audit/read-only display | dispatch using old lease |
+- local provider health probes
+- repo audit runner reads
+- context retrieval
+- memory operations
+- model calls
+- embeddings and reranking
+- web research
+- document parsing
+- external agent observation
+- plugin and vertical pack operations
+- playbook replay
+- rollback snapshots
+- low-risk file writes
+- tool actions
 
-This lifecycle is a future contract. No lease state machine is implemented or
-connected in this sprint.
+The current contract is readiness only. A lease candidate is not an active
+lease, not approval, not execution permission, not evidence, and not verifier
+success.
 
-## 5. Future Lease Schema
+## Approval Fatigue Problem
 
-Required future fields:
+Approval fatigue is a real product risk. Repeated prompts can make operators
+approve mechanically. A future lease model can help by making repeated low-risk
+actions scoped, bounded, revocable, and auditable.
 
-- `lease_id`
-- `lease_version`
-- `capability_category`
-- `risk_tier`
-- `scope`
-- `subject`
-- `requested_by`
-- `approved_by`
-- `approval_event_id`
-- `policy_rule_id`
-- `policy_decision_ref`
-- `evidence_expectation_id`
-- `created_at`
-- `expires_at`
-- `revoked_at`
-- `revocation_reason`
-- `provenance_refs`
-- `audit_refs`
-- `constraints`
-- `max_uses`
-- `use_count`
-- `runtime_dispatch_allowed=false` until a later explicit integration
-- `execution_permission=not_granted_by_lease_design`
+This sprint does not solve approval fatigue operationally. It only defines the
+metadata constraints future lease issuance must satisfy.
 
-Required future derived flags:
+## Lease Subject Categories
 
-- `expired`
-- `revoked`
-- `scope_match`
-- `approval_required`
-- `approval_present`
-- `evidence_expectation_present`
-- `policy_recheck_required=true`
-- `audit_write_required=true`
-- `journal_write_required_for_use=true`
-- `context_can_authorize=false`
-- `memory_can_authorize=false`
-- `model_can_authorize=false`
-- `plugin_can_authorize=false`
-- `frontend_can_authorize=false`
+Supported lease subjects:
 
-Forbidden schema shortcuts:
+- `local_provider_health_probe_future`
+- `repo_audit_read_future`
+- `repo_inventory_run_future`
+- `context_retrieval_future`
+- `memory_operation_future`
+- `model_call_future`
+- `embedding_generation_future`
+- `reranking_future`
+- `web_research_query_future`
+- `document_parse_future`
+- `external_agent_observation_future`
+- `plugin_operation_future`
+- `vertical_pack_operation_future`
+- `playbook_record_future`
+- `playbook_replay_future`
+- `rollback_snapshot_future`
+- `low_risk_file_write_future`
+- `tool_action_future`
+- `unknown`
 
-- broad implicit wildcard scope
-- missing expiry
-- missing provenance
-- missing policy rule
-- missing approval event for side-effecting capabilities
-- missing evidence expectation for executable actions
-- frontend-only authority
-- context/memory/model/plugin-derived permission
-- hidden runtime dispatch flags
+`unknown` is blocked.
 
-## 6. Scope Model
+## Risk Tiers
 
-Future lease scopes should be explicit, narrow, and machine-checkable.
+Supported risk tiers:
 
-Scope dimensions:
-
-- command scope: command id, trace id, task id, session id
-- app scope: app identity, alias, executable path, process/window verifier
-  expectations
-- file path scope: normalized path, workspace containment, operation class,
-  write mode
-- tool scope: tool id, tool version, action family, allowed parameters
-- network/external scope: host, method, data class, credential boundary
-- memory namespace scope: namespace id, operation, sensitivity level
-- model/provider scope: provider id, model id, routing reason, cost/privacy
-  boundary
-- plugin/skill scope: manifest id, action id, risk tier, rollback plan
-- vertical pack scope: pack id, read/write mode, eval contract
-- cleanup scope: journal/export id, backup path, restore rehearsal id, replay
-  validation id, hash-chain validation id
-
-Scope rules:
-
-- Broad wildcard scopes are denied by default.
-- Scope expansion requires a new lease proposal.
-- Scope mismatch denies future use.
-- Expired lease denies future use.
-- Revoked lease denies future use.
-- Missing approval denies side-effecting lease activation.
-- Missing evidence expectation denies executable lease activation.
-- Missing audit/journal write capability blocks future use.
-
-## 7. Expiry and Revocation
-
-Every future lease must expire. No lease may be permanent by default.
+- `metadata_only`
+- `read_only`
+- `low_risk_local`
+- `medium_risk_local`
+- `high_risk`
+- `destructive`
+- `external_network`
+- `cloud_data_transfer`
+- `sensitive_data`
+- `unknown`
 
 Rules:
 
-- `expires_at` is required.
-- expired leases cannot be used
-- expired leases cannot be refreshed silently
-- lease extension requires a new policy review
-- lease extension requires a new approval where side effects or boundary risk
-  apply
-- every lease must be revocable
-- revoked leases cannot be reused
-- revocation must include actor, reason, timestamp, and audit reference
-- revocation must win over remaining use count
-- revocation must be visible in future operator UI and maintenance diagnostics
+- `metadata_only` can remain `proposed`.
+- `read_only`, `low_risk_local`, and `medium_risk_local` require operator
+  review before any future use.
+- `sensitive_data` requires operator review and policy.
+- `external_network` and `cloud_data_transfer` require future explicit policy.
+- `high_risk` activation is blocked in this contract.
+- `destructive` and `unknown` are blocked.
 
-Recommended initial expiry defaults for future implementation:
+## Lease Scopes
 
-- read-only review leases: short session-bound lifetime
-- local state read leases: short session-bound lifetime
-- side-effecting leases: command/task-bound and single-use by default
-- cleanup/archive/compaction leases: boundary-sprint-bound and operator
-  checkpoint-bound
+Supported scopes:
 
-These defaults are design recommendations only.
+- `session_scoped`
+- `project_scoped`
+- `repository_scoped`
+- `path_scoped`
+- `tool_scoped`
+- `provider_scoped`
+- `model_scoped`
+- `context_scoped`
+- `memory_scoped`
+- `web_domain_scoped_future`
+- `external_agent_scoped_future`
+- `disabled`
+- `unknown`
 
-## 8. Provenance and Audit
+Rules:
 
-Future lease records must reference:
+- `session_scoped` requires `session_ref`.
+- `project_scoped` requires `project_ref`.
+- `repository_scoped` requires `project_ref` and `repository_ref`.
+- `path_scoped` requires `project_ref`, `repository_ref`, and bounded
+  relative `path_prefixes`.
+- `tool_scoped` requires explicit `allowed_tools`.
+- provider/model/context/memory subjects require matching explicit scope
+  metadata.
+- `disabled` and `unknown` are blocked.
 
-- policy decision
-- policy rule id
-- capability category
-- risk tier
-- approval event when approval is required
-- source request/context as provenance only
-- evidence expectation
-- operator boundary approval when required
-- audit records for proposal, activation, use, expiry, revocation, denial, and
-  supersession
+## Lease Lifecycle States
 
-Future use rules:
+The contract models these lifecycle states:
 
-- every lease use must be journaled
-- every side-effecting use must produce execution evidence or explicit negative
-  evidence
-- failure to write audit blocks future execution
-- failure to write journal blocks future execution
-- failure to define evidence expectation blocks future execution
-- verifier failure remains failure; it cannot be repaired by lease state
+- `proposed`
+- `requires_policy`
+- `requires_identity_scope`
+- `requires_context_policy`
+- `requires_memory_governance`
+- `requires_provider_health`
+- `requires_human_approval`
+- `ready_for_operator_review`
+- `active_future_only`
+- `denied`
+- `expired`
+- `revoked`
+- `superseded`
+- `blocked`
+- `unknown`
 
-Source request, Context Compiler package, memory retrieval, model output,
-frontend projection, plugin manifest, or MCP discovery may be provenance refs.
-They cannot be authority refs.
+This sprint never returns an active usable lease. `active_future_only`, if used
+later, must remain metadata-only and non-dispatchable until a separate boundary
+sprint proves active lease storage/use safe.
 
-## 9. Relationship to Context Compiler
+## Lease Constraints
 
-Context Compiler cannot:
+Lease candidates may include:
 
-- create a lease
-- activate a lease
-- refresh a lease
-- extend expiry
-- expand scope
-- satisfy approval
-- satisfy evidence
-- satisfy verifier checks
-- reduce risk tier
-- grant command permission
-- grant execution permission
+- `lease_id`
+- `lease_subject`
+- `lease_scope`
+- `risk_tier`
+- `namespace`
+- `project_ref`
+- `repository_ref`
+- `session_ref`
+- `path_prefixes`
+- `allowed_tools`
+- `allowed_provider_classes`
+- `allowed_model_roles`
+- `allowed_context_categories`
+- `allowed_memory_categories`
+- `allowed_domains_future`
+- `max_actions`
+- `max_duration_seconds`
+- `expires_at_metadata`
+- `requires_evidence_plan`
+- `requires_verifier_plan`
+- `requires_negative_evidence_on_failure`
+- `requires_redaction`
+- `requires_secret_safe_logging`
+- `requires_operator_review`
+- `revocable`
+- `source_refs`
+- `provenance`
+- `limitations`
+- `unknowns`
 
-Context Compiler may only provide bounded context/provenance for human review or
-backend policy review. Any future runtime usage must re-check policy after
-context compilation and before lease proposal or use.
+Rules:
 
-## 10. Relationship to Memory, Model, Plugin, Skill, and MCP
+- `max_duration_seconds` must be positive and bounded.
+- `max_actions` must be positive and bounded.
+- lease candidates must be revocable.
+- source refs or provenance are required.
+- lease metadata cannot contain secret/credential scopes.
+- lease metadata cannot authorize surveillance or productivity scoring.
 
-Memory cannot create, activate, refresh, or extend a lease. Memory cannot
-authorize execution and cannot satisfy approval.
+## Hard Blocked Scopes
 
-Model output cannot create, activate, refresh, or extend a lease. Model output
-may suggest a plan, but a future lease must be backed by backend policy,
-approval where required, scope, evidence expectation, and audit.
+The validator blocks:
 
-Plugin and skill manifests cannot create, activate, refresh, or extend a lease.
-Manifest-declared permissions are requests for backend registration, not
-permission grants.
+- unknown or disabled scope
+- wildcard/all tool/model/provider/context/memory/domain scopes
+- broad filesystem scope
+- absolute paths
+- external paths
+- home/root/global paths
+- path traversal
+- secret, credential, token, API key, or `.env` path/scope markers
+- surveillance/productivity scoring scopes
+- destructive risk
+- unknown risk
+- high-risk activation
+- unbounded duration
+- unbounded action count
+- non-revocable leases
 
-MCP/tool availability cannot create, activate, refresh, or extend a lease. Tool
-discovery is not permission. Every future tool call requires backend policy
-registration, risk tier, approval rules, evidence expectation, audit plan, and
-future lease checks where applicable.
+## Relationship To Policy-as-Code Extension
 
-Vertical packs cannot bypass the generic lease contract. Pack-specific actions
-must start read-only or approval-gated and reuse the same risk, scope, evidence,
-audit, and rollback requirements.
+Policy-as-code metadata is required. A blocked policy extension blocks lease
+readiness. Policy metadata cannot create a lease, activate a lease, use a
+lease, or override other governance boundaries.
 
-## 11. Cleanup, Archive, and Compaction Lease Handling
+## Relationship To Identity Scope
 
-Cleanup inventory is read-only and does not require an execution lease.
+Identity Scope is required for session, project, repository, and path-scoped
+lease candidates. Identity metadata cannot authorize runtime dispatch or active
+lease use.
 
-Archive and compaction are special boundary classes:
+## Relationship To Memory Governance
 
-- `cleanup_archive` requires explicit operator boundary approval
-- `cleanup_compaction` requires explicit operator boundary approval
-- backup, restore rehearsal, replay validation, hash-chain validation, and audit
-  references are mandatory before any future activation
-- replay boundary blockers prevent activation
-- hash-chain risk prevents activation
-- unknown-era evidence issues cannot be silently reclassified to satisfy a lease
-- journal rewrite, truncation, deletion, resequencing, or repair remains
-  forbidden unless a later explicit boundary sprint proves it safe
+Memory Governance is required for `memory_operation_future`. A lease candidate
+cannot write memory, retrieve memory, refresh memory, or use memory as
+authority.
 
-Any future cleanup lease must preserve original journal/evidence artifacts and
-must not make runtime health green by hiding historical, unknown-era, replay, or
-resource debt.
+## Relationship To Context Policy
 
-## 12. Future Test Plan
+Context Policy is required for `context_retrieval_future`. A lease candidate
+cannot retrieve context, create a context package, route context to a provider,
+or treat context as permission.
 
-When the first non-executing lease helper is added, focused tests should assert:
+## Relationship To Model Auto Mode
 
-- proposed lease is non-dispatchable
-- `runtime_dispatch_allowed=false`
-- `execution_permission=not_granted_by_lease_design`
-- missing approval blocks side-effecting lease activation
-- expired lease is invalid
-- revoked lease is invalid
-- scope mismatch denies use
-- wildcard scope is denied by default
-- context cannot create a lease
-- memory cannot create a lease
-- model output cannot create a lease
-- plugin/skill manifest cannot create a lease
-- MCP/tool discovery cannot create a lease
-- cleanup archive/compaction cannot activate without explicit boundary approval
-- replay/hash-chain blockers prevent cleanup lease activation
-- lease alone is not execution permission
-- approval alone is not execution permission
-- policy alone is not execution permission
-- frontend projection cannot be authority
+Model Auto Mode is required for model-call, embedding, and reranking lease
+candidates. Auto Mode candidate metadata cannot authorize model execution, and
+a lease candidate cannot make a model call safe by itself.
 
-When runtime enforcement is eventually proposed, tests must also prove:
+## Relationship To Local Provider Health
 
-- executor cannot dispatch from lease presence alone
-- planner cannot use lease state as permission
-- missing audit write blocks use
-- missing journal write blocks use
-- failed verifier result remains failed
-- negative evidence remains failed or unverified evidence, not success
-- revoked lease cannot be raced into dispatch
-- expired lease cannot be refreshed implicitly
+Local Provider Health readiness is required for local provider health probe
+and model-call lease candidates. Provider health readiness remains metadata
+only. A lease candidate cannot probe an endpoint or prove provider health.
 
-## 13. Implementation Phases
+## Relationship To Repo Audit Runner
 
-Recommended future sequence:
+Repo Audit/read-plan metadata is required for repo read or inventory run lease
+candidates. Lease readiness cannot read files, run inventory, create findings,
+or produce evidence.
 
-1. Lease contract helper, pure and non-dispatching.
-2. Lease proposal validator, still non-dispatching.
-3. Lease storage design with provenance and audit schema, no runtime use.
-4. Operator review UI for lease proposals, no execution.
-5. Policy recheck and approval linkage tests, no executor integration.
-6. Read-only maintenance diagnostics for lease inventory.
-7. Explicit runtime boundary sprint for enforcement, if approved.
-8. Tool/MCP integration only after policy, lease, evidence, audit, and rollback
-   tests are in place.
+## Relationship To Web Research Gateway
 
-Do not collapse these phases. Runtime enforcement must not be introduced through
-a design helper, UI display, Context Compiler output, or tool registry metadata.
+Web research lease candidates are future-gated. They require a future web
+research gateway policy before any query can run. This contract never allows
+web queries or external data transfer.
 
-## 14. Non-Goals
+## Relationship To External Agent Oversight
 
-- No runtime lease enforcement.
-- No executor, planner, tool, MCP, memory, model router, plugin, skill, or
-  vertical pack integration.
-- No new runtime permission.
-- No new execution path.
-- No approval behavior change.
-- No existing policy behavior change.
-- No verifier behavior change.
-- No journal/evidence/replay/runtime mutation.
-- No runtime health change.
-- No cleanup/archive/compaction execution.
-- No frontend authority change.
+External agent observation is future-gated. Lease candidates cannot track
+external agents, score productivity, or authorize surveillance.
 
-## 15. Recommended Next Workstream
+## Relationship To Plugin / Vertical Pack
 
-Recommended next prompt:
+Plugin and vertical pack metadata cannot grant leases. Plugin operation lease
+candidates remain future-gated and cannot load, execute, or trust plugin output
+as authority.
 
-`Local Environment Resource Hygiene & Model Storage Readiness v1`
+## Relationship To Playbook / Rollback
 
-Reason: the foundation still reports resource pressure around disk usage, and
-resource hygiene can be designed/readied without changing policy, evidence,
-approval, verifier, journal, replay, or execution semantics.
+Playbook replay and rollback snapshot subjects are future-gated. Lease
+candidates cannot replay workflows, create rollback snapshots, execute
+rollback, mutate runtime state, or bypass approval/policy.
 
-Alternative:
+## Why Lease Candidate Is Not Active Lease
 
-`Context Compiler Read-Only Contract Implementation v1`
+A candidate only describes a possible future lease. It does not create storage,
+does not issue an approval-derived grant, does not mark itself active, and does
+not authorize a runtime path. Future active lease work must separately prove:
 
-Use this only if it remains read-only, non-authoritative, disconnected from
-planner/executor/tool execution, and consistent with policy-as-code and future
-lease boundaries.
+- storage integrity
+- expiry enforcement
+- revocation enforcement
+- audit records
+- evidence expectations
+- verifier expectations
+- policy re-check at use time
+- failure/negative evidence behavior
+
+## Why Lease Is Not Evidence Or Verifier Success
+
+Evidence must come from backend-owned runtime events and evidence capture.
+Verifier success must come from verifier checks. A lease candidate can require
+future evidence/verifier plans, but it cannot create evidence, verify an action,
+or hide missing/failed evidence.
+
+## Why Lease Cannot Override Policy
+
+Policy remains the controlling boundary. A future lease must be derived from
+policy and approval metadata and must be re-checked at use time. Context,
+memory, model output, plugin manifests, frontend projections, tool simulation,
+Mission Control wording, compliance/passport metadata, and repo-audit metadata
+cannot grant a lease or activate one.
+
+## Intentionally Not Done
+
+This sprint intentionally did not:
+
+- implement lease storage
+- issue leases
+- activate leases
+- use leases
+- implement approval UI
+- add runtime/API/frontend behavior
+- probe providers
+- call models
+- read repo files
+- retrieve memory or context
+- query web
+- execute plugins, playbooks, rollback, tools, MCP, or APIs
+- mutate runtime, journal, evidence, or replay
+- create evidence or verifier success
+
+## Future Implementation Notes
+
+A future lease implementation would need:
+
+- immutable lease records
+- expiry enforcement
+- revocation enforcement
+- use counters
+- scope matching
+- policy re-checks at use time
+- audit/journal events
+- negative evidence on failed lease use
+- backup/restore/replay/hash-chain gates for cleanup-like subjects
+- explicit operator approval binding
+- tests that prove approval alone and lease alone are not execution permission
+
+## Remaining Risks
+
+- Lease concepts can be misread as permission if UI wording is careless.
+- Broad scopes and long durations remain dangerous.
+- Future low-risk action shortcuts can create approval fatigue if not audited.
+- Provider/model/repo/web/memory subjects each need separate execution-boundary
+  sprints before lease use can be considered.
+- Active lease storage and revocation are intentionally unresolved.
