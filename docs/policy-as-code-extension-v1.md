@@ -1,5 +1,46 @@
 # Policy-as-Code Extension v1
 
+## 0. 2026-06-05 Foundation Hardening Update
+
+- Decision: `POLICY_AS_CODE_EXTENSION_WITH_TESTS`
+- Repository checkpoint before sprint: `bb9df1d4066acbb95c258994834dcf40a15d62b4`
+- Previous completed sprint: `MEMORY_GOVERNANCE_CONTRACT_WITH_TESTS`
+- Foundation tag: `foundation-v1-baseline`
+
+This update adds a second pure policy extension surface:
+
+- `PolicyExtensionDecision`
+- `evaluate_policy_extension_request(...)`
+- `POLICY_SUBJECT_KINDS`
+- `POLICY_ACTION_KINDS`
+- `POLICY_OUTCOMES`
+
+The helper classifies future memory, context, model, vector, web research,
+repo-audit, external agent, plugin, vertical pack, capability lease, playbook,
+rollback, frontend, and MCP policy metadata. It does not call tools, retrieve
+context, write memory, call models, read repo files, create leases, replay
+playbooks, execute rollbacks, dispatch runtime commands, create evidence, mark
+verifier success, or change frontend authority.
+
+Every decision from this extension preserves:
+
+- `authority=false`
+- `runtime_dispatch_allowed=false`
+- `execution_permission=not_granted_by_policy_extension`
+- `approval_grant=false`
+- `capability_grant=false`
+- `lease_grant=false`
+- `evidence_provided_by_policy=false`
+- `verifier_success=false`
+- `mutation_performed=false`
+- `frontend_authority=false`
+- all future feature allow flags false
+- `requires_backend_validation=true`
+
+The existing runtime guard remains the only place where current runtime policy
+can allow existing dispatchable actions after normal guard classification. The
+new post-foundation helper is intentionally non-dispatchable.
+
 ## 1. Decision
 
 - Decision: `POLICY_EXTENSION_WITH_DENY_DEFAULT_TESTS`
@@ -32,11 +73,132 @@ Added design-time contract surface:
 - `POST_FOUNDATION_RISK_TIERS`
 - `POST_FOUNDATION_CAPABILITY_CATEGORIES`
 - `evaluate_capability_policy_contract()`
+- `PolicyExtensionDecision`
+- `POLICY_SUBJECT_KINDS`
+- `POLICY_ACTION_KINDS`
+- `POLICY_OUTCOMES`
+- `evaluate_policy_extension_request()`
 
 The new helper is pure and not wired to dispatcher, executor, planner, Context
 Compiler runtime integration, Memory OS, MCP, Model Router, plugins, skills, or
 vertical packs. It always returns `runtime_dispatch_allowed=false` and
 `execution_permission=not_granted_by_policy_extension`.
+
+`evaluate_capability_policy_contract()` remains the design-time capability and
+risk-tier contract evaluator. `evaluate_policy_extension_request()` is the
+future subject/action classifier for the next post-foundation modules. Neither
+helper changes `POLICY_DISPATCHABLE_TOOL_NAMES`.
+
+## 2A. Subject, Action, and Outcome Taxonomy
+
+Policy subject kinds:
+
+- `runtime_command`
+- `tool_action`
+- `memory_operation`
+- `context_operation`
+- `model_operation`
+- `vector_operation`
+- `web_research_operation`
+- `repo_audit_operation`
+- `external_agent_operation`
+- `plugin_operation`
+- `vertical_pack_operation`
+- `capability_lease_operation`
+- `playbook_operation`
+- `rollback_operation`
+- `frontend_request`
+- `mcp_output`
+- `unknown`
+
+Policy action kinds:
+
+- `read_only_observation`
+- `metadata_validation`
+- `proposal_only`
+- `simulate`
+- `dry_run_preview`
+- `memory_write`
+- `memory_retrieve`
+- `memory_delete`
+- `memory_export`
+- `context_retrieve`
+- `context_package`
+- `vector_index`
+- `embedding_generate`
+- `rerank`
+- `model_call`
+- `cloud_model_call`
+- `web_query`
+- `repo_file_read`
+- `repo_inventory_run`
+- `external_agent_observe`
+- `external_agent_track`
+- `plugin_load`
+- `plugin_execute`
+- `lease_create`
+- `lease_use`
+- `playbook_record`
+- `playbook_replay`
+- `rollback_snapshot`
+- `rollback_execute`
+- `frontend_authority_claim`
+- `mcp_authority_claim`
+- `unknown`
+
+Policy outcomes:
+
+- `allowed_metadata_only`
+- `allowed_proposal_only`
+- `requires_approval`
+- `requires_capability_lease`
+- `requires_human_review`
+- `requires_identity_scope`
+- `requires_memory_governance`
+- `requires_context_policy`
+- `requires_provider_policy`
+- `requires_evidence_plan`
+- `requires_verifier_plan`
+- `blocked_by_policy`
+- `blocked_by_privacy`
+- `blocked_by_unknown_scope`
+- `blocked_by_missing_governance`
+- `blocked_by_sensitive_data`
+- `blocked_by_frontend_authority`
+- `blocked_by_mcp_authority`
+- `blocked_by_unimplemented_feature`
+- `unsupported`
+- `unknown`
+
+`allowed_metadata_only` and `allowed_proposal_only` mean only that policy
+metadata is not blocked by this pure classifier. They do not grant approval,
+capability, lease, execution permission, evidence, verifier success, runtime
+truth, frontend authority, or memory/model/context/tool behavior.
+
+## 2B. Future Feature Rules
+
+- Memory operations require Memory Governance and remain proposal-only.
+- Model operations require future Model Auto Mode and provider health policy;
+  local model inventory metadata alone is not model-call permission.
+- Cloud model calls require future provider, region, terms, and secret policy.
+- Context retrieval requires future Context Retrieval Policy; context package
+  metadata is still not permission.
+- Vector indexing, embedding generation, and reranking require future vector,
+  embedding, context, and memory governance policy.
+- Web research requires future Web Research Gateway policy and query privacy
+  gates.
+- Repo file reads require future Repo Audit Runner, source inventory, read-plan,
+  evidence, and verifier gates.
+- External agent tracking requires future external agent oversight and identity
+  scope.
+- Plugin execution is blocked unless a future plugin execution policy exists.
+- Vertical pack metadata does not create runtime behavior.
+- Lease creation/use is blocked unless future Capability Lease policy exists.
+- Playbook replay is blocked unless future playbook and lease policy exists.
+- Rollback snapshot/execution requires a future rollback contract.
+- Frontend authority claims are blocked.
+- MCP authority claims are blocked.
+- Unknown subject/action is unsupported and requires human review.
 
 ## 3. Risk Tier Model
 
@@ -187,6 +349,34 @@ Policy rules:
 
 The focused policy tests assert:
 
+- Unknown policy subject/action is unsupported and non-dispatchable.
+- Metadata-only policy classification is not execution.
+- Proposal-only policy classification is not approval, lease, capability,
+  evidence, verifier success, or frontend authority.
+- Policy success/evidence/verifier/model-output proof claims are rejected.
+- Inputs and related decisions are not mutated.
+- Memory write and retrieve require Memory Governance.
+- Valid Memory Governance still leaves memory operations proposal-only.
+- Secret-like memory operations are blocked.
+- Unknown identity blocks persistent memory policy.
+- Model calls remain blocked pending future Auto Mode and provider health
+  policy.
+- Cloud model calls remain blocked pending region, terms, and secret policy.
+- Local model inventory metadata alone is not model-call permission.
+- Legacy router hints do not allow model calls.
+- Context package metadata is not permission.
+- Context retrieval, vector indexing, embedding generation, and reranking are
+  blocked pending future policy gates.
+- Web query and repo file read actions are blocked pending future gateway and
+  runner gates.
+- External agent tracking, MCP authority claims, and frontend authority claims
+  are blocked.
+- Plugin review and vertical pack metadata do not allow execution.
+- Lease create/use, playbook replay, rollback snapshot, and rollback execution
+  are blocked pending future contracts.
+- Unsafe related decisions with dispatch, evidence, or verifier claims are
+  rejected.
+- Future subject/action names are not added to existing dispatchable tool names.
 - Unknown capability is denied.
 - Context-, memory-, model-, plugin-, and frontend-derived permission is denied.
 - Side-effecting risk tiers require approval and evidence expectation.
