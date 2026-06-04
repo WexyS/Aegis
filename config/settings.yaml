@@ -26,8 +26,27 @@ logging:
 memory:
   stm_max_turns: 20
   episodic_retention_days: 90
-  semantic_auto_index: true
-  procedural_enabled: true
+  governance_status: "not_implemented"
+  semantic_auto_index: false
+  procedural_enabled: false
+  memory_write_authorized: false
+  memory_retrieval_authorized: false
+  vector_store_enabled: false
+  rag_enabled: false
+
+models:
+  backend: "offline_disabled"
+  base_url: ""
+  timeout: 120.0
+  default_model: "not_configured"
+  chat_model: "not_configured"
+  code_model: "not_configured"
+  embed_model: "not_configured"
+  provider_status: "not_configured"
+  provider_health_verified: false
+  model_calls_authorized: false
+  embedding_generation_authorized: false
+  auto_mode_enabled: false
 
 features:
   cloud_fallback: false

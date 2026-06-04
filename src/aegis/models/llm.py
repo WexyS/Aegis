@@ -29,6 +29,10 @@ class LLMProvider:
 
     async def generate(self, prompt: str, system_prompt: str | None = None, model_type: str = "default") -> str:
         """Generate text from the LLM with retry mechanism and model routing."""
+        if not self.settings.models.model_calls_authorized:
+            logger.warning("[LLM] Model call denied; config is metadata-only and not execution permission.")
+            return ""
+
         model = self._resolve_model(model_type)
         
         if self.backend == "ollama":
@@ -86,6 +90,10 @@ class LLMProvider:
 
     async def embed(self, text: str) -> list[float]:
         """Generate embeddings using the specialized embedding model."""
+        if not self.settings.models.embedding_generation_authorized:
+            logger.warning("[LLM-EMBED] Embedding denied; config is metadata-only and not permission.")
+            return []
+
         model = self.settings.models.embed_model
         
         if self.backend == "ollama":

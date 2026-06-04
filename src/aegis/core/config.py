@@ -96,18 +96,28 @@ class LoggingSettings(BaseModel):
 class MemorySettings(BaseModel):
     stm_max_turns: int = 20
     episodic_retention_days: int = 90
-    semantic_auto_index: bool = True
-    procedural_enabled: bool = True
+    governance_status: str = "not_implemented"
+    semantic_auto_index: bool = False
+    procedural_enabled: bool = False
+    memory_write_authorized: bool = False
+    memory_retrieval_authorized: bool = False
+    vector_store_enabled: bool = False
+    rag_enabled: bool = False
 
 
 class ModelSettings(BaseModel):
-    backend: str = "ollama"
-    base_url: str = "http://localhost:11434"
+    backend: str = "offline_disabled"
+    base_url: str = ""
     timeout: float = 120.0
-    default_model: str = "qwen3:8b"
-    chat_model: str = "qwen3:8b"
-    code_model: str = "qwen2.5-coder:14b"
-    embed_model: str = "nomic-embed-text"
+    default_model: str = "not_configured"
+    chat_model: str = "not_configured"
+    code_model: str = "not_configured"
+    embed_model: str = "not_configured"
+    provider_status: str = "not_configured"
+    provider_health_verified: bool = False
+    model_calls_authorized: bool = False
+    embedding_generation_authorized: bool = False
+    auto_mode_enabled: bool = False
     
     # Recovery Budget (Reliability Science)
     max_recovery_depth: int = 3
@@ -154,13 +164,13 @@ class EnvOverrides(BaseSettings):
     aegis_require_approval_high_risk: bool = True
     aegis_log_level: str = "DEBUG"
     aegis_log_dir: str = "./logs"
-    aegis_backend: str = "ollama"
-    aegis_base_url: str = "http://localhost:11434"
+    aegis_backend: str = "offline_disabled"
+    aegis_base_url: str = ""
     aegis_model_timeout: float = 120.0
-    aegis_default_model: str = "qwen3:8b"
-    aegis_chat_model: str = "qwen3:8b"
-    aegis_code_model: str = "qwen2.5-coder:14b"
-    aegis_embed_model: str = "nomic-embed-text"
+    aegis_default_model: str = "not_configured"
+    aegis_chat_model: str = "not_configured"
+    aegis_code_model: str = "not_configured"
+    aegis_embed_model: str = "not_configured"
     aegis_cloud_enabled: bool = False
     aegis_vision_feed: bool = Field(False, validation_alias="AEGIS_VISION_FEED")
     enable_deterministic_decomposition: bool | None = Field(

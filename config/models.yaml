@@ -1,8 +1,12 @@
 # ============================================================
-# AEGIS — Model Registry
+# AEGIS — Future-Gated Model Registry Metadata
 # ============================================================
-# All models are local-first. Cloud adapters are optional.
-# VRAM budget: 12 GB (RTX 4080)
+# This file is not consumed as runtime provider selection.
+# A configured provider URL or model name is not endpoint health, model
+# availability, Auto Mode permission, evidence, verifier success, or execution
+# authority. Future Model Auto Mode / Provider Health Check work must validate
+# these entries before any model call.
+# VRAM budget note: metadata only, not live resource verification.
 
 defaults:
   backend: "lm-studio"
