@@ -134,6 +134,49 @@ def test_generic_click_is_not_dispatchable_policy_surface() -> None:
     assert "click" not in POLICY_DISPATCHABLE_TOOL_NAMES
 
 
+def test_policy_dispatchable_tool_names_do_not_expand_without_guard_update() -> None:
+    expected_dispatchable = {
+        "read_file",
+        "list_directory",
+        "search_files",
+        "grep_in_files",
+        "file_info",
+        "write_file",
+        "create_file",
+        "edit_file",
+        "read_page",
+        "scroll",
+        "search_web",
+        "open_url",
+        "type",
+        "open_app",
+        "focus_app",
+        "close_app",
+        "run_command",
+        "git_action",
+        "general_chat",
+    }
+
+    assert POLICY_DISPATCHABLE_TOOL_NAMES == expected_dispatchable
+    assert {
+        "click",
+        "browser_click",
+        "desktop_click",
+        "model_call",
+        "cloud_model_call",
+        "context_retrieve",
+        "memory_write",
+        "memory_retrieve",
+        "vector_index",
+        "embedding_generate",
+        "rerank",
+        "web_query",
+        "repo_file_read",
+        "plugin_execute",
+        "lease_use",
+    }.isdisjoint(POLICY_DISPATCHABLE_TOOL_NAMES)
+
+
 def test_policy_boundary_allows_ready_decision_only_after_policy_classification() -> None:
     decision = classify_intent_risk("open_app", {"app": "notepad"})
 

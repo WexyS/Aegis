@@ -94,6 +94,40 @@ async def test_llm_provider_generate_denies_http_without_config_authorization(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("backend", "base_url"),
+    [
+        ("ollama", "http://127.0.0.1:11434"),
+        ("lm-studio", "http://127.0.0.1:1234/v1"),
+        ("openai-compatible", "http://127.0.0.1:8001/v1"),
+    ],
+)
+async def test_llm_provider_generate_denies_http_even_with_provider_metadata_when_unauthorized(
+    monkeypatch: pytest.MonkeyPatch,
+    backend: str,
+    base_url: str,
+) -> None:
+    monkeypatch.setenv("AEGIS_BACKEND", backend)
+    monkeypatch.setenv("AEGIS_BASE_URL", base_url)
+    monkeypatch.setenv("AEGIS_DEFAULT_MODEL", "metadata-default-model")
+    monkeypatch.setenv("AEGIS_CHAT_MODEL", "metadata-chat-model")
+    load_settings(force_reload=True)
+
+    class ForbiddenAsyncClient:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("provider metadata alone must not instantiate an HTTP client")
+
+    monkeypatch.setattr("aegis.models.llm.httpx.AsyncClient", ForbiddenAsyncClient)
+
+    provider = LLMProvider()
+
+    assert provider.backend == backend
+    assert provider.base_url == base_url
+    assert provider.settings.models.model_calls_authorized is False
+    assert await provider.generate("hello", model_type="chat") == ""
+
+
+@pytest.mark.asyncio
 async def test_llm_provider_embed_denies_http_without_embedding_authorization(
     monkeypatch: pytest.MonkeyPatch,
     default_settings,
@@ -106,6 +140,39 @@ async def test_llm_provider_embed_denies_http_without_embedding_authorization(
 
     provider = LLMProvider()
 
+    assert await provider.embed("hello") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("backend", "base_url"),
+    [
+        ("ollama", "http://127.0.0.1:11434"),
+        ("lm-studio", "http://127.0.0.1:1234/v1"),
+        ("openai-compatible", "http://127.0.0.1:8001/v1"),
+    ],
+)
+async def test_llm_provider_embed_denies_http_even_with_embedding_metadata_when_unauthorized(
+    monkeypatch: pytest.MonkeyPatch,
+    backend: str,
+    base_url: str,
+) -> None:
+    monkeypatch.setenv("AEGIS_BACKEND", backend)
+    monkeypatch.setenv("AEGIS_BASE_URL", base_url)
+    monkeypatch.setenv("AEGIS_EMBED_MODEL", "metadata-embedding-model")
+    load_settings(force_reload=True)
+
+    class ForbiddenAsyncClient:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("embedding metadata alone must not instantiate an HTTP client")
+
+    monkeypatch.setattr("aegis.models.llm.httpx.AsyncClient", ForbiddenAsyncClient)
+
+    provider = LLMProvider()
+
+    assert provider.backend == backend
+    assert provider.base_url == base_url
+    assert provider.settings.models.embedding_generation_authorized is False
     assert await provider.embed("hello") == []
 
 
@@ -146,6 +213,17 @@ def test_models_yaml_is_metadata_not_provider_health_or_auto_mode() -> None:
     assert "not endpoint health" in text
     assert "not consumed as runtime provider selection" in text
     assert "not live resource verification" in text
+
+
+def test_rag_package_is_stub_only_and_has_no_runtime_vector_modules() -> None:
+    rag_dir = PROJECT_ROOT / "src" / "aegis" / "rag"
+    files = sorted(path.name for path in rag_dir.iterdir() if path.is_file())
+    init_text = (rag_dir / "__init__.py").read_text(encoding="utf-8")
+
+    assert files == ["__init__.py"]
+    assert "import " not in init_text
+    assert "httpx" not in init_text
+    assert "qdrant" not in init_text.lower()
 
 
 def test_local_model_inventory_metadata_still_does_not_authorize_calls() -> None:
