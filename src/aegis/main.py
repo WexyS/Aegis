@@ -105,6 +105,10 @@ def create_app():
     from aegis.api.local_provider_probe_projection import router as local_provider_probe_projection_router
     fastapi_app.include_router(local_provider_probe_projection_router)
 
+    # Repo Audit dry-run projection status
+    from aegis.api.repo_audit_dry_run_projection import router as repo_audit_dry_run_projection_router
+    fastapi_app.include_router(repo_audit_dry_run_projection_router)
+
     # Wrap FastAPI with Socket.IO ASGI middleware
     asgi_app = create_socketio_app(fastapi_app)
 
