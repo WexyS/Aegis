@@ -101,6 +101,10 @@ def create_app():
     from aegis.api.routes_vision import router as vision_router
     fastapi_app.include_router(vision_router)
 
+    # Local provider probe projection status
+    from aegis.api.local_provider_probe_projection import router as local_provider_probe_projection_router
+    fastapi_app.include_router(local_provider_probe_projection_router)
+
     # Wrap FastAPI with Socket.IO ASGI middleware
     asgi_app = create_socketio_app(fastapi_app)
 
