@@ -3,6 +3,7 @@ import {
   ApprovalHygieneDenyResponse,
   ApprovalHygienePreviewResponse,
   CommandRecord,
+  LocalProviderProbeProjection,
   RepoAuditDryRunProjection,
   ToolRegistrySnapshot,
 } from '@/types/runtime';
@@ -42,6 +43,15 @@ export async function fetchRepoAuditDryRunProjection(): Promise<RepoAuditDryRunP
     throw new Error(`Repo audit dry-run projection request failed: ${response.status}`);
   }
   return response.json() as Promise<RepoAuditDryRunProjection>;
+}
+
+export async function fetchLocalProviderProbeProjection(): Promise<LocalProviderProbeProjection> {
+  const url = new URL('/maintenance/local-provider/probe-projection', API_URL);
+  const response = await fetch(url.toString(), { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`Local provider probe projection request failed: ${response.status}`);
+  }
+  return response.json() as Promise<LocalProviderProbeProjection>;
 }
 
 type CommandEnvelope = {

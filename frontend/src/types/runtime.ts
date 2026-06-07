@@ -294,6 +294,69 @@ export interface RepoAuditDryRunProjection {
   retry_authorized?: boolean;
 }
 
+export interface LocalProviderProbeProjection {
+  api_surface_version: string;
+  read_only: boolean;
+  projection_result_class: string;
+  api_surface_status_class: string;
+  projection_available: boolean;
+  current_projection_available: boolean;
+  source_current: boolean;
+  maintenance_projection_status?: string | null;
+  probe_result_class?: string | null;
+  display_contract_class?: string | null;
+  display_status_candidate?: string | null;
+  api_projection_semantics?: string | null;
+  truthfulness_classification?: string | null;
+  retry_semantics?: string | null;
+  requires_operator_approval_for_retry?: boolean;
+  failure_reasons?: string[];
+  source_refs?: unknown[];
+  provenance?: unknown[];
+  limitations?: string[];
+  unknowns?: string[];
+  blocked?: boolean;
+  mutation_performed?: boolean;
+  runtime_dispatch_allowed?: boolean;
+  execution_permission?: string;
+  approval_grant?: boolean;
+  capability_grant?: boolean;
+  lease_grant?: boolean;
+  evidence_provided?: boolean;
+  verifier_success?: boolean;
+  frontend_authority?: boolean;
+  provider_health_verified?: boolean;
+  model_availability_verified?: boolean;
+  model_identity_verified?: boolean;
+  benchmark_claim_verified?: boolean;
+  retry_authorized?: boolean;
+  auto_mode_selection_performed?: boolean;
+  live_probe_performed?: boolean;
+  real_endpoint_probed?: boolean;
+  socket_opened?: boolean;
+  http_request_performed?: boolean;
+  model_loaded?: boolean;
+  model_call_performed?: boolean;
+  generation_performed?: boolean;
+  embedding_generated?: boolean;
+  reranking_performed?: boolean;
+  multimodal_inference_performed?: boolean;
+  prompt_payload_sent?: boolean;
+  context_payload_sent?: boolean;
+  memory_payload_sent?: boolean;
+  repo_payload_sent?: boolean;
+  raw_journal_payload_sent?: boolean;
+  raw_evidence_payload_sent?: boolean;
+  api_key_validated?: boolean;
+  secret_read?: boolean;
+  authorization_header_sent?: boolean;
+  response_body_logged?: boolean;
+  secret_logged?: boolean;
+  runtime_health_mutated?: boolean;
+  maintenance_health_mutated?: boolean;
+  data_sent_external?: boolean;
+}
+
 export interface EnvironmentDiagnostics {
   scan_version: string;
   read_only: boolean;

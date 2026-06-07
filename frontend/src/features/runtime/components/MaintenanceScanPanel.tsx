@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { FileSearch, Wrench } from 'lucide-react';
+import { Activity, FileSearch, Wrench } from 'lucide-react';
 
 import { EmptyState } from '@/components/EmptyState';
 import { StatusBadge } from '@/components/StatusBadge';
-import { fetchRepoAuditDryRunProjection } from '@/lib/api';
+import { fetchLocalProviderProbeProjection, fetchRepoAuditDryRunProjection } from '@/lib/api';
 import { requestMaintenanceAction, runMaintenanceScan } from '@/lib/socket';
 import { useRuntimeStore } from '@/store/useRuntimeStore';
 import {
@@ -16,6 +16,7 @@ import {
   EnvironmentDiagnostics,
   EvidenceAudit,
   FoundationClosureReadiness,
+  LocalProviderProbeProjection,
   MaintenanceActionProposal,
   MaintenanceFinding,
   NetworkPortsDiagnostics,
@@ -45,11 +46,24 @@ export const MaintenanceScanPanel = () => {
   const evidenceAudit = getEvidenceAudit(lastMaintenanceScan);
   const findings = getMaintenanceFindings(lastMaintenanceScan);
   const actionProposals = getMaintenanceActionProposals(lastMaintenanceScan);
+  const [localProviderProbeProjection, setLocalProviderProbeProjection] = useState<LocalProviderProbeProjection | null>(null);
+  const [localProviderProbeFetchStatus, setLocalProviderProbeFetchStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [repoAuditDryRunProjection, setRepoAuditDryRunProjection] = useState<RepoAuditDryRunProjection | null>(null);
   const [repoAuditDryRunFetchStatus, setRepoAuditDryRunFetchStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
 
   useEffect(() => {
     let cancelled = false;
+    fetchLocalProviderProbeProjection()
+      .then((projection) => {
+        if (cancelled) return;
+        setLocalProviderProbeProjection(projection);
+        setLocalProviderProbeFetchStatus('ready');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLocalProviderProbeProjection(null);
+        setLocalProviderProbeFetchStatus('unavailable');
+      });
     fetchRepoAuditDryRunProjection()
       .then((projection) => {
         if (cancelled) return;
@@ -82,6 +96,11 @@ export const MaintenanceScanPanel = () => {
           <Wrench size={13} />
         </button>
       </div>
+
+      <LocalProviderProbeProjectionSummary
+        projection={localProviderProbeProjection}
+        fetchStatus={localProviderProbeFetchStatus}
+      />
 
       <RepoAuditDryRunProjectionSummary
         projection={repoAuditDryRunProjection}
@@ -125,6 +144,81 @@ export const MaintenanceScanPanel = () => {
         </div>
       )}
     </section>
+  );
+};
+
+const LocalProviderProbeProjectionSummary = ({
+  projection,
+  fetchStatus,
+}: {
+  projection: LocalProviderProbeProjection | null;
+  fetchStatus: 'loading' | 'ready' | 'unavailable';
+}) => {
+  const resultClass = projection?.projection_result_class ?? (fetchStatus === 'loading' ? 'loading_projection_metadata' : 'projection_endpoint_unavailable');
+  const probeResultClass = projection?.probe_result_class ?? (fetchStatus === 'loading' ? 'loading' : 'endpoint_unavailable');
+  const limitations = Array.isArray(projection?.limitations) ? projection.limitations : [];
+  const unknowns = Array.isArray(projection?.unknowns) ? projection.unknowns : [];
+  const failureReasons = Array.isArray(projection?.failure_reasons) ? projection.failure_reasons : [];
+  const projectionAvailable = projection?.projection_available === true;
+  const currentProjectionAvailable = projection?.current_projection_available === true;
+  const sourceCurrent = projection?.source_current === true;
+  const retryRequiresApproval = projection?.requires_operator_approval_for_retry === true;
+
+  return (
+    <div className={`rounded-lg border ${localProviderProbeBorder(resultClass, probeResultClass)} p-3`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-widest text-foreground/40">
+            <Activity size={12} className="text-accent" />
+            <span>Provider Probe</span>
+          </div>
+          <p className="mt-1 text-[9px] font-mono leading-relaxed text-foreground/55">
+            {localProviderProbeMessage(projection, fetchStatus)}
+          </p>
+        </div>
+        <StatusBadge
+          label={localProviderProbeBadgeLabel(resultClass, probeResultClass)}
+          tone={localProviderProbeBadgeTone(resultClass, probeResultClass)}
+          className="shrink-0 max-w-[8.5rem]"
+        />
+      </div>
+      <p className="mt-2 text-[9px] font-mono leading-relaxed text-foreground/45">
+        Read-only projection. No provider probe, model call, prompt, API key, evidence, verifier success, provider health proof, model availability proof, or retry authorization.
+      </p>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        <AuditMetric label="result" value={formatClassLabel(resultClass)} tone={localProviderProbeMetricTone(resultClass)} />
+        <AuditMetric label="probe" value={formatClassLabel(probeResultClass)} tone={localProviderProbeMetricTone(probeResultClass)} />
+        <AuditMetric label="projection" value={projectionAvailable ? 'available' : 'not current'} />
+        <AuditMetric label="source current" value={sourceCurrent ? 'yes' : 'no'} />
+        <AuditMetric label="retry" value={retryRequiresApproval ? 'approval required' : 'not authorized'} tone={retryRequiresApproval ? 'warning' : 'default'} />
+        <AuditMetric label="blocked" value={projection?.blocked === true ? 'yes' : 'no'} tone={projection?.blocked === true ? 'warning' : 'default'} />
+      </div>
+      {!currentProjectionAvailable && projection && (
+        <p className="mt-2 text-[9px] font-mono leading-relaxed text-foreground/40">
+          Current projection is not available; previous manual smoke results are not replayed as current runtime state.
+        </p>
+      )}
+      {projection?.truthfulness_classification && (
+        <p className="mt-2 line-clamp-2 text-[8px] font-mono text-foreground/35">
+          truth: {projection.truthfulness_classification}
+        </p>
+      )}
+      {failureReasons.length > 0 && (
+        <p className="mt-2 line-clamp-2 text-[8px] font-mono text-warning/80">
+          blocked: {failureReasons.join(', ')}
+        </p>
+      )}
+      {limitations.length > 0 && (
+        <p className="mt-2 line-clamp-2 text-[8px] font-mono text-foreground/35">
+          limits: {limitations.slice(0, 2).join(' ')}
+        </p>
+      )}
+      {unknowns.length > 0 && (
+        <p className="mt-1 line-clamp-2 text-[8px] font-mono text-foreground/35">
+          unknowns: {unknowns.slice(0, 2).join(' ')}
+        </p>
+      )}
+    </div>
   );
 };
 
@@ -799,6 +893,121 @@ const ResourceMetric = ({ label, value, tone = 'default' }: { label: string; val
     </div>
   );
 };
+
+const localProviderNegativeProbeResults = new Set([
+  'provider_probe_unreachable_candidate',
+  'provider_probe_timeout_candidate',
+  'provider_probe_connection_refused_candidate',
+  'provider_probe_invalid_response_candidate',
+  'provider_probe_unauthorized_candidate',
+  'provider_probe_unsupported_endpoint_candidate',
+]);
+
+function localProviderProbeMessage(
+  projection: LocalProviderProbeProjection | null,
+  fetchStatus: 'loading' | 'ready' | 'unavailable',
+): string {
+  if (fetchStatus === 'loading') {
+    return 'Loading local provider probe projection metadata.';
+  }
+  if (!projection) {
+    return 'Local provider probe projection endpoint is unavailable. This is not provider failure or runtime failure proof.';
+  }
+  if (projection.projection_result_class === 'no_projection_available') {
+    return 'No current local provider probe projection is available.';
+  }
+  if (projection.probe_result_class === 'not_observed') {
+    return 'Provider probe has not been observed.';
+  }
+  if (projection.projection_result_class === 'provider_probe_not_configured' || projection.probe_result_class === 'not_executed') {
+    return 'Provider probe is not configured; this is neutral metadata, not runtime failure.';
+  }
+  if (projection.projection_result_class === 'provider_probe_metadata_candidate') {
+    return 'Metadata candidate only; not provider health proof.';
+  }
+  if (projection.projection_result_class === 'provider_probe_model_list_candidate') {
+    return 'Model-list metadata candidate only; not model availability proof.';
+  }
+  if (projection.projection_result_class === 'provider_probe_empty_model_list_candidate') {
+    return 'Empty model-list candidate; not runtime failure.';
+  }
+  if (localProviderNegativeProbeResults.has(projection.projection_result_class)) {
+    return 'Negative provider probe candidate only; not runtime failure or retry authorization.';
+  }
+  if (projection.projection_result_class === 'blocked_by_policy') {
+    return 'Blocked by policy; not permission or retry authorization.';
+  }
+  if (projection.projection_result_class === 'future_gated') {
+    return 'Future-gated; not execution-ready.';
+  }
+  return 'Provider probe projection metadata only; not evidence or verifier success.';
+}
+
+function localProviderProbeBadgeLabel(resultClass: string, probeResultClass: string): string {
+  if (resultClass === 'loading_projection_metadata') return 'loading';
+  if (resultClass === 'projection_endpoint_unavailable') return 'endpoint unavailable';
+  if (resultClass === 'no_projection_available') return 'no projection';
+  if (probeResultClass === 'not_observed') return 'not observed';
+  if (resultClass === 'provider_probe_not_configured') return 'not configured';
+  if (resultClass === 'provider_probe_metadata_candidate') return 'metadata only';
+  if (resultClass === 'provider_probe_model_list_candidate') return 'model-list candidate';
+  if (resultClass === 'provider_probe_empty_model_list_candidate') return 'empty candidate';
+  if (localProviderNegativeProbeResults.has(resultClass)) return 'negative candidate';
+  if (resultClass === 'blocked_by_policy') return 'blocked';
+  if (resultClass === 'future_gated') return 'future gated';
+  return 'metadata only';
+}
+
+function localProviderProbeBadgeTone(resultClass: string, probeResultClass: string): 'info' | 'warning' | 'unknown' {
+  if (
+    resultClass === 'loading_projection_metadata'
+    || resultClass === 'no_projection_available'
+    || probeResultClass === 'not_observed'
+    || resultClass === 'provider_probe_not_configured'
+    || resultClass === 'provider_probe_metadata_candidate'
+    || resultClass === 'provider_probe_model_list_candidate'
+    || resultClass === 'provider_probe_empty_model_list_candidate'
+  ) {
+    return 'info';
+  }
+  if (resultClass === 'projection_endpoint_unavailable') return 'unknown';
+  if (
+    localProviderNegativeProbeResults.has(resultClass)
+    || resultClass === 'blocked_by_policy'
+    || resultClass === 'future_gated'
+  ) {
+    return 'warning';
+  }
+  return 'unknown';
+}
+
+function localProviderProbeBorder(resultClass: string, probeResultClass: string): string {
+  if (
+    localProviderNegativeProbeResults.has(resultClass)
+    || resultClass === 'blocked_by_policy'
+    || resultClass === 'future_gated'
+  ) {
+    return 'border-warning/20 bg-warning/[0.03]';
+  }
+  if (resultClass === 'projection_endpoint_unavailable') {
+    return 'border-white/10 bg-white/[0.02]';
+  }
+  if (resultClass === 'no_projection_available' || probeResultClass === 'not_observed') {
+    return 'border-accent/15 bg-accent/[0.02]';
+  }
+  return 'border-accent/20 bg-accent/[0.03]';
+}
+
+function localProviderProbeMetricTone(value: string): 'default' | 'warning' {
+  if (
+    localProviderNegativeProbeResults.has(value)
+    || value === 'blocked_by_policy'
+    || value === 'future_gated'
+  ) {
+    return 'warning';
+  }
+  return 'default';
+}
 
 function repoAuditDryRunMessage(
   projection: RepoAuditDryRunProjection | null,
