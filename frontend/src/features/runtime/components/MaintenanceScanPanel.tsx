@@ -97,15 +97,17 @@ export const MaintenanceScanPanel = () => {
         </button>
       </div>
 
-      <LocalProviderProbeProjectionSummary
-        projection={localProviderProbeProjection}
-        fetchStatus={localProviderProbeFetchStatus}
-      />
+      <ProjectionSurfaceGroup>
+        <LocalProviderProbeProjectionSummary
+          projection={localProviderProbeProjection}
+          fetchStatus={localProviderProbeFetchStatus}
+        />
 
-      <RepoAuditDryRunProjectionSummary
-        projection={repoAuditDryRunProjection}
-        fetchStatus={repoAuditDryRunFetchStatus}
-      />
+        <RepoAuditDryRunProjectionSummary
+          projection={repoAuditDryRunProjection}
+          fetchStatus={repoAuditDryRunFetchStatus}
+        />
+      </ProjectionSurfaceGroup>
 
       {!lastMaintenanceScan ? (
         <EmptyState title="No maintenance scan loaded" detail="Read-only diagnostics appear after the backend publishes a maintenance scan." icon={<Wrench size={14} />} />
@@ -147,6 +149,23 @@ export const MaintenanceScanPanel = () => {
   );
 };
 
+const ProjectionSurfaceGroup = ({ children }: { children: ReactNode }) => (
+  <div className="space-y-2">
+    <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-2">
+      <div className="min-w-0">
+        <h4 className="text-[9px] font-bold uppercase tracking-[0.18em] text-foreground/45">
+          Read-only Projections
+        </h4>
+        <p className="mt-1 text-[9px] font-mono leading-relaxed text-foreground/40">
+          Backend metadata only. These cards do not authorize probes, repo reads, retries, evidence, verifier success, or runtime health changes.
+        </p>
+      </div>
+      <StatusBadge label="no actions" tone="info" className="shrink-0" />
+    </div>
+    <div className="space-y-2">{children}</div>
+  </div>
+);
+
 const LocalProviderProbeProjectionSummary = ({
   projection,
   fetchStatus,
@@ -165,7 +184,7 @@ const LocalProviderProbeProjectionSummary = ({
   const retryRequiresApproval = projection?.requires_operator_approval_for_retry === true;
 
   return (
-    <div className={`rounded-lg border ${localProviderProbeBorder(resultClass, probeResultClass)} p-3`}>
+    <div className={`rounded-lg border ${localProviderProbeBorder(resultClass, probeResultClass)} p-2.5 sm:p-3`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-widest text-foreground/40">
@@ -182,9 +201,9 @@ const LocalProviderProbeProjectionSummary = ({
           className="shrink-0 max-w-[8.5rem]"
         />
       </div>
-      <p className="mt-2 text-[9px] font-mono leading-relaxed text-foreground/45">
+      <ProjectionBoundaryNotice>
         Read-only projection. No provider probe, model call, prompt, API key, evidence, verifier success, provider health proof, model availability proof, or retry authorization.
-      </p>
+      </ProjectionBoundaryNotice>
       <div className="mt-2 grid grid-cols-2 gap-1.5">
         <AuditMetric label="result" value={formatClassLabel(resultClass)} tone={localProviderProbeMetricTone(resultClass)} />
         <AuditMetric label="probe" value={formatClassLabel(probeResultClass)} tone={localProviderProbeMetricTone(probeResultClass)} />
@@ -241,7 +260,7 @@ const RepoAuditDryRunProjectionSummary = ({
   const sourceCurrent = projection?.source_current === true;
 
   return (
-    <div className={`rounded-lg border ${repoAuditDryRunBorder(resultClass, dryRunStatus)} p-3`}>
+    <div className={`rounded-lg border ${repoAuditDryRunBorder(resultClass, dryRunStatus)} p-2.5 sm:p-3`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-widest text-foreground/40">
@@ -258,9 +277,9 @@ const RepoAuditDryRunProjectionSummary = ({
           className="shrink-0 max-w-[8.5rem]"
         />
       </div>
-      <p className="mt-2 text-[9px] font-mono leading-relaxed text-foreground/45">
+      <ProjectionBoundaryNotice>
         Read-only projection. No repo read, file scan, GitHub fetch, source truth, report, evidence, verifier success, or run authorization.
-      </p>
+      </ProjectionBoundaryNotice>
       <div className="mt-2 grid grid-cols-2 gap-1.5">
         <AuditMetric label="result" value={formatClassLabel(resultClass)} tone={repoAuditDryRunMetricTone(resultClass)} />
         <AuditMetric label="dry-run" value={formatClassLabel(dryRunStatus)} tone={repoAuditDryRunMetricTone(dryRunStatus)} />
@@ -299,6 +318,12 @@ const RepoAuditDryRunProjectionSummary = ({
     </div>
   );
 };
+
+const ProjectionBoundaryNotice = ({ children }: { children: ReactNode }) => (
+  <p className="mt-2 rounded-md border border-white/10 bg-black/15 px-2 py-1.5 text-[8.5px] font-mono leading-relaxed text-foreground/45">
+    {children}
+  </p>
+);
 
 const RuntimeHealthSummary = ({ health }: { health: RuntimeHealth }) => {
   const statusTone = health.status === 'ok' ? 'text-success' : health.status === 'fail' ? 'text-danger' : 'text-warning';
