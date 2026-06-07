@@ -240,6 +240,60 @@ export interface ToolRegistrySnapshot {
   tools: ToolSpec[];
 }
 
+export interface RepoAuditDryRunProjection {
+  api_surface_version: string;
+  read_only: boolean;
+  projection_result_class: string;
+  api_surface_status_class: string;
+  projection_available: boolean;
+  current_projection_available: boolean;
+  source_current: boolean;
+  dry_run_status?: string | null;
+  plan_projection_status?: string | null;
+  candidate_projection_status?: string | null;
+  privacy_status?: string | null;
+  completeness_status?: string | null;
+  trust_status?: string | null;
+  freshness_status?: string | null;
+  exclusion_status?: string | null;
+  raw_content_status?: string | null;
+  display_readiness_status?: string | null;
+  dry_run_truth_labels?: string[];
+  candidate_counts?: {
+    included?: number;
+    excluded?: number;
+    operator_review?: number;
+    future_gated?: number;
+  };
+  human_review_required?: boolean;
+  future_gated?: boolean;
+  blocked?: boolean;
+  failure_reasons?: string[];
+  source_refs?: unknown[];
+  provenance?: unknown[];
+  limitations?: string[];
+  unknowns?: string[];
+  api_projection_semantics?: string;
+  truthfulness_classification?: string;
+  action_semantics?: string;
+  mutation_performed?: boolean;
+  runtime_dispatch_allowed?: boolean;
+  execution_permission?: string;
+  approval_grant?: boolean;
+  capability_grant?: boolean;
+  lease_grant?: boolean;
+  evidence_provided?: boolean;
+  verifier_success?: boolean;
+  frontend_authority?: boolean;
+  source_truth_claimed?: boolean;
+  repo_audit_proof_claimed?: boolean;
+  compliance_proof_claimed?: boolean;
+  passport_proof_claimed?: boolean;
+  report_generated?: boolean;
+  run_authorized?: boolean;
+  retry_authorized?: boolean;
+}
+
 export interface EnvironmentDiagnostics {
   scan_version: string;
   read_only: boolean;

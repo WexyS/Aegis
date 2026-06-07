@@ -3,6 +3,7 @@ import {
   ApprovalHygieneDenyResponse,
   ApprovalHygienePreviewResponse,
   CommandRecord,
+  RepoAuditDryRunProjection,
   ToolRegistrySnapshot,
 } from '@/types/runtime';
 
@@ -32,6 +33,15 @@ export async function fetchToolRegistry(): Promise<ToolRegistrySnapshot> {
     throw new Error(`Tool registry request failed: ${response.status}`);
   }
   return response.json() as Promise<ToolRegistrySnapshot>;
+}
+
+export async function fetchRepoAuditDryRunProjection(): Promise<RepoAuditDryRunProjection> {
+  const url = new URL('/maintenance/repo-audit/dry-run-projection', API_URL);
+  const response = await fetch(url.toString(), { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`Repo audit dry-run projection request failed: ${response.status}`);
+  }
+  return response.json() as Promise<RepoAuditDryRunProjection>;
 }
 
 type CommandEnvelope = {

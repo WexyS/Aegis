@@ -1,10 +1,11 @@
 "use client";
 
-import type { ReactNode } from 'react';
-import { Wrench } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { FileSearch, Wrench } from 'lucide-react';
 
 import { EmptyState } from '@/components/EmptyState';
 import { StatusBadge } from '@/components/StatusBadge';
+import { fetchRepoAuditDryRunProjection } from '@/lib/api';
 import { requestMaintenanceAction, runMaintenanceScan } from '@/lib/socket';
 import { useRuntimeStore } from '@/store/useRuntimeStore';
 import {
@@ -20,6 +21,7 @@ import {
   NetworkPortsDiagnostics,
   PendingDecisionHygieneDiagnostics,
   ProcessResourcesDiagnostics,
+  RepoAuditDryRunProjection,
   RuntimeHealth,
   RuntimeSnapshotDiagnostics,
   SystemResourcesDiagnostics,
@@ -43,6 +45,26 @@ export const MaintenanceScanPanel = () => {
   const evidenceAudit = getEvidenceAudit(lastMaintenanceScan);
   const findings = getMaintenanceFindings(lastMaintenanceScan);
   const actionProposals = getMaintenanceActionProposals(lastMaintenanceScan);
+  const [repoAuditDryRunProjection, setRepoAuditDryRunProjection] = useState<RepoAuditDryRunProjection | null>(null);
+  const [repoAuditDryRunFetchStatus, setRepoAuditDryRunFetchStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchRepoAuditDryRunProjection()
+      .then((projection) => {
+        if (cancelled) return;
+        setRepoAuditDryRunProjection(projection);
+        setRepoAuditDryRunFetchStatus('ready');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRepoAuditDryRunProjection(null);
+        setRepoAuditDryRunFetchStatus('unavailable');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <section className="space-y-3">
@@ -60,6 +82,11 @@ export const MaintenanceScanPanel = () => {
           <Wrench size={13} />
         </button>
       </div>
+
+      <RepoAuditDryRunProjectionSummary
+        projection={repoAuditDryRunProjection}
+        fetchStatus={repoAuditDryRunFetchStatus}
+      />
 
       {!lastMaintenanceScan ? (
         <EmptyState title="No maintenance scan loaded" detail="Read-only diagnostics appear after the backend publishes a maintenance scan." icon={<Wrench size={14} />} />
@@ -98,6 +125,84 @@ export const MaintenanceScanPanel = () => {
         </div>
       )}
     </section>
+  );
+};
+
+const RepoAuditDryRunProjectionSummary = ({
+  projection,
+  fetchStatus,
+}: {
+  projection: RepoAuditDryRunProjection | null;
+  fetchStatus: 'loading' | 'ready' | 'unavailable';
+}) => {
+  const resultClass = projection?.projection_result_class ?? (fetchStatus === 'loading' ? 'loading_projection_metadata' : 'projection_endpoint_unavailable');
+  const dryRunStatus = projection?.dry_run_status ?? (fetchStatus === 'loading' ? 'loading' : 'endpoint_unavailable');
+  const candidateCounts = projection?.candidate_counts ?? {};
+  const truthLabels = Array.isArray(projection?.dry_run_truth_labels) ? projection.dry_run_truth_labels : [];
+  const limitations = Array.isArray(projection?.limitations) ? projection.limitations : [];
+  const unknowns = Array.isArray(projection?.unknowns) ? projection.unknowns : [];
+  const failureReasons = Array.isArray(projection?.failure_reasons) ? projection.failure_reasons : [];
+  const projectionAvailable = projection?.projection_available === true;
+  const currentProjectionAvailable = projection?.current_projection_available === true;
+  const sourceCurrent = projection?.source_current === true;
+
+  return (
+    <div className={`rounded-lg border ${repoAuditDryRunBorder(resultClass, dryRunStatus)} p-3`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-widest text-foreground/40">
+            <FileSearch size={12} className="text-accent" />
+            <span>Repo Audit Dry-Run</span>
+          </div>
+          <p className="mt-1 text-[9px] font-mono leading-relaxed text-foreground/55">
+            {repoAuditDryRunMessage(projection, fetchStatus)}
+          </p>
+        </div>
+        <StatusBadge
+          label={repoAuditDryRunBadgeLabel(resultClass, dryRunStatus)}
+          tone={repoAuditDryRunBadgeTone(resultClass, dryRunStatus)}
+          className="shrink-0 max-w-[8.5rem]"
+        />
+      </div>
+      <p className="mt-2 text-[9px] font-mono leading-relaxed text-foreground/45">
+        Read-only projection. No repo read, file scan, GitHub fetch, source truth, report, evidence, verifier success, or run authorization.
+      </p>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        <AuditMetric label="result" value={formatClassLabel(resultClass)} tone={repoAuditDryRunMetricTone(resultClass)} />
+        <AuditMetric label="dry-run" value={formatClassLabel(dryRunStatus)} tone={repoAuditDryRunMetricTone(dryRunStatus)} />
+        <AuditMetric label="projection" value={projectionAvailable ? 'available' : 'not current'} />
+        <AuditMetric label="source current" value={sourceCurrent ? 'yes' : 'no'} />
+        <AuditMetric label="included" value={countLabel(numberish(candidateCounts.included))} />
+        <AuditMetric label="excluded" value={countLabel(numberish(candidateCounts.excluded))} tone={(candidateCounts.excluded ?? 0) > 0 ? 'warning' : 'default'} />
+        <AuditMetric label="review" value={countLabel(numberish(candidateCounts.operator_review))} tone={(candidateCounts.operator_review ?? 0) > 0 ? 'warning' : 'default'} />
+        <AuditMetric label="future gated" value={countLabel(numberish(candidateCounts.future_gated))} tone={(candidateCounts.future_gated ?? 0) > 0 ? 'warning' : 'default'} />
+      </div>
+      {!currentProjectionAvailable && projection && (
+        <p className="mt-2 text-[9px] font-mono leading-relaxed text-foreground/40">
+          Current projection is not available; prior design examples are not replayed as current runtime state.
+        </p>
+      )}
+      {truthLabels.length > 0 && (
+        <p className="mt-2 line-clamp-2 text-[8px] font-mono text-foreground/35">
+          truth labels: {truthLabels.slice(0, 5).join(', ')}
+        </p>
+      )}
+      {failureReasons.length > 0 && (
+        <p className="mt-2 line-clamp-2 text-[8px] font-mono text-warning/80">
+          blocked: {failureReasons.join(', ')}
+        </p>
+      )}
+      {limitations.length > 0 && (
+        <p className="mt-2 line-clamp-2 text-[8px] font-mono text-foreground/35">
+          limits: {limitations.slice(0, 2).join(' ')}
+        </p>
+      )}
+      {unknowns.length > 0 && (
+        <p className="mt-1 line-clamp-2 text-[8px] font-mono text-foreground/35">
+          unknowns: {unknowns.slice(0, 2).join(' ')}
+        </p>
+      )}
+    </div>
   );
 };
 
@@ -694,6 +799,109 @@ const ResourceMetric = ({ label, value, tone = 'default' }: { label: string; val
     </div>
   );
 };
+
+function repoAuditDryRunMessage(
+  projection: RepoAuditDryRunProjection | null,
+  fetchStatus: 'loading' | 'ready' | 'unavailable',
+): string {
+  if (fetchStatus === 'loading') {
+    return 'Loading repo-audit dry-run projection metadata.';
+  }
+  if (!projection) {
+    return 'Repo-audit dry-run projection endpoint is unavailable. This is not repo audit failure or source unavailable proof.';
+  }
+  if (projection.projection_result_class === 'no_projection_available') {
+    return 'No current repo-audit dry-run projection is available.';
+  }
+  if (projection.dry_run_status === 'repo_audit_dry_run_not_observed') {
+    return 'Repo-audit dry-run has not been observed.';
+  }
+  if (projection.projection_result_class === 'candidate_sources_available') {
+    return 'Candidate sources only; not source truth or repo read.';
+  }
+  if (projection.projection_result_class === 'exclusions_available') {
+    return 'Exclusion metadata only; no cleanup or deletion performed.';
+  }
+  if (projection.projection_result_class === 'blockers_available' || projection.projection_result_class === 'blocked_by_policy') {
+    return 'Blocked items remain blocked; not permission.';
+  }
+  if (projection.projection_result_class === 'future_gated') {
+    return 'Future-gated; not execution-ready.';
+  }
+  if (projection.projection_result_class === 'operator_review_required_candidate') {
+    return 'Operator review required; run is not authorized.';
+  }
+  return 'Metadata candidate only; not evidence or verifier success.';
+}
+
+function repoAuditDryRunBadgeLabel(resultClass: string, dryRunStatus: string): string {
+  if (resultClass === 'loading_projection_metadata') return 'loading';
+  if (resultClass === 'projection_endpoint_unavailable') return 'endpoint unavailable';
+  if (resultClass === 'no_projection_available') return 'no projection';
+  if (dryRunStatus === 'repo_audit_dry_run_not_observed') return 'not observed';
+  if (resultClass === 'candidate_sources_available') return 'candidate only';
+  if (resultClass === 'exclusions_available') return 'exclusions';
+  if (resultClass === 'blockers_available' || resultClass === 'blocked_by_policy') return 'blocked';
+  if (resultClass === 'future_gated') return 'future gated';
+  if (resultClass === 'operator_review_required_candidate') return 'review required';
+  return 'metadata only';
+}
+
+function repoAuditDryRunBadgeTone(resultClass: string, dryRunStatus: string): 'info' | 'warning' | 'unknown' {
+  if (
+    resultClass === 'loading_projection_metadata'
+    || resultClass === 'no_projection_available'
+    || dryRunStatus === 'repo_audit_dry_run_not_observed'
+    || resultClass === 'candidate_sources_available'
+    || resultClass === 'exclusions_available'
+  ) {
+    return 'info';
+  }
+  if (resultClass === 'projection_endpoint_unavailable') return 'unknown';
+  if (
+    resultClass === 'blockers_available'
+    || resultClass === 'blocked_by_policy'
+    || resultClass === 'future_gated'
+    || resultClass === 'operator_review_required_candidate'
+  ) {
+    return 'warning';
+  }
+  return 'unknown';
+}
+
+function repoAuditDryRunBorder(resultClass: string, dryRunStatus: string): string {
+  if (
+    resultClass === 'blockers_available'
+    || resultClass === 'blocked_by_policy'
+    || resultClass === 'future_gated'
+    || resultClass === 'operator_review_required_candidate'
+  ) {
+    return 'border-warning/20 bg-warning/[0.03]';
+  }
+  if (resultClass === 'projection_endpoint_unavailable') {
+    return 'border-white/10 bg-white/[0.02]';
+  }
+  if (resultClass === 'no_projection_available' || dryRunStatus === 'repo_audit_dry_run_not_observed') {
+    return 'border-accent/15 bg-accent/[0.02]';
+  }
+  return 'border-accent/20 bg-accent/[0.03]';
+}
+
+function repoAuditDryRunMetricTone(value: string): 'default' | 'warning' {
+  if (
+    value === 'blockers_available'
+    || value === 'blocked_by_policy'
+    || value === 'future_gated'
+    || value === 'operator_review_required_candidate'
+  ) {
+    return 'warning';
+  }
+  return 'default';
+}
+
+function formatClassLabel(value: string): string {
+  return value.replace(/_/g, ' ');
+}
 
 function getCheck(report: Record<string, unknown> | null, name: string): Record<string, unknown> | null {
   const checks = report?.checks;
