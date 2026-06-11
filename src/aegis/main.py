@@ -101,6 +101,10 @@ def create_app():
     from aegis.api.routes_memory import router as memory_router
     fastapi_app.include_router(memory_router)
 
+    # AutoPilot RC1-Core
+    from aegis.api.routes_autopilot import router as autopilot_router
+    fastapi_app.include_router(autopilot_router)
+
     # Vision feed
     from aegis.api.routes_vision import router as vision_router
     fastapi_app.include_router(vision_router)
