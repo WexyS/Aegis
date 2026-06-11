@@ -1,1 +1,5 @@
-"""AEGIS Memory — Multi-layer memory stack (STM, episodic, semantic, procedural)."""
+"""Aegis Memory OS components."""
+
+from aegis.memory.store import MemoryStore
+
+__all__ = ["MemoryStore"]

@@ -97,6 +97,10 @@ def create_app():
     from aegis.api.routes_command import router as command_router
     fastapi_app.include_router(command_router)
 
+    # Memory OS RC1-Core
+    from aegis.api.routes_memory import router as memory_router
+    fastapi_app.include_router(memory_router)
+
     # Vision feed
     from aegis.api.routes_vision import router as vision_router
     fastapi_app.include_router(vision_router)
