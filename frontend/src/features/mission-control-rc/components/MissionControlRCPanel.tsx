@@ -65,6 +65,10 @@ export const MissionControlRCPanel = () => {
   const [loading, setLoading] = React.useState<Record<string, boolean>>({});
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
+  const activeMemoryCount = React.useMemo(
+    () => memories.filter((memory) => memory.status === 'active').length,
+    [memories],
+  );
 
   const setBusy = React.useCallback((key: string, value: boolean) => {
     setLoading((current) => ({ ...current, [key]: value }));
@@ -255,25 +259,25 @@ export const MissionControlRCPanel = () => {
   };
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-gradient-to-br from-background via-background to-[#08111f]">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 p-4 lg:p-5">
+    <div className="rc-workspace relative flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-[#030611]">
+      <div className="rc-ambient-layer pointer-events-none absolute inset-0" aria-hidden="true" />
+      <div className="rc-grid-layer pointer-events-none absolute inset-0" aria-hidden="true" />
+      <div className="relative z-10 mx-auto flex w-full max-w-[92rem] flex-col gap-5 p-4 lg:p-6">
         <Hero
           report={selectedReport}
           session={selectedSession}
-          activeMemoryCount={memories.filter((memory) => memory.status === 'active').length}
+          activeMemoryCount={activeMemoryCount}
         />
 
         {(error || notice) && (
-          <div className={`rounded-lg border px-4 py-3 text-[12px] font-mono ${error ? 'border-danger/30 bg-danger/10 text-danger' : 'border-success/25 bg-success/10 text-success'}`}>
-            {error ?? notice}
-          </div>
+          <SignalBanner tone={error ? 'danger' : 'success'} message={error ?? notice ?? ''} />
         )}
 
         <GoldenPath report={selectedReport} memories={memories} session={selectedSession} />
         <LimitationsStrip />
 
-        <div className="grid gap-4 xl:grid-cols-[1.18fr_0.82fr]">
-          <div className="space-y-4">
+        <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-5">
             <AutoPilotPanel
               rootPath={rootPath}
               setRootPath={setRootPath}
@@ -287,7 +291,7 @@ export const MissionControlRCPanel = () => {
             <ReportSurface report={selectedReport} onProposeCandidate={proposeCandidateMemory} memoryBusy={loading.memory === true} />
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-5">
             <MemoryPanel
               memories={memories}
               search={memorySearch}
@@ -334,22 +338,29 @@ const Hero = ({
   session: SocietySession | null;
   activeMemoryCount: number;
 }) => (
-  <section className="relative overflow-hidden rounded-lg border border-white/10 bg-white/[0.035] p-5 shadow-2xl shadow-black/20">
-    <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/70 to-transparent" />
-    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-accent">
+  <section className="rc-hero relative overflow-hidden rounded-lg border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-cyan-950/20 lg:p-6">
+    <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/80 to-transparent" />
+    <div className="pointer-events-none absolute right-8 top-8 h-28 w-28 rounded-full border border-cyan-300/15 bg-cyan-300/5 blur-[1px]" />
+    <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+      <div className="min-w-0 max-w-4xl">
+        <div className="inline-flex items-center gap-2 rounded-md border border-accent/25 bg-accent/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.22em] text-accent shadow-lg shadow-cyan-950/20">
           <ShieldCheck size={14} />
           Hackathon RC Mission Control
         </div>
-        <h1 className="mt-3 text-2xl font-bold tracking-tight text-white lg:text-3xl">
-          Memory, AutoPilot, and Society on one bounded path
+        <h1 className="mt-4 max-w-4xl text-3xl font-bold tracking-tight text-white lg:text-4xl">
+          Judge-facing control surface for the bounded RC path
         </h1>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-foreground/55">
-          Run a real read-only repo audit, turn selected findings into explicit Memory proposals, then generate a deterministic Society Session report without model, MCP, shell, network, or autonomous execution claims.
+        <p className="mt-3 max-w-3xl text-sm leading-7 text-foreground/[0.62]">
+          Run the real read-only AutoPilot audit, promote selected findings through explicit Memory actions, then render a deterministic Society Session without model, MCP, shell, network, or autonomous execution claims.
         </p>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <TrustPill label="backend APIs only" />
+          <TrustPill label="no fake evidence" />
+          <TrustPill label="proposal-only society" />
+          <TrustPill label="explicit memory actions" />
+        </div>
       </div>
-      <div className="grid grid-cols-3 gap-2 lg:w-[27rem]">
+      <div className="grid gap-3 sm:grid-cols-3 lg:w-[30rem]">
         <HeroMetric label="report" value={report?.status ?? 'none'} tone={toneForStatus(report?.status)} />
         <HeroMetric label="active memory" value={String(activeMemoryCount)} tone={activeMemoryCount > 0 ? 'success' : 'unknown'} />
         <HeroMetric label="society" value={session?.status ?? 'none'} tone={toneForStatus(session?.status)} />
@@ -359,10 +370,19 @@ const Hero = ({
 );
 
 const HeroMetric = ({ label, value, tone }: { label: string; value: string; tone: StatusToneName }) => (
-  <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-    <div className="text-[9px] font-bold uppercase tracking-widest text-foreground/35">{label}</div>
-    <div className={`mt-2 truncate text-sm font-bold ${toneText(tone)}`}>{formatLabel(value)}</div>
+  <div className="rc-glass-card rounded-lg border border-white/10 bg-black/30 p-3.5">
+    <div className="flex items-center justify-between gap-2">
+      <div className="text-[9px] font-bold uppercase tracking-widest text-foreground/[0.38]">{label}</div>
+      <span className={`h-1.5 w-1.5 rounded-full ${toneDot(tone)}`} />
+    </div>
+    <div className={`mt-3 truncate text-base font-bold ${toneText(tone)}`}>{formatLabel(value)}</div>
   </div>
+);
+
+const TrustPill = ({ label }: { label: string }) => (
+  <span className="rounded-md border border-white/10 bg-black/25 px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.14em] text-foreground/[0.48]">
+    {label}
+  </span>
 );
 
 const GoldenPath = ({
@@ -383,17 +403,29 @@ const GoldenPath = ({
     { label: 'Report timeline', done: Boolean(session?.timeline?.length), detail: `${session?.timeline?.length ?? 0} events` },
   ];
   return (
-    <section className="grid gap-2 lg:grid-cols-5">
+    <section className="rounded-lg border border-white/10 bg-black/20 p-3 shadow-xl shadow-black/15">
+      <div className="mb-3 flex flex-col justify-between gap-2 px-1 sm:flex-row sm:items-center">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-accent">Golden Path</div>
+          <div className="mt-1 text-[11px] font-mono text-foreground/[0.36]">Every step is driven by backend response or explicit user action.</div>
+        </div>
+        <StatusBadge label={`${steps.filter((step) => step.done).length}/${steps.length} completed`} tone={steps.every((step) => step.done) ? 'success' : 'info'} />
+      </div>
+      <div className="grid gap-2 lg:grid-cols-5">
       {steps.map((step, index) => (
-        <div key={step.label} className="rounded-lg border border-white/10 bg-black/20 p-3">
+        <div key={step.label} className={`rc-step-card relative overflow-hidden rounded-lg border p-3 ${step.done ? 'border-accent/25 bg-accent/[0.075]' : 'border-white/10 bg-white/[0.025]'}`}>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-foreground/40">Step {index + 1}</span>
-            {step.done ? <Check size={14} className="text-success" /> : <Clock3 size={14} className="text-foreground/30" />}
+            <span className="text-[10px] font-bold uppercase tracking-widest text-foreground/[0.42]">Step {index + 1}</span>
+            <span className={`flex h-6 w-6 items-center justify-center rounded-md border ${step.done ? 'border-success/30 bg-success/10 text-success' : 'border-white/10 bg-black/25 text-foreground/30'}`}>
+              {step.done ? <Check size={14} /> : <Clock3 size={14} />}
+            </span>
           </div>
           <div className="mt-3 text-sm font-semibold text-white">{step.label}</div>
           <div className="mt-1 truncate text-[10px] font-mono text-foreground/40">{step.detail}</div>
+          {step.done && <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-success/60 to-transparent" />}
         </div>
       ))}
+      </div>
     </section>
   );
 };
@@ -406,7 +438,7 @@ const LimitationsStrip = () => (
       'Verifier-lite is not full verification and reports are not evidence.',
       'Memory is local SQLite; retrieval is not authority or permission.',
     ].map((item) => (
-      <div key={item} className="rounded-lg border border-warning/20 bg-warning/[0.035] px-3 py-2 text-[10px] font-mono leading-relaxed text-warning/85">
+      <div key={item} className="rounded-lg border border-warning/20 bg-warning/[0.045] px-3 py-2.5 text-[10px] font-mono leading-relaxed text-warning/85 shadow-lg shadow-black/10">
         {item}
       </div>
     ))}
@@ -432,7 +464,8 @@ const AutoPilotPanel = ({
   onRefreshReports: () => void;
   onSelectReport: (reportId: string) => void;
 }) => (
-  <SectionFrame icon={<FileSearch size={15} />} title="AutoPilot read-only audit" subtitle="Real backend scan, metadata-only report, no shell/network/model/MCP">
+  <SectionFrame icon={<FileSearch size={15} />} title="AutoPilot read-only audit" subtitle="Real backend scan, metadata-only report, no shell/network/model/MCP" accent="cyan">
+    {loading.audit === true && <InlineLoading label="Backend read-only audit request is in flight" />}
     <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
       <label className="min-w-0">
         <span className="text-[10px] font-bold uppercase tracking-widest text-foreground/35">Local root path</span>
@@ -446,7 +479,7 @@ const AutoPilotPanel = ({
       <IconButton label="Refresh" icon={<RefreshCw size={14} />} onClick={onRefreshReports} />
     </div>
 
-    <div className="mt-3 flex flex-wrap gap-2">
+    <div className="mt-4 flex flex-wrap gap-2">
       {reports.length === 0 ? (
         <EmptyState title="No AutoPilot reports loaded" detail="Run a read-only audit or refresh if backend restarted." icon={<FileSearch size={14} />} />
       ) : reports.map((report) => (
@@ -454,7 +487,7 @@ const AutoPilotPanel = ({
           key={report.report_id}
           type="button"
           onClick={() => onSelectReport(report.report_id)}
-          className={`max-w-full rounded-md border px-3 py-2 text-left transition-colors ${selectedReport?.report_id === report.report_id ? 'border-accent/40 bg-accent/10' : 'border-white/10 bg-white/[0.03] hover:border-white/20'}`}
+          className={`max-w-full rounded-md border px-3 py-2 text-left shadow-lg shadow-black/10 transition-colors ${selectedReport?.report_id === report.report_id ? 'border-accent/[0.45] bg-accent/[0.12]' : 'border-white/10 bg-white/[0.035] hover:border-white/20 hover:bg-white/[0.055]'}`}
         >
           <div className="flex items-center gap-2">
             <StatusBadge label={report.status} tone={toneForStatus(report.status)} />
@@ -478,7 +511,7 @@ const ReportSurface = ({
 }) => {
   if (!report) {
     return (
-      <SectionFrame icon={<Layers3 size={15} />} title="AutoPilot report" subtitle="No report selected">
+      <SectionFrame icon={<Layers3 size={15} />} title="AutoPilot report" subtitle="No report selected" accent="violet">
         <EmptyState title="Select or run an AutoPilot report" detail="The UI does not invent report data. Process-local backend reports may disappear after restart." />
       </SectionFrame>
     );
@@ -486,7 +519,7 @@ const ReportSurface = ({
   const inventory = report.source_inventory ?? {};
   const candidates = report.memory_candidate_proposals ?? [];
   return (
-    <SectionFrame icon={<Layers3 size={15} />} title="AutoPilot report" subtitle="Report, not evidence. Verifier-lite, not full verification.">
+    <SectionFrame icon={<Layers3 size={15} />} title="AutoPilot report" subtitle="Report, not evidence. Verifier-lite, not full verification." accent="violet">
       <div className="grid gap-3 lg:grid-cols-4">
         <Metric label="status" value={formatLabel(report.status)} tone={toneForStatus(report.status)} />
         <Metric label="included files" value={String(inventory.included_file_count ?? 0)} />
@@ -513,7 +546,7 @@ const ReportSurface = ({
         ) : (
           <div className="grid gap-2">
             {candidates.map((candidate, index) => (
-              <div key={`${candidate.source_ref ?? 'candidate'}-${index}`} className="rounded-lg border border-white/10 bg-black/20 p-3">
+              <div key={`${candidate.source_ref ?? 'candidate'}-${index}`} className="rc-glass-card rounded-lg border border-white/10 bg-black/20 p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -575,7 +608,8 @@ const MemoryPanel = ({
   onProposeManual: () => void;
   onTransition: (memoryId: string, action: 'approve' | 'reject' | 'delete') => void;
 }) => (
-  <SectionFrame icon={<Database size={15} />} title="Memory OS" subtitle="Explicit API actions only. Retrieval is not authority.">
+  <SectionFrame icon={<Database size={15} />} title="Memory OS" subtitle="Explicit API actions only. Retrieval is not authority." accent="emerald">
+    {loading.memory === true && <InlineLoading label="Memory API action pending explicit backend response" />}
     <div className="grid gap-2 sm:grid-cols-3">
       <SmallInput label="project_ref" value={projectRef} onChange={setProjectRef} />
       <SmallInput label="repository_ref" value={repositoryRef} onChange={setRepositoryRef} />
@@ -610,7 +644,7 @@ const MemoryPanel = ({
       {memories.length === 0 ? (
         <EmptyState title="No memories returned" detail="Use explicit propose actions or refresh after backend restart." />
       ) : memories.map((memory) => (
-        <div key={memory.id} className="rounded-lg border border-white/10 bg-black/20 p-3">
+        <div key={memory.id} className="rc-glass-card rounded-lg border border-white/10 bg-black/20 p-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -650,7 +684,8 @@ const SocietyPanel = ({
   onRefresh: () => void;
   onSelectSession: (sessionId: string) => void;
 }) => (
-  <SectionFrame icon={<Users size={15} />} title="Deterministic Society Session" subtitle="Bounded role proposals, not live autonomous multi-agent">
+  <SectionFrame icon={<Users size={15} />} title="Deterministic Society Session" subtitle="Bounded role proposals, not live autonomous multi-agent" accent="violet">
+    {loading.society === true && <InlineLoading label="Deterministic Society Session request is in flight" />}
     <div className="flex flex-wrap items-center gap-2">
       <IconButton label={loading.society ? 'Running' : 'Run from report'} icon={<Play size={14} />} onClick={onRun} disabled={!selectedReport || loading.society === true} />
       <IconButton label="Refresh" icon={<RefreshCw size={14} />} onClick={onRefresh} />
@@ -667,7 +702,7 @@ const SocietyPanel = ({
           key={session.session_id}
           type="button"
           onClick={() => onSelectSession(session.session_id)}
-          className={`rounded-md border px-3 py-2 text-left ${selectedSession?.session_id === session.session_id ? 'border-secondary/40 bg-secondary/10' : 'border-white/10 bg-white/[0.03] hover:border-white/20'}`}
+          className={`rounded-md border px-3 py-2 text-left shadow-lg shadow-black/10 transition-colors ${selectedSession?.session_id === session.session_id ? 'border-secondary/[0.45] bg-secondary/10' : 'border-white/10 bg-white/[0.035] hover:border-white/20 hover:bg-white/[0.055]'}`}
         >
           <div className="flex items-center gap-2">
             <StatusBadge label={session.status} tone={toneForStatus(session.status)} />
@@ -686,7 +721,7 @@ const SocietyPanel = ({
 
 const SocietySessionView = ({ session }: { session: SocietySession }) => (
   <div className="mt-4 space-y-4">
-    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+    <div className="rc-glass-card rounded-lg border border-white/10 bg-black/20 p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-white">{session.society_name ?? 'hackathon_rc_review_society'}</div>
@@ -701,10 +736,11 @@ const SocietySessionView = ({ session }: { session: SocietySession }) => (
       {(session.proposals ?? []).map((proposal) => <ProposalCard key={`${proposal.role}-${proposal.proposal_type}`} proposal={proposal} />)}
     </div>
     <Subhead title="Timeline" detail="Backend-owned session timeline, not journal/evidence events." />
-    <div className="space-y-2">
+    <div className="relative space-y-2">
+      <div className="absolute bottom-3 left-3 top-3 w-px bg-gradient-to-b from-accent/50 via-secondary/25 to-transparent" aria-hidden="true" />
       {(session.timeline ?? []).map((event) => (
-        <div key={`${event.sequence}-${event.event}`} className="flex items-start gap-3 rounded-lg border border-white/10 bg-black/20 p-3">
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-accent/25 bg-accent/10 text-[10px] font-bold text-accent">{event.sequence}</div>
+        <div key={`${event.sequence}-${event.event}`} className="relative flex items-start gap-3 rounded-lg border border-white/10 bg-black/20 p-3 shadow-lg shadow-black/10">
+          <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-accent/25 bg-accent/10 text-[10px] font-bold text-accent">{event.sequence}</div>
           <div className="min-w-0">
             <div className="text-[11px] font-semibold text-white">{formatLabel(event.event)}</div>
             <div className="mt-1 text-[10px] font-mono text-foreground/40">{event.summary}</div>
@@ -716,7 +752,7 @@ const SocietySessionView = ({ session }: { session: SocietySession }) => (
 );
 
 const ProposalCard = ({ proposal }: { proposal: SocietyProposal }) => (
-  <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+  <div className="rc-glass-card rounded-lg border border-white/10 bg-black/20 p-3">
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
@@ -735,8 +771,20 @@ const ProposalCard = ({ proposal }: { proposal: SocietyProposal }) => (
   </div>
 );
 
-const SectionFrame = ({ icon, title, subtitle, children }: { icon: React.ReactNode; title: string; subtitle: string; children: React.ReactNode }) => (
-  <section className="rounded-lg border border-white/10 bg-white/[0.035] p-4 shadow-xl shadow-black/10">
+const SectionFrame = ({
+  icon,
+  title,
+  subtitle,
+  children,
+  accent = 'cyan',
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+  accent?: 'cyan' | 'violet' | 'emerald';
+}) => (
+  <section className={`rc-section rc-section-${accent} rounded-lg border border-white/10 bg-white/[0.045] p-4 shadow-xl shadow-black/15`}>
     <div className="mb-4 flex items-start justify-between gap-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-accent">
@@ -758,14 +806,14 @@ const Subhead = ({ title, detail }: { title: string; detail: string }) => (
 );
 
 const Metric = ({ label, value, tone = 'unknown' }: { label: string; value: string; tone?: StatusToneName }) => (
-  <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+  <div className="rc-glass-card rounded-lg border border-white/10 bg-black/20 p-3">
     <div className="text-[9px] font-bold uppercase tracking-widest text-foreground/35">{label}</div>
     <div className={`mt-2 truncate text-sm font-semibold ${toneText(tone)}`}>{value}</div>
   </div>
 );
 
 const DataBlock = ({ title, items }: { title: string; items: string[] }) => (
-  <div className="rounded-lg border border-white/10 bg-black/15 p-3">
+  <div className="rounded-lg border border-white/10 bg-black/[0.18] p-3">
     <div className="text-[9px] font-bold uppercase tracking-widest text-foreground/35">{title}</div>
     {items.length === 0 ? (
       <div className="mt-2 text-[10px] font-mono text-foreground/25">none returned</div>
@@ -780,7 +828,7 @@ const DataBlock = ({ title, items }: { title: string; items: string[] }) => (
 );
 
 const ListBlock = ({ title, items }: { title: string; items: string[] }) => (
-  <div className="rounded-lg border border-white/10 bg-black/15 p-3">
+  <div className="rounded-lg border border-white/10 bg-black/[0.18] p-3">
     <div className="text-[9px] font-bold uppercase tracking-widest text-foreground/35">{title}</div>
     {items.length === 0 ? (
       <div className="mt-2 text-[10px] font-mono text-foreground/25">none returned</div>
@@ -793,9 +841,25 @@ const ListBlock = ({ title, items }: { title: string; items: string[] }) => (
 );
 
 const BoundaryNotice = ({ children }: { children: React.ReactNode }) => (
-  <p className="mt-3 rounded-md border border-accent/15 bg-accent/[0.035] px-3 py-2 text-[10px] font-mono leading-relaxed text-accent/80">
+  <p className="mt-3 rounded-md border border-accent/[0.18] bg-accent/[0.045] px-3 py-2 text-[10px] font-mono leading-relaxed text-accent/[0.82]">
     {children}
   </p>
+);
+
+const SignalBanner = ({ tone, message }: { tone: 'success' | 'danger'; message: string }) => (
+  <div className={`rounded-lg border px-4 py-3 text-[12px] font-mono shadow-xl shadow-black/15 ${tone === 'danger' ? 'border-danger/35 bg-danger/10 text-danger' : 'border-success/30 bg-success/10 text-success'}`}>
+    <div className="flex items-start gap-3">
+      <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${tone === 'danger' ? 'bg-danger' : 'bg-success'}`} />
+      <span className="leading-relaxed">{message}</span>
+    </div>
+  </div>
+);
+
+const InlineLoading = ({ label }: { label: string }) => (
+  <div className="mb-4 overflow-hidden rounded-lg border border-accent/20 bg-accent/[0.045]">
+    <div className="rc-loading-bar h-1 w-full bg-accent/40" />
+    <div className="px-3 py-2 text-[10px] font-mono uppercase tracking-[0.14em] text-accent/85">{label}</div>
+  </div>
 );
 
 const IconButton = ({ label, icon, onClick, disabled = false }: { label: string; icon: React.ReactNode; onClick: () => void; disabled?: boolean }) => (
@@ -803,7 +867,7 @@ const IconButton = ({ label, icon, onClick, disabled = false }: { label: string;
     type="button"
     onClick={onClick}
     disabled={disabled}
-    className="inline-flex items-center justify-center gap-2 rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-accent transition-colors hover:border-accent/60 hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-45"
+    className="inline-flex items-center justify-center gap-2 rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-accent shadow-lg shadow-cyan-950/10 transition-colors hover:border-accent/60 hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-45"
   >
     {icon}
     {label}
@@ -879,6 +943,14 @@ function toneText(tone: StatusToneName): string {
   if (tone === 'danger') return 'text-danger';
   if (tone === 'info') return 'text-accent';
   return 'text-foreground/45';
+}
+
+function toneDot(tone: StatusToneName): string {
+  if (tone === 'success') return 'bg-success shadow-[0_0_12px_rgba(16,185,129,0.55)]';
+  if (tone === 'warning') return 'bg-warning shadow-[0_0_12px_rgba(245,158,11,0.5)]';
+  if (tone === 'danger') return 'bg-danger shadow-[0_0_12px_rgba(244,63,94,0.5)]';
+  if (tone === 'info') return 'bg-accent shadow-[0_0_12px_rgba(6,182,212,0.55)]';
+  return 'bg-white/25';
 }
 
 function formatLabel(value: string): string {

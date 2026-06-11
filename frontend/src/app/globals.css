@@ -68,3 +68,122 @@ body {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   @apply bg-accent/50;
 }
+
+/* Hackathon RC premium visual layer */
+.rc-workspace {
+  isolation: isolate;
+}
+
+.rc-ambient-layer {
+  background:
+    radial-gradient(circle at 18% 18%, rgba(6, 182, 212, 0.18), transparent 30%),
+    radial-gradient(circle at 78% 4%, rgba(139, 92, 246, 0.2), transparent 28%),
+    radial-gradient(circle at 52% 86%, rgba(16, 185, 129, 0.1), transparent 32%),
+    linear-gradient(135deg, rgba(3, 6, 17, 0.96), rgba(4, 9, 24, 0.92));
+  animation: rc-ambient-drift 18s ease-in-out infinite alternate;
+  opacity: 0.92;
+}
+
+.rc-grid-layer {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.026) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(circle at center, black 0%, transparent 78%);
+}
+
+.rc-hero,
+.rc-section,
+.rc-glass-card,
+.rc-step-card {
+  backdrop-filter: blur(18px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 18px 50px rgba(0, 0, 0, 0.22);
+}
+
+.rc-hero::before {
+  content: "";
+  position: absolute;
+  inset: -35% -20% auto auto;
+  width: 48rem;
+  height: 22rem;
+  background: conic-gradient(from 190deg, rgba(6, 182, 212, 0), rgba(6, 182, 212, 0.2), rgba(139, 92, 246, 0.18), rgba(6, 182, 212, 0));
+  filter: blur(34px);
+  opacity: 0.72;
+  transform: rotate(-8deg);
+}
+
+.rc-section {
+  position: relative;
+  overflow: hidden;
+}
+
+.rc-section::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.38), transparent);
+}
+
+.rc-section-violet::before {
+  background: linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.4), transparent);
+}
+
+.rc-section-emerald::before {
+  background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.38), transparent);
+}
+
+.rc-glass-card,
+.rc-step-card {
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.rc-glass-card:hover,
+.rc-step-card:hover {
+  transform: translateY(-1px);
+}
+
+.rc-loading-bar {
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.08), rgba(34, 211, 238, 0.85), rgba(139, 92, 246, 0.3), rgba(6, 182, 212, 0.08));
+  background-size: 220% 100%;
+  animation: rc-loading-sheen 1.4s ease-in-out infinite;
+}
+
+@keyframes rc-ambient-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: saturate(1);
+  }
+  100% {
+    transform: translate3d(0, -10px, 0) scale(1.03);
+    filter: saturate(1.18);
+  }
+}
+
+@keyframes rc-loading-sheen {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-ambient-layer,
+  .rc-loading-bar {
+    animation: none;
+  }
+
+  .rc-glass-card,
+  .rc-step-card {
+    transition: none;
+  }
+
+  .rc-glass-card:hover,
+  .rc-step-card:hover {
+    transform: none;
+  }
+}
