@@ -105,6 +105,10 @@ def create_app():
     from aegis.api.routes_autopilot import router as autopilot_router
     fastapi_app.include_router(autopilot_router)
 
+    # Deterministic Society Session RC1
+    from aegis.api.routes_society import router as society_router
+    fastapi_app.include_router(society_router)
+
     # Vision feed
     from aegis.api.routes_vision import router as vision_router
     fastapi_app.include_router(vision_router)
