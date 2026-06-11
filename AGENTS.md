@@ -1,70 +1,116 @@
 # Aegis Agent Instructions
 
-Aegis is a local Windows-first Codex-style AI computer operator runtime.
+Aegis is a local-first AI Mission Control Workspace for Windows-first operator
+automation, runtime truth, and release-grade operational visibility.
 
-Aegis is not Ultron.
-Do not import, copy, reuse, or adapt Ultron code into Aegis.
-Ultron may only be referenced in explicit audit/design tasks.
+Aegis is not Ultron. Do not import, copy, reuse, or adapt Ultron code into
+Aegis unless an explicit sprint asks for an Ultron inspiration audit.
 
-Core principles:
-- Reliability before capability
-- No fake telemetry
-- No fake UI state
-- No fake verification
-- No optimistic success
-- Dispatch success is not verification success
-- Evidence exists does not mean verified
-- Frontend is not the source of truth
-- Backend snapshot, event journal, protocol events, and execution evidence are the source of truth
+## Core Invariants
 
-Architecture rules:
-- Tools are dumb hands
-- Decisions pass through parser/decomposition, guard, executor, verifier, evidence gate, and journal
-- Ambiguous commands become clarification_required
-- Risky/destructive commands require approval or are blocked
-- Unverified actions must not be shown as verified success
+- Backend-owned state is the source of truth.
+- Frontend state is presentation only, never authority.
+- Model output is proposal-only, never truth, evidence, verifier success,
+  approval, lease, capability, or execution permission.
+- Memory retrieval is not authority.
+- Context packages are not permission.
+- Blueprint, manifest, report, plugin, review, lease, or approval metadata is
+  not execution permission.
+- Policy allow is not execution success.
+- Report output is not evidence or verifier success.
+- Verifier success may only come from backend verifier logic.
+- No fake telemetry, fake UI state, fake verification, fake runtime health,
+  fake logs, fake metrics, or optimistic success.
+- No uncontrolled autonomous loop, silent memory persistence, approval bypass,
+  capability bypass, lease bypass, or hidden model/provider/tool fallback.
 
-Current priorities:
-1. Runtime truth
-2. Evidence integrity
-3. Parser/decomposition correctness
-4. Verification semantics
-5. Approval/clarification/blocked semantics
-6. Replay/journal/snapshot consistency
-7. Read-only diagnostics
-8. Controlled capability expansion
+## Active Priority
 
-Forbidden unless explicitly requested:
-- click implementation
-- browser_click / desktop_click implementation
-- vision/OCR/accessibility
-- voice
-- memory graph
-- autonomous loop
+Current active priority: Hackathon Release Candidate preparation.
+
+The declared Hackathon RC scope is intentionally narrow:
+
+- Memory OS RC1-Core
+- AutoPilot RC1-Core
+- Deterministic Society Session RC1
+- Premium Single-Page Mission Control UI
+- Fail-safe release package
+
+Detailed scope and acceptance criteria live in
+`docs/HACKATHON_RC_SCOPE.md`. Long-term product direction lives in
+`docs/AEGIS_VISION.md`.
+
+## Explicit RC Exceptions
+
+The following are allowed only when requested by a scoped Hackathon RC sprint
+with tests and safety gates:
+
+- new Memory, AutoPilot, and Society backend modules
+- new frontend panels or tabs for the declared RC scope
+- new protocol, event, or API shapes required for the declared RC scope
+- new memory states required for Memory OS RC1-Core
+- deterministic society session artifacts
+
+These exceptions do not loosen the core invariants.
+
+## Still Forbidden Unless Explicitly Requested
+
+- live autonomous multi-agent loop
+- LLM-dependent society runtime
+- real MCP write execution
+- real shell or file mutation
+- model auto-routing
+- cloud fallback
+- vector or graph memory as a Hackathon RC blocker
+- full CodingAgent patch generation
+- voice, screen, or multimodal production features
+- WebGL or shader dependency
+- production deployment claim
 - plugin marketplace
 - self-modifying code
 - Ultron bridge
 - unified launcher
-- LLM planner integration
-- frontend redesign
-- new runtime states
-- schema/protocol expansion
 
-Validation:
-Use focused tests first, then full validation when required.
+## Working Rules
 
-Common commands:
-- .\.venv\Scripts\python.exe -m pytest tests\test_intent -q
-- .\.venv\Scripts\python.exe -m pytest tests\test_executor\test_executor.py -q
-- .\.venv\Scripts\python.exe -m pytest -q
-- cd frontend && npm.cmd run build
-- git diff --check
+- Identify the active workspace/repository before editing.
+- Confirm whether the task belongs to Aegis, Ultron, or another project.
+- Inspect relevant files before editing.
+- Keep implementation scope narrow.
+- Avoid opportunistic refactors.
+- Do not implement future roadmap phases unless explicitly requested.
+- Stop and report ambiguity before editing when scope is unclear.
+- Preserve existing contracts unless the sprint explicitly changes them.
+- If a larger issue is found, report it as remaining risk instead of silently
+  expanding scope.
 
-Report after every sprint:
+## Validation
+
+Use focused validation first, then broader validation when required by the
+sprint. Common commands:
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_intent -q`
+- `.\.venv\Scripts\python.exe -m pytest tests\test_executor\test_executor.py -q`
+- `.\.venv\Scripts\python.exe -m pytest -q`
+- `cd frontend && npm.cmd run build`
+- `git diff --check`
+
+## Sprint Report Format
+
+After every task, report:
+
+- decision
+- commit hash
+- pushed yes/no
+- active repo/worktree path
+- branch or detached HEAD status
 - changed files
+- line/diff stats
 - exact behavior
 - tests added/changed
 - validation outputs
+- whether runtime/backend/frontend behavior changed
 - intentionally not done
+- safety invariant check
 - remaining risks
 - recommended next sprint
