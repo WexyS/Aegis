@@ -1,4 +1,11 @@
 import {
+  AutoPilotReport,
+  AutoPilotReportListResponse,
+  MemoryOperationResponse,
+  SocietySession,
+  SocietySessionListResponse,
+} from '@/types/rc';
+import {
   AppRegistrySnapshot,
   ApprovalHygieneDenyResponse,
   ApprovalHygienePreviewResponse,
@@ -52,6 +59,177 @@ export async function fetchLocalProviderProbeProjection(): Promise<LocalProvider
     throw new Error(`Local provider probe projection request failed: ${response.status}`);
   }
   return response.json() as Promise<LocalProviderProbeProjection>;
+}
+
+export async function runAutoPilotAudit(payload: {
+  root_path: string;
+  task_id?: string;
+}): Promise<AutoPilotReport> {
+  const url = new URL('/autopilot/run', API_URL);
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({
+      task_id: payload.task_id ?? 'repo_structure_audit',
+      root_path: payload.root_path,
+    }),
+  });
+  const body = await parseJsonBody<AutoPilotReport | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `AutoPilot audit failed: ${response.status}`));
+  }
+  if (!body || !('report_id' in body)) {
+    throw new Error('AutoPilot audit returned no report.');
+  }
+  return body as AutoPilotReport;
+}
+
+export async function fetchAutoPilotReports(): Promise<AutoPilotReportListResponse> {
+  const url = new URL('/autopilot/reports', API_URL);
+  const response = await fetch(url.toString(), { cache: 'no-store' });
+  const body = await parseJsonBody<AutoPilotReportListResponse | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `AutoPilot reports request failed: ${response.status}`));
+  }
+  return body as AutoPilotReportListResponse;
+}
+
+export async function fetchAutoPilotReport(reportId: string): Promise<AutoPilotReport> {
+  const url = new URL(`/autopilot/reports/${encodeURIComponent(reportId)}`, API_URL);
+  const response = await fetch(url.toString(), { cache: 'no-store' });
+  const body = await parseJsonBody<AutoPilotReport | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `AutoPilot report request failed: ${response.status}`));
+  }
+  return body as AutoPilotReport;
+}
+
+export async function proposeMemory(payload: Record<string, unknown>): Promise<MemoryOperationResponse> {
+  const url = new URL('/memory/propose', API_URL);
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify(payload),
+  });
+  const body = await parseJsonBody<MemoryOperationResponse | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Memory propose failed: ${response.status}`));
+  }
+  return body as MemoryOperationResponse;
+}
+
+export async function approveMemory(memoryId: string): Promise<MemoryOperationResponse> {
+  const url = new URL(`/memory/${encodeURIComponent(memoryId)}/approve`, API_URL);
+  const response = await fetch(url.toString(), { method: 'POST', cache: 'no-store' });
+  const body = await parseJsonBody<MemoryOperationResponse | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Memory approve failed: ${response.status}`));
+  }
+  return body as MemoryOperationResponse;
+}
+
+export async function rejectMemory(memoryId: string, reason: string): Promise<MemoryOperationResponse> {
+  const url = new URL(`/memory/${encodeURIComponent(memoryId)}/reject`, API_URL);
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({ reason }),
+  });
+  const body = await parseJsonBody<MemoryOperationResponse | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Memory reject failed: ${response.status}`));
+  }
+  return body as MemoryOperationResponse;
+}
+
+export async function deleteMemory(memoryId: string): Promise<MemoryOperationResponse> {
+  const url = new URL(`/memory/${encodeURIComponent(memoryId)}`, API_URL);
+  const response = await fetch(url.toString(), { method: 'DELETE', cache: 'no-store' });
+  const body = await parseJsonBody<MemoryOperationResponse | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Memory delete failed: ${response.status}`));
+  }
+  return body as MemoryOperationResponse;
+}
+
+export async function listMemories(params: {
+  status?: string;
+  scope?: string;
+  sensitivity?: string;
+  project_ref?: string;
+  repository_ref?: string;
+  session_ref?: string;
+  include_deleted?: boolean;
+} = {}): Promise<MemoryOperationResponse> {
+  const url = new URL('/memory', API_URL);
+  appendDefinedParams(url, params);
+  const response = await fetch(url.toString(), { cache: 'no-store' });
+  const body = await parseJsonBody<MemoryOperationResponse | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Memory list failed: ${response.status}`));
+  }
+  return body as MemoryOperationResponse;
+}
+
+export async function searchMemories(params: {
+  keyword?: string;
+  scope?: string;
+  sensitivity?: string;
+  project_ref?: string;
+  repository_ref?: string;
+  session_ref?: string;
+  include_sensitive?: boolean;
+} = {}): Promise<MemoryOperationResponse> {
+  const url = new URL('/memory/search', API_URL);
+  appendDefinedParams(url, params);
+  const response = await fetch(url.toString(), { cache: 'no-store' });
+  const body = await parseJsonBody<MemoryOperationResponse | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Memory search failed: ${response.status}`));
+  }
+  return body as MemoryOperationResponse;
+}
+
+export async function runSocietySession(payload: {
+  autopilot_report_id?: string;
+  memory_ids?: string[];
+  society_name?: string;
+}): Promise<SocietySession> {
+  const url = new URL('/society/run', API_URL);
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify(payload),
+  });
+  const body = await parseJsonBody<SocietySession | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Society session failed: ${response.status}`));
+  }
+  return body as SocietySession;
+}
+
+export async function fetchSocietySessions(): Promise<SocietySessionListResponse> {
+  const url = new URL('/society/sessions', API_URL);
+  const response = await fetch(url.toString(), { cache: 'no-store' });
+  const body = await parseJsonBody<SocietySessionListResponse | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Society sessions request failed: ${response.status}`));
+  }
+  return body as SocietySessionListResponse;
+}
+
+export async function fetchSocietySession(sessionId: string): Promise<SocietySession> {
+  const url = new URL(`/society/sessions/${encodeURIComponent(sessionId)}`, API_URL);
+  const response = await fetch(url.toString(), { cache: 'no-store' });
+  const body = await parseJsonBody<SocietySession | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Society session request failed: ${response.status}`));
+  }
+  return body as SocietySession;
 }
 
 type CommandEnvelope = {
@@ -167,6 +345,25 @@ function resolveErrorDetail(body: unknown, fallback: string): string {
   if (body && typeof body === 'object' && 'detail' in body) {
     const detail = (body as { detail?: unknown }).detail;
     if (typeof detail === 'string' && detail.trim()) return detail;
+    if (detail && typeof detail === 'object') {
+      const record = detail as Record<string, unknown>;
+      const reasons = Array.isArray(record.failure_reasons) ? record.failure_reasons.join(', ') : null;
+      const status = typeof record.status === 'string' ? record.status : null;
+      if (status && reasons) return `${status}: ${reasons}`;
+      if (status) return status;
+      try {
+        return JSON.stringify(detail);
+      } catch {
+        return fallback;
+      }
+    }
   }
   return fallback;
+}
+
+function appendDefinedParams(url: URL, params: Record<string, unknown>): void {
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    url.searchParams.set(key, String(value));
+  });
 }

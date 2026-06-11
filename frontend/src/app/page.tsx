@@ -18,6 +18,7 @@ import { MaintenanceScanPanel } from '@/features/runtime/components/MaintenanceS
 import { AppRegistryPanel } from '@/features/runtime/components/AppRegistryPanel';
 import { ToolRegistryPanel } from '@/features/runtime/components/ToolRegistryPanel';
 import { SystemOverview } from '@/features/dashboard/components/SystemOverview';
+import { MissionControlRCPanel } from '@/features/mission-control-rc/components/MissionControlRCPanel';
 
 import { connectRuntime, disconnectRuntime } from '@/lib/socket';
 
@@ -56,7 +57,8 @@ export default function AegisDashboard() {
           {activeTab === 'Chaos Shield' && <ChaosShieldPanel />}
           {activeTab === 'Applications' && <AppRegistryPanel />}
           {activeTab === 'Tools' && <ToolRegistryPanel />}
-          {!['chat', 'Agent Graph', 'Vision Lab', 'Runtime Stats', 'Chaos Shield', 'Applications', 'Tools'].includes(activeTab) && (
+          {activeTab === 'Hackathon RC' && <MissionControlRCPanel />}
+          {!['chat', 'Agent Graph', 'Vision Lab', 'Runtime Stats', 'Chaos Shield', 'Applications', 'Tools', 'Hackathon RC'].includes(activeTab) && (
             <div className="flex-1 flex items-center justify-center text-[11px] font-mono uppercase tracking-[0.16em] text-foreground/30">
               {activeTab} unavailable
             </div>
