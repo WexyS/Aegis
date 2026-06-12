@@ -125,6 +125,10 @@ def create_app():
     from aegis.api.routes_model_gateway import router as model_gateway_router
     fastapi_app.include_router(model_gateway_router)
 
+    # Skill Registry RC1
+    from aegis.api.routes_skill_registry import router as skill_registry_router
+    fastapi_app.include_router(skill_registry_router)
+
     # Wrap FastAPI with Socket.IO ASGI middleware
     asgi_app = create_socketio_app(fastapi_app)
 

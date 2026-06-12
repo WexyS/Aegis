@@ -40,6 +40,10 @@ Detailed scope and acceptance criteria live in
 `docs/HACKATHON_RC_SCOPE.md`. Long-term product direction lives in
 `docs/AEGIS_VISION.md`.
 
+Repo-local Codex development guidance for future skill work lives in
+`docs/codex-skill-pack-for-aegis-v1.md`; it is not runtime skill execution
+permission.
+
 ## Explicit RC Exceptions
 
 The following are allowed only when requested by a scoped Hackathon RC sprint
