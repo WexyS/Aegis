@@ -250,6 +250,37 @@ From the repository root:
 
 The default backend port is `8400`. The default frontend port is `3000`.
 
+## Hackathon RC Judge Quickstart
+
+Aegis Hackathon RC is a local Mission Control demo for a narrow governed path:
+Memory OS RC1-Core, AutoPilot RC1-Core, Deterministic Society Session RC1, and
+the Premium Mission Control RC UI.
+
+Run locally, then open `http://127.0.0.1:3000` and click `Hackathon RC`.
+
+Safe demo path:
+
+1. Run AutoPilot against a disposable local sample project.
+2. Inspect the AutoPilot report and memory candidates.
+3. Explicitly propose and approve or reject Memory items.
+4. Run a deterministic Society Session from the selected AutoPilot report.
+5. Confirm role cards, timeline, final summary, limitation labels, and Golden
+   Path completion.
+
+Judge-facing docs:
+
+- [Hackathon RC release package](docs/hackathon-rc-release-package-v1.md)
+- [Hackathon RC demo runbook](docs/hackathon-rc-demo-runbook.md)
+- [Hackathon RC demo script](docs/hackathon-rc-demo-script.md)
+- [Hackathon RC claims matrix](docs/hackathon-rc-claims-matrix.md)
+- [Hackathon RC validation manifest](docs/hackathon-rc-validation-manifest.md)
+
+Intentionally not implemented in this RC: live autonomous multi-agent runtime,
+model calls, MCP/tool calls, shell execution, cloud fallback, production
+deployment, durable AutoPilot report persistence, and durable Society session
+persistence. AutoPilot reports are not evidence, verifier-lite is not full
+verifier success, and Memory is not authority or permission.
+
 ## Validation
 
 Run the backend test suite:
