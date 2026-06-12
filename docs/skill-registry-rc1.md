@@ -181,12 +181,17 @@ The validator blocks:
 
 The validator itself is metadata-only and performs no execution.
 
-## External Source Readiness
+## External Candidate Intake S10.1
 
-The schema can represent future external candidates such as ECC selected skills
-or Higgsfield MCP candidates as disabled/candidate/future-gated metadata.
+S10.1 adds selected external skill/MCP candidate manifests as Aegis-native
+metadata. No external source is installed, executed, cloned, authenticated, or
+connected.
 
-S10 does not:
+External candidate entries are code-defined catalog records only. They preserve
+source URLs and risk classifications so future review can reason about them
+without granting permission.
+
+S10.1 does not:
 
 - bulk import ECC
 - call GitHub
@@ -195,9 +200,113 @@ S10 does not:
 - handle credentials
 - enable external skills
 - execute candidate skills
+- generate media
+- spend credits or quota
+- store credentials
 
-Future S10.1 can add selected external candidate intake with disabled-by-default
-manifests, source provenance, risk classification, and no execution.
+### ECC Candidate Entries
+
+ECC candidate source references:
+
+- `https://github.com/affaan-m/ecc`
+- `https://github.com/affaan-m/ECC`
+
+The catalog treats ECC as an external agent-harness skill reference. It does not
+install ECC, run ECC scripts, execute external `SKILL.md` instructions, call
+GitHub APIs, or import ECC content in bulk.
+
+Added Aegis-native ECC candidate manifests:
+
+`ecc_repo_scan_review`
+
+- Category: `external_skill_reference`
+- Status: `candidate`
+- Risk: `unknown_risk`
+- Execution mode: `external_candidate`
+- Required capabilities: `repo_read_only_context`, `operator_review`
+- No repo scan is performed by Skill Registry.
+
+`ecc_article_writing_reference`
+
+- Category: `external_skill_reference`
+- Status: `candidate`
+- Risk: `local_model_required`
+- Execution mode: `external_candidate`
+- Required capabilities: `model_gateway_proposal_generation`,
+  `operator_review`, `source_refs_only`
+- No Model Gateway call is performed by Skill Registry.
+
+`ecc_security_config_review`
+
+- Category: `external_skill_reference`
+- Status: `candidate`
+- Risk: `unknown_risk`
+- Execution mode: `external_candidate`
+- Required capabilities: `security_config_metadata_review`,
+  `operator_review`, `source_refs_only`
+- No shell execution, secret access, credential access, or verifier success is
+  created.
+
+`ecc_github_ops_reference`
+
+- Category: `external_skill_reference`
+- Status: `future_gated`
+- Risk: `high_risk_external`
+- Execution mode: `future_policy_gated`
+- Required capabilities: `github_auth`, `network_access`,
+  `explicit_user_approval`, `mutation_policy_gate`,
+  `capability_lease_required_future`
+- No GitHub API call, GitHub mutation, credential handling, or network action is
+  performed.
+
+### Higgsfield MCP Candidate Entry
+
+Higgsfield candidate source reference:
+
+- `https://mcp.higgsfield.ai/mcp`
+
+Added Aegis-native Higgsfield candidate manifest:
+
+`higgsfield_mcp_media_generation`
+
+- Category: `external_mcp`
+- Status: `future_gated`
+- Risk: `high_risk_external`
+- Execution mode: `external_candidate`
+- Requires network: true
+- Requires MCP: true
+- Requires credentials: true
+- Required capabilities: `external_mcp_connect`, `media_generation`,
+  `explicit_user_authorization`, `credential_boundary`,
+  `quota_or_credit_acknowledgement`
+
+This entry is not connected, not authenticated, and not available for RC1
+execution. It creates no media and spends no quota or credits.
+
+### Disabled/Future-Gated Semantics
+
+For external candidates:
+
+- `candidate` means the manifest exists for review only.
+- `future_gated` means future use requires explicit policy, approval,
+  credential, lease, and audit boundaries before any execution.
+- `external_candidate` means external origin metadata exists, not that the
+  external system is installed or callable.
+- `future_policy_gated` means the candidate is blocked from execution until a
+  later sprint defines and validates the missing gates.
+
+Before any future external execution, Aegis would need:
+
+- explicit policy gate
+- explicit user approval
+- credential boundary
+- capability lease
+- scoped network/MCP connector
+- audit/reporting strategy
+- no hidden fallback
+- error and rollback handling
+- evidence expectations
+- verifier/postcondition strategy
 
 ## Relationship To Model Gateway
 

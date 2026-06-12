@@ -37,7 +37,7 @@ async def test_skill_registry_list_endpoint_returns_catalog() -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "listed"
-    assert data["skill_count"] == 6
+    assert data["skill_count"] == 11
     assert {skill["skill_id"] for skill in data["skills"]} >= {
         "repo_structure_audit",
         "memory_candidate_review",
@@ -45,6 +45,11 @@ async def test_skill_registry_list_endpoint_returns_catalog() -> None:
         "report_summarization",
         "context_package_review",
         "model_assisted_explanation",
+        "higgsfield_mcp_media_generation",
+        "ecc_repo_scan_review",
+        "ecc_article_writing_reference",
+        "ecc_security_config_review",
+        "ecc_github_ops_reference",
     }
     assert data["skill_execution_allowed"] is False
     _assert_non_execution(data)
@@ -63,6 +68,25 @@ async def test_skill_registry_get_endpoint_returns_manifest() -> None:
     assert data["skill"]["skill_id"] == "model_assisted_explanation"
     assert data["skill"]["requires_model"] is True
     assert data["skill"]["non_authority_flags"]["model_call_performed"] is False
+    assert data["skill_execution_allowed"] is False
+    _assert_non_execution(data)
+
+
+@pytest.mark.asyncio
+async def test_skill_registry_get_endpoint_returns_external_candidate_metadata() -> None:
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/skills/higgsfield_mcp_media_generation")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "found"
+    assert data["skill"]["status"] == "future_gated"
+    assert data["skill"]["requires_network"] is True
+    assert data["skill"]["requires_mcp"] is True
+    assert data["skill"]["requires_credentials"] is True
+    assert data["skill"]["non_authority_flags"]["mcp_call_performed"] is False
     assert data["skill_execution_allowed"] is False
     _assert_non_execution(data)
 

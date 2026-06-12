@@ -20,6 +20,19 @@ EXPECTED_SKILLS = {
     "report_summarization",
     "context_package_review",
     "model_assisted_explanation",
+    "higgsfield_mcp_media_generation",
+    "ecc_repo_scan_review",
+    "ecc_article_writing_reference",
+    "ecc_security_config_review",
+    "ecc_github_ops_reference",
+}
+
+EXTERNAL_CANDIDATES = {
+    "higgsfield_mcp_media_generation",
+    "ecc_repo_scan_review",
+    "ecc_article_writing_reference",
+    "ecc_security_config_review",
+    "ecc_github_ops_reference",
 }
 
 REQUIRED_FIELDS = {
@@ -89,7 +102,7 @@ def test_registry_lists_built_in_skills() -> None:
     catalog = build_skill_catalog()
 
     assert catalog["status"] == "listed"
-    assert catalog["skill_count"] == 6
+    assert catalog["skill_count"] == 11
     assert {skill["skill_id"] for skill in catalog["skills"]} == EXPECTED_SKILLS
     assert catalog["skill_execution_allowed"] is False
     assert catalog["no_execution_endpoint"] is True
@@ -103,7 +116,7 @@ def test_each_built_in_skill_has_required_fields_and_valid_taxonomy() -> None:
         assert manifest["execution_mode"] in VALID_EXECUTION_MODES
         assert manifest["execution_mode"] != "executable"
         assert manifest["status"] in {"available", "disabled", "future_gated", "candidate", "blocked"}
-        assert manifest["external_source"] == "aegis_builtin"
+        assert manifest["external_source"]
         assert manifest["required_capabilities"]
         assert manifest["allowed_scopes"]
 
@@ -147,7 +160,7 @@ def test_model_required_skills_do_not_call_model_gateway(skill_id: str) -> None:
 
 
 def test_external_network_mcp_shell_and_mutation_flags_are_false_for_builtins() -> None:
-    for manifest in list_skill_manifests():
+    for manifest in [item for item in list_skill_manifests() if item["external_source"] == "aegis_builtin"]:
         assert manifest["requires_network"] is False
         assert manifest["requires_mcp"] is False
         assert manifest["requires_shell"] is False
@@ -213,3 +226,81 @@ def test_candidate_external_schema_can_be_represented_without_execution() -> Non
     assert result["model_call_performed"] is False
     assert result["mcp_call_performed"] is False
     assert result["tool_call_performed"] is False
+
+
+def test_higgsfield_candidate_exists_and_is_future_gated_non_executable() -> None:
+    manifest = get_skill_manifest("higgsfield_mcp_media_generation")
+
+    assert manifest is not None
+    assert manifest["category"] == "external_mcp"
+    assert manifest["status"] == "future_gated"
+    assert manifest["risk_class"] == "high_risk_external"
+    assert manifest["execution_mode"] == "external_candidate"
+    assert manifest["requires_network"] is True
+    assert manifest["requires_mcp"] is True
+    assert manifest["requires_credentials"] is True
+    assert manifest["can_mutate_files"] is False
+    assert manifest["can_write_memory"] is False
+    assert manifest["input_contract"]["candidate_source_url"] == "https://mcp.higgsfield.ai/mcp"
+    assert "no_media_generation" in manifest["limitations"]
+    assert "no_credit_or_quota_spending" in manifest["limitations"]
+    for field_name in NON_AUTHORITY_FALSE_FIELDS:
+        assert manifest["non_authority_flags"][field_name] is False
+
+
+def test_ecc_candidate_entries_exist_and_are_not_executable() -> None:
+    for skill_id in EXTERNAL_CANDIDATES - {"higgsfield_mcp_media_generation"}:
+        manifest = get_skill_manifest(skill_id)
+
+        assert manifest is not None
+        assert manifest["category"] == "external_skill_reference"
+        assert manifest["status"] in {"candidate", "future_gated"}
+        assert manifest["execution_mode"] in {"external_candidate", "future_policy_gated"}
+        assert manifest["external_source"] == "ecc_candidate_reference"
+        assert manifest["input_contract"]["candidate_source_url"] == "https://github.com/affaan-m/ecc"
+        assert manifest["requires_shell"] is False
+        assert manifest["requires_mcp"] is False
+        assert manifest["can_write_memory"] is False
+        assert manifest["non_authority_flags"]["runtime_dispatch_allowed"] is False
+        assert manifest["non_authority_flags"]["evidence_created"] is False
+        assert manifest["non_authority_flags"]["verifier_success"] is False
+
+
+def test_ecc_github_ops_candidate_is_network_credential_and_future_gated() -> None:
+    manifest = get_skill_manifest("ecc_github_ops_reference")
+
+    assert manifest is not None
+    assert manifest["status"] == "future_gated"
+    assert manifest["risk_class"] == "high_risk_external"
+    assert manifest["execution_mode"] == "future_policy_gated"
+    assert manifest["requires_network"] is True
+    assert manifest["requires_credentials"] is True
+    assert manifest["can_mutate_files"] is False
+    assert "mutation_policy_gate" in manifest["required_capabilities"]
+    assert "capability_lease_required_future" in manifest["required_capabilities"]
+    assert "no_github_api_call" in manifest["limitations"]
+    assert "no_github_mutation" in manifest["limitations"]
+
+
+def test_ecc_repo_scan_candidate_is_not_a_repo_scan() -> None:
+    manifest = get_skill_manifest("ecc_repo_scan_review")
+
+    assert manifest is not None
+    assert manifest["execution_mode"] == "external_candidate"
+    assert manifest["requires_network"] is False
+    assert manifest["requires_shell"] is False
+    assert manifest["can_mutate_files"] is False
+    assert "repo_read_only_context" in manifest["required_capabilities"]
+    assert "no_repo_scan_performed_by_skill_registry" in manifest["limitations"]
+
+
+def test_external_candidates_validate_without_performing_side_effects() -> None:
+    for skill_id in EXTERNAL_CANDIDATES:
+        manifest = get_skill_manifest(skill_id)
+        assert manifest is not None
+
+        result = validate_skill_manifest(manifest)
+
+        assert result["status"] == "valid"
+        assert result["failure_reasons"] == ()
+        _assert_registry_non_execution(result)
