@@ -69,7 +69,7 @@ body {
   @apply bg-accent/50;
 }
 
-/* Hackathon RC premium visual layer */
+/* Aegis Control visual layer */
 .rc-workspace {
   isolation: isolate;
 }

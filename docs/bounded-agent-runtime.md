@@ -1,10 +1,14 @@
-# Bounded Agent Runtime RC1
+# Bounded Agent Runtime
 
 Decision: `BOUNDED_AGENT_RUNTIME_RC1_PROPOSAL_ONLY`
 
+Current status: implemented as a proposal-only backend/API surface. The
+historical decision name is retained for traceability; public product wording
+should use Bounded Agent Runtime.
+
 ## Scope
 
-Bounded Agent Runtime RC1 introduces backend-owned agent profiles, deterministic
+Bounded Agent Runtime introduces backend-owned agent profiles, deterministic
 proposal-only sessions, timeline events, and process-local session storage.
 
 It is not an autonomous agent system. It is not a tool runner, MCP runner, shell
@@ -14,7 +18,7 @@ automation layer, or CodingAgent implementation.
 
 ## What It Is
 
-Agent Runtime RC1 is a proposal engine:
+Bounded Agent Runtime is a proposal engine:
 
 - loads static built-in agent profiles
 - references Skill Registry metadata
@@ -27,7 +31,7 @@ Every output remains planning material only.
 
 ## What It Is Not
 
-Agent Runtime RC1 does not:
+Bounded Agent Runtime does not:
 
 - start an autonomous loop
 - execute skills
@@ -92,7 +96,7 @@ Static built-in profiles:
 - Role: `report_writer`
 - Allowed skills: `report_summarization`, `model_assisted_explanation`
 - Aggregates prior proposal outputs into a proposal-only summary.
-- Does not call Model Gateway for summarization in RC1.
+- Does not call Model Gateway for summarization in the current implementation.
 
 ## Session Model
 
@@ -152,7 +156,8 @@ verifier success, policy allow, approval, or execution permission.
 
 ## Timeline Events
 
-RC1 emits deterministic timeline events inside the returned session object:
+The current implementation emits deterministic timeline events inside the
+returned session object:
 
 - `agent_session_started`
 - `agent_profile_loaded`
@@ -166,7 +171,7 @@ These are session records, not runtime journal events.
 
 ## Skill Registry Metadata Use
 
-Agent Runtime RC1 uses Skill Registry metadata to:
+Bounded Agent Runtime uses Skill Registry metadata to:
 
 - confirm allowed profile skills exist
 - validate requested skill ids
@@ -186,7 +191,7 @@ Allowed skill ids are references, not permission.
 
 ## Model Gateway Awareness
 
-Agent Runtime RC1 reads Model Gateway status metadata only. It does not call
+Bounded Agent Runtime reads Model Gateway status metadata only. It does not call
 `/model-gateway/complete`.
 
 When `use_model=true`, the session returns a degraded warning:
@@ -232,7 +237,7 @@ error.
 
 ## Future Integration Notes
 
-Future S12/Society v2 can consume Agent Runtime proposal timelines as
+Future Society work can consume Agent Runtime proposal timelines as
 non-authoritative planning material.
 
 Any future policy-gated agent execution path would need:

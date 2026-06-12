@@ -1,11 +1,15 @@
-# Model Gateway RC1 for LM Studio
+# Model Gateway
 
 Decision: `LOCAL_MODEL_GATEWAY_RC1_LM_STUDIO`
 
+Current status: implemented as a bounded local model-call boundary for explicit
+LM Studio/OpenAI-compatible local endpoint use. The historical decision name is
+retained for traceability; public product wording should use Model Gateway.
+
 ## Scope
 
-Model Gateway RC1 adds the first bounded local model-call boundary for Aegis.
-It supports LM Studio through the local OpenAI-compatible HTTP API only.
+Model Gateway adds a bounded local model-call boundary for Aegis. It supports
+LM Studio through the local OpenAI-compatible HTTP API only.
 
 This is a backend/API capability. It does not add frontend UI, Society v2,
 AutoPilot integration, Memory integration, Agent Runtime integration, Skill
@@ -15,9 +19,9 @@ execution, shell execution, or file mutation.
 
 ## Why It Exists
 
-The Hackathon RC baseline had real Memory, AutoPilot, Society, and Mission
-Control surfaces, but no accepted model-call boundary. Model Gateway RC1 gives
-future model-assisted features one narrow local provider path with explicit
+The Hackathon baseline had real Memory, AutoPilot, Society, and Mission
+Control surfaces, but no accepted model-call boundary. Model Gateway gives
+model-assisted features one narrow local provider path with explicit
 configuration, timeout handling, unavailable-state handling, and non-authority
 response envelopes.
 
@@ -90,7 +94,7 @@ configured, the purpose is allowed, and input/output budgets pass.
 
 ## Allowed Purposes
 
-RC1 accepts only proposal-oriented purposes:
+The current gateway accepts only proposal-oriented purposes:
 
 - `explanation`
 - `summarization`
@@ -144,7 +148,7 @@ invalid model configuration fail closed with structured failure reasons.
 
 ## Safety Boundaries
 
-Model Gateway RC1 does not:
+Model Gateway does not:
 
 - write memory
 - create evidence
@@ -179,9 +183,9 @@ The expected success path is a proposal-only `completed` response with all
 non-authority fields preserved. The expected unavailable path is structured
 degraded output, not a hidden fallback.
 
-## Tests Added
+## Tests
 
-The RC1 test suite covers:
+The test suite covers:
 
 - disabled default status
 - local endpoint URL acceptance

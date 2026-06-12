@@ -1,11 +1,17 @@
-# Aegis Architecture Realignment v2
+# Aegis Architecture Realignment
 
 Decision: `HACKATHON_FINAL_ROADMAP_ARCHITECTURE_REALIGNMENT_V2`
 
-This document defines the next-stage Aegis architecture after the validated
-Hackathon RC baseline. It is not an implementation sprint. It does not add
-model calls, provider probes, APIs, frontend UI, skill execution, agent
-execution, memory writes, or runtime behavior.
+This document defines the architecture realignment after the validated
+Hackathon RC baseline and the later Agent Runtime foundation. It is not an
+implementation sprint. It does not add model calls, provider probes, APIs,
+frontend UI, skill execution, agent execution, memory writes, or runtime
+behavior.
+
+For current product mission and capability tiers, see:
+
+- `docs/aegis-current-mission.md`
+- `docs/capability-model.md`
 
 ## Architecture Principle
 

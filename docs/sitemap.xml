@@ -2,32 +2,52 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://wexys.github.io/Aegis/</loc>
-    <lastmod>2026-06-01</lastmod>
+    <lastmod>2026-06-12</lastmod>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://wexys.github.io/Aegis/foundation-baseline-v1.html</loc>
-    <lastmod>2026-06-01</lastmod>
+    <loc>https://wexys.github.io/Aegis/aegis-current-mission.html</loc>
+    <lastmod>2026-06-12</lastmod>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://wexys.github.io/Aegis/capability-model.html</loc>
+    <lastmod>2026-06-12</lastmod>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://wexys.github.io/Aegis/system-integrity-audit.html</loc>
+    <lastmod>2026-06-12</lastmod>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://wexys.github.io/Aegis/post-foundation-architecture-roadmap-v1.html</loc>
-    <lastmod>2026-06-01</lastmod>
+    <loc>https://wexys.github.io/Aegis/historical-evidence-replay-debt-closure.html</loc>
+    <lastmod>2026-06-12</lastmod>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://wexys.github.io/Aegis/policy-as-code-extension-v1.html</loc>
-    <lastmod>2026-06-01</lastmod>
+    <loc>https://wexys.github.io/Aegis/memory-consent-policy.html</loc>
+    <lastmod>2026-06-12</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://wexys.github.io/Aegis/aegis-architecture-realignment.html</loc>
+    <lastmod>2026-06-12</lastmod>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://wexys.github.io/Aegis/context-compiler-read-only-integration-readiness-v1.html</loc>
-    <lastmod>2026-06-01</lastmod>
+    <loc>https://wexys.github.io/Aegis/model-gateway.html</loc>
+    <lastmod>2026-06-12</lastmod>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://wexys.github.io/Aegis/github-discoverability-seo-v1.html</loc>
-    <lastmod>2026-06-01</lastmod>
-    <priority>0.6</priority>
+    <loc>https://wexys.github.io/Aegis/skill-registry.html</loc>
+    <lastmod>2026-06-12</lastmod>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://wexys.github.io/Aegis/bounded-agent-runtime.html</loc>
+    <lastmod>2026-06-12</lastmod>
+    <priority>0.7</priority>
   </url>
 </urlset>

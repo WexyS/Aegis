@@ -46,7 +46,7 @@ import {
 const DEFAULT_ROOT_PATH = 'C:\\Users\\nemes\\Desktop\\Aegis';
 const DEFAULT_PROJECT_REF = 'project:aegis';
 const DEFAULT_REPOSITORY_REF = 'repository:aegis';
-const DEFAULT_SESSION_REF = 'session:hackathon-rc';
+const DEFAULT_SESSION_REF = 'session:aegis-control';
 
 export const MissionControlRCPanel = () => {
   const [rootPath, setRootPath] = React.useState(DEFAULT_ROOT_PATH);
@@ -156,11 +156,11 @@ export const MissionControlRCPanel = () => {
     await proposeMemoryFromPayload({
       type: manualScope === 'repository' ? 'repo_memory' : manualScope === 'project' ? 'project_preference' : 'task_session_memory',
       content: manualMemory.trim(),
-      summary: 'Manual Hackathon RC memory proposal',
+      summary: 'Manual Aegis Control memory proposal',
       scope: manualScope,
       sensitivity: manualSensitivity,
-      source_refs: [{ ref_id: 'mission-control-rc-ui', ref_type: 'explicit_user_action' }],
-      metadata: { source: 'mission_control_rc_manual_memory' },
+      source_refs: [{ ref_id: 'aegis-control-ui', ref_type: 'explicit_user_action' }],
+      metadata: { source: 'aegis_control_manual_memory' },
     });
     setManualMemory('');
   };
@@ -234,7 +234,7 @@ export const MissionControlRCPanel = () => {
       const session = await runSocietySession({
         autopilot_report_id: selectedReport.report_id,
         memory_ids: memories.filter((item) => item.status === 'active').map((item) => item.id),
-        society_name: 'hackathon_rc_review_society',
+        society_name: 'aegis_control_review_society',
       });
       setSelectedSession(session);
       setSessions((current) => [session, ...current.filter((item) => item.session_id !== session.session_id)]);
@@ -345,10 +345,10 @@ const Hero = ({
       <div className="min-w-0 max-w-4xl">
         <div className="inline-flex items-center gap-2 rounded-md border border-accent/25 bg-accent/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.22em] text-accent shadow-lg shadow-cyan-950/20">
           <ShieldCheck size={14} />
-          Hackathon RC Mission Control
+          Aegis Control
         </div>
         <h1 className="mt-4 max-w-4xl text-3xl font-bold tracking-tight text-white lg:text-4xl">
-          Judge-facing control surface for the bounded RC path
+          Local Mission Control for the bounded product path
         </h1>
         <p className="mt-3 max-w-3xl text-sm leading-7 text-foreground/[0.62]">
           Run the real read-only AutoPilot audit, promote selected findings through explicit Memory actions, then render a deterministic Society Session without model, MCP, shell, network, or autonomous execution claims.

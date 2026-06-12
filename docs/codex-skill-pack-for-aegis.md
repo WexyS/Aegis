@@ -1,4 +1,4 @@
-# Codex Development Skill Pack for Aegis v1
+# Codex Development Skill Pack For Aegis
 
 Decision: `SKILL_REGISTRY_CORE_RC1_CODEX_SKILL_PACK_V1`
 
@@ -35,7 +35,7 @@ For Aegis work, Codex should:
 3. Inspect existing source and tests that own the target behavior.
 4. Keep changes narrow to the requested sprint.
 5. Prefer focused tests before broad validation.
-6. Preserve existing RC Golden Path behavior unless explicitly changed.
+6. Preserve existing current product behavior unless explicitly changed.
 7. Keep generated drift out of commits.
 
 Do not rely on imagined architecture when the repo already has a local pattern.
@@ -136,16 +136,18 @@ route through Model Gateway and preserve:
 - no evidence or verifier success
 - no approval or permission grant
 
-## Golden Path Preservation
+## Product Path Preservation
 
-Codex must keep the current Hackathon RC Golden Path runnable unless the sprint
-explicitly changes that path:
+Codex must keep the current local Mission Control product path runnable unless
+the sprint explicitly changes that path:
 
-- Memory OS RC1-Core
-- AutoPilot RC1-Core
-- Deterministic Society Session RC1
-- Mission Control RC UI
-- fail-safe release docs and startup path
+- Memory OS explicit lifecycle operations
+- AutoPilot read-only local repository structure audit
+- deterministic Society Session proposal output
+- Model Gateway local provider boundary
+- Skill Registry metadata catalog
+- Bounded Agent Runtime proposal sessions
+- Mission Control UI and startup path
 
 New work must not silently break deterministic fallback behavior.
 

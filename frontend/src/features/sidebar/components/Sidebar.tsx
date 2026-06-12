@@ -32,7 +32,7 @@ export const Sidebar = () => {
 
       <nav className="flex-1 px-2 sm:px-3 py-4 space-y-1 overflow-y-auto custom-scrollbar">
         <NavItem icon={<MessageSquare size={18}/>} label="Mission Control" active={activeTab === 'chat'} onClick={() => setActiveTab('chat')} />
-        <NavItem icon={<Rocket size={18}/>} label="Hackathon RC" active={activeTab === 'Hackathon RC'} onClick={() => setActiveTab('Hackathon RC')} />
+        <NavItem icon={<Rocket size={18}/>} label="Aegis Control" active={activeTab === 'Aegis Control'} onClick={() => setActiveTab('Aegis Control')} />
         <NavItem icon={<Activity size={18}/>} label="Runtime Stats" active={activeTab === 'Runtime Stats'} onClick={() => setActiveTab('Runtime Stats')} />
         <NavItem icon={<Database size={18}/>} label="Applications" active={activeTab === 'Applications'} onClick={() => setActiveTab('Applications')} />
         <NavItem icon={<Wrench size={18}/>} label="Tools" active={activeTab === 'Tools'} onClick={() => setActiveTab('Tools')} />

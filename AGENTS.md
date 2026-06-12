@@ -17,7 +17,8 @@ Aegis unless an explicit sprint asks for an Ultron inspiration audit.
 - Blueprint, manifest, report, plugin, review, lease, or approval metadata is
   not execution permission.
 - Policy allow is not execution success.
-- Report output is not evidence or verifier success.
+- AutoPilot output is not evidence.
+- Agent output is not execution.
 - Verifier success may only come from backend verifier logic.
 - No fake telemetry, fake UI state, fake verification, fake runtime health,
   fake logs, fake metrics, or optimistic success.
@@ -26,67 +27,100 @@ Aegis unless an explicit sprint asks for an Ultron inspiration audit.
 
 ## Active Priority
 
-Current active priority: Hackathon Release Candidate preparation.
+Current active priority: canonical mission cleanup and productization toward
+real, useful, safe product slices.
 
-The declared Hackathon RC scope is intentionally narrow:
+The current product target is local-first, free-first Mission Control:
 
-- Memory OS RC1-Core
-- AutoPilot RC1-Core
-- Deterministic Society Session RC1
-- Premium Single-Page Mission Control UI
-- Fail-safe release package
+- Memory OS with explicit consent
+- AutoPilot read-only inspection
+- deterministic and model-assisted proposals through safe boundaries
+- optional local Model Gateway
+- static Skill Registry metadata before skill execution
+- proposal-only Agent Runtime before any execution runtime
+- premium Mission Control UI that never hides backend truth
+- future capability tiers for observe, explain, propose, approve, execute, and
+  verify
 
-Detailed scope and acceptance criteria live in
-`docs/HACKATHON_RC_SCOPE.md`. Long-term product direction lives in
-`docs/AEGIS_VISION.md`.
+Historical hackathon and foundation documents remain useful traceability records,
+but they are not the current product narrative.
 
-Repo-local Codex development guidance for future skill work lives in
-`docs/codex-skill-pack-for-aegis-v1.md`; it is not runtime skill execution
+Repo-local Codex development guidance lives in
+`docs/codex-skill-pack-for-aegis.md`; it is not runtime skill execution
 permission.
 
-## Explicit RC Exceptions
+## Working Standard
 
-The following are allowed only when requested by a scoped Hackathon RC sprint
-with tests and safety gates:
+Work like a senior engineer, security-minded systems engineer, and product
+engineer:
 
-- new Memory, AutoPilot, and Society backend modules
-- new frontend panels or tabs for the declared RC scope
-- new protocol, event, or API shapes required for the declared RC scope
-- new memory states required for Memory OS RC1-Core
-- deterministic society session artifacts
+- identify the active workspace/repository before editing
+- confirm whether the task belongs to Aegis, Ultron, or another project
+- inspect relevant files before editing
+- keep implementation scope narrow
+- prefer working product slices over skeleton-only work
+- avoid opportunistic refactors
+- do not implement future roadmap phases unless explicitly requested
+- stop and report ambiguity before editing when scope is unclear
+- preserve existing contracts unless the sprint explicitly changes them
+- if a larger issue is found, report it as a remaining risk instead of silently
+  expanding scope
 
-These exceptions do not loosen the core invariants.
+A future sprint is not accepted if it only adds skeletons, metadata, docs, or
+future-gated placeholders unless it is explicitly declared as an audit,
+checkpoint, or readiness sprint.
 
-## Still Forbidden Unless Explicitly Requested
+## Naming And Documentation
+
+- Do not create new public-facing docs, feature names, sprint labels, or
+  filenames with version-style suffixes such as `v1`, `v2`, `RC1`, `RC2`, or
+  `next`.
+- Internal protocol versions, schema versions, tests, and historical decision
+  references may keep version labels when needed for compatibility.
+- Prefer canonical durable names such as `docs/model-gateway.md`,
+  `docs/skill-registry.md`, `docs/bounded-agent-runtime.md`, and
+  `docs/capability-model.md`.
+- Keep README and docs truthful, current, and explicit about real,
+  proposal-only, read-only, blocked, and future-gated behavior.
+- Do not over-write docs with marketing fluff.
+
+## Forbidden Unless Explicitly Scoped
 
 - live autonomous multi-agent loop
-- LLM-dependent society runtime
 - real MCP write execution
-- real shell or file mutation
+- real shell or file mutation through agents
 - model auto-routing
 - cloud fallback
-- vector or graph memory as a Hackathon RC blocker
+- vector or graph memory runtime
 - full CodingAgent patch generation
-- voice, screen, or multimodal production features
-- WebGL or shader dependency
+- voice, screen, OCR, or multimodal production features
 - production deployment claim
 - plugin marketplace
 - self-modifying code
 - Ultron bridge
 - unified launcher
+- historical archive/compaction execution
+- hidden fallback to paid or external services
 
-## Working Rules
+## Generated Drift And Artifacts
 
-- Identify the active workspace/repository before editing.
-- Confirm whether the task belongs to Aegis, Ultron, or another project.
-- Inspect relevant files before editing.
-- Keep implementation scope narrow.
-- Avoid opportunistic refactors.
-- Do not implement future roadmap phases unless explicitly requested.
-- Stop and report ambiguity before editing when scope is unclear.
-- Preserve existing contracts unless the sprint explicitly changes them.
-- If a larger issue is found, report it as remaining risk instead of silently
-  expanding scope.
+Do not commit generated drift unless a sprint explicitly scopes it.
+
+Never stage:
+
+- runtime logs
+- screenshots
+- cache output
+- model files
+- vector databases
+- browser artifacts
+- API keys
+- secrets
+- tokens
+- temp outputs
+
+`frontend/next-env.d.ts` is generated drift prone. Restore it before unrelated
+commits unless the sprint explicitly scopes generated drift hygiene.
 
 ## Validation
 
@@ -114,7 +148,11 @@ After every task, report:
 - tests added/changed
 - validation outputs
 - whether runtime/backend/frontend behavior changed
+- generated drift status
 - intentionally not done
 - safety invariant check
 - remaining risks
 - recommended next sprint
+
+Validation success is not push success. Commit and push status must be reported
+separately.

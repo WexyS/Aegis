@@ -203,9 +203,9 @@ HTTP readiness, Socket.IO events, and a visible responding Electron window on
 the `Hackathon RC` tab.
 
 Post-RC architecture and final hackathon planning are tracked separately in
-`docs/hackathon-final-roadmap-v2.md`,
-`docs/aegis-architecture-realignment-v2.md`, and
-`docs/hackathon-final-sprint-sequence-v2.md`. Those documents are roadmap
+`docs/hackathon-final-roadmap.md`,
+`docs/aegis-architecture-realignment.md`, and
+`docs/hackathon-final-sprint-sequence.md`. Those documents are roadmap
 guidance only and do not expand the validated RC claim boundary.
 
 ## Fallback Instructions

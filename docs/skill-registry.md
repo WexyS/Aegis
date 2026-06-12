@@ -1,10 +1,14 @@
-# Skill Registry Core RC1
+# Skill Registry
 
 Decision: `SKILL_REGISTRY_CORE_RC1_CODEX_SKILL_PACK_V1`
 
+Current status: implemented as a backend-owned static metadata catalog. The
+historical decision name is retained for traceability; public product wording
+should use Skill Registry.
+
 ## Scope
 
-Skill Registry RC1 is a backend-owned static metadata catalog for Aegis skills.
+Skill Registry is a backend-owned static metadata catalog for Aegis skills.
 It defines manifest fields, risk classification, execution-mode metadata,
 capability requirements, allowed scopes, and read-only API visibility.
 
@@ -15,7 +19,7 @@ state, or registry state.
 
 ## What It Is Not
 
-Skill Registry RC1 is not:
+Skill Registry is not:
 
 - a skill runner
 - a plugin loader
@@ -37,7 +41,7 @@ metadata is not an MCP connection.
 
 ## Manifest Fields
 
-RC1 manifests include:
+Current manifests include:
 
 - `skill_id`
 - `name`
@@ -86,7 +90,7 @@ Required non-authority flags remain false for catalog output:
 - `candidate`
 - `blocked`
 
-In RC1, `available` means available in the catalog only. It does not mean
+In the current catalog, `available` means available in the catalog only. It does not mean
 runtime execution is available.
 
 ## Risk Classes
@@ -111,13 +115,13 @@ blocked metadata. They are not active execution paths.
 - `external_candidate`
 - `future_policy_gated`
 
-There is no executable mode in RC1.
+There is no executable mode.
 
 ## Initial Built-In Skills
 
 `repo_structure_audit`
 
-- Maps conceptually to AutoPilot RC1 read-only repo structure audit.
+- Maps conceptually to AutoPilot read-only repo structure audit.
 - Risk: `local_read_only`
 - Execution mode: `read_only_planned`
 - The registry does not run AutoPilot.
@@ -165,7 +169,7 @@ Read-only endpoints:
 - `GET /skills/{skill_id}`
 
 There is no `POST /skills/.../run`, execute, enable, disable, import, sync, or
-external registration endpoint in RC1.
+external registration endpoint.
 
 ## Validation Rules
 
@@ -280,7 +284,7 @@ Added Aegis-native Higgsfield candidate manifest:
   `explicit_user_authorization`, `credential_boundary`,
   `quota_or_credit_acknowledgement`
 
-This entry is not connected, not authenticated, and not available for RC1
+This entry is not connected, not authenticated, and not available for current
 execution. It creates no media and spends no quota or credits.
 
 ### Disabled/Future-Gated Semantics
@@ -310,7 +314,7 @@ Before any future external execution, Aegis would need:
 
 ## Relationship To Model Gateway
 
-Model-required skills can declare `requires_model=true`, but Skill Registry RC1
+Model-required skills can declare `requires_model=true`, but Skill Registry
 does not call `/model-gateway/complete`. Future model-assisted behavior must
 route through Model Gateway and preserve proposal-only output.
 

@@ -20,10 +20,15 @@ Observed checkpoint:
 - HEAD matched `81a3290a0bb7b6174ee776141e7a835e2fc1b74e` before this audit
   documentation was created.
 - `main` was pushed to `origin/main` for the bounded Agent Runtime checkpoint.
-- Annotated tag `hackathon-agent-runtime-foundation` was not created because
-  the worktree was dirty from generated frontend drift.
+- Annotated tag `hackathon-agent-runtime-foundation` was not created during
+  the audit because the worktree was dirty from generated frontend drift.
+- Cleanup update: the tag was later created and pushed against the preserved
+  Agent Runtime foundation commit
+  `81a3290a0bb7b6174ee776141e7a835e2fc1b74e`.
 - The only pre-existing dirty file was `frontend/next-env.d.ts`.
-- `frontend/next-env.d.ts` was not staged and remains outside this sprint.
+- `frontend/next-env.d.ts` was not staged during the audit.
+- Cleanup update: generated drift was later restored before canonical docs
+  cleanup edits.
 
 Focused validation before audit documentation:
 
@@ -237,7 +242,7 @@ compatibility migration is explicitly scoped.
 The following scan found the main old naming and readiness surfaces. No files
 were renamed in this sprint.
 
-| Current path/name | Proposed canonical path/name | References to update | Risk | Safe to rename now | Should remain legacy | Compatibility pointer needed |
+| Former path/name | Proposed canonical path/name | References to update | Risk | Safe to rename now | Should remain legacy | Compatibility pointer needed |
 | --- | --- | --- | --- | --- | --- | --- |
 | `README.md` Foundation/Hackathon wording | keep path, rewrite current mission | README tests, docs links | medium | no | no | no |
 | `AGENTS.md` Hackathon active priority | keep path, rewrite current priority | agent instructions | medium | no | no | no |
@@ -245,13 +250,13 @@ were renamed in this sprint.
 | `frontend/src/features/sidebar/components/Sidebar.tsx` `Hackathon RC` | `Mission Control` / `Release Console` label | UI tests, screenshots | medium | no | no | no |
 | `frontend/src/features/mission-control-rc` | canonical Mission Control feature path | imports, routes, tests | medium | no | no | yes |
 | `docs/action-attribution-change-intelligence-contract-v1.md` | `docs/action-attribution-change-intelligence.md` | docs backlinks | low | no | yes | yes |
-| `docs/aegis-architecture-realignment-v2.md` | `docs/aegis-architecture-realignment.md` | README, AGENTS, docs backlinks | medium | no | no | yes |
+| `docs/aegis-architecture-realignment-v2.md` | `docs/aegis-architecture-realignment.md` | README, AGENTS, docs backlinks | medium | yes, completed in cleanup pass | no | no |
 | `docs/audit-query-layer-readiness-v1.md` | `docs/audit-query-layer.md` | docs backlinks | low | no | yes | yes |
 | `docs/autopilot-rc1-core.md` | `docs/autopilot.md` | README, hackathon docs | medium | no | no | yes |
 | `docs/backend-timeout-event-projection-contract-v1.md` | `docs/backend-timeout-event-projection.md` | docs backlinks | low | no | yes | yes |
-| `docs/bounded-agent-runtime-rc1.md` | `docs/bounded-agent-runtime.md` | README, docs, API docs | medium | no | no | yes |
+| `docs/bounded-agent-runtime-rc1.md` | `docs/bounded-agent-runtime.md` | README, docs, API docs | medium | yes, completed in cleanup pass | no | no |
 | `docs/capability-lease-design-v1.md` | `docs/capability-model.md` | README, docs backlinks | medium | no | no | yes |
-| `docs/codex-skill-pack-for-aegis-v1.md` | `docs/codex-skill-pack-for-aegis.md` | AGENTS, README, docs | medium | no | no | yes |
+| `docs/codex-skill-pack-for-aegis-v1.md` | `docs/codex-skill-pack-for-aegis.md` | AGENTS, README, docs | medium | yes, completed in cleanup pass | no | no |
 | `docs/compliance-evidence-pack-readiness-v1.md` | `docs/compliance-evidence-pack.md` | docs backlinks | low | no | yes | yes |
 | `docs/context-compiler-read-only-contract-implementation-v1.md` | `docs/context-compiler.md` | README, docs backlinks | medium | no | yes | yes |
 | `docs/context-compiler-read-only-integration-readiness-v1.md` | `docs/context-compiler.md` or legacy pointer | README, docs backlinks | medium | no | yes | yes |
@@ -266,8 +271,8 @@ were renamed in this sprint.
 | `docs/github-discoverability-seo-v1.md` | `docs/github-discoverability-seo.md` | README, sitemap | medium | no | no | yes |
 | `docs/github-source-connector-readiness-v1.md` | `docs/github-source-connector.md` | docs backlinks | low | no | yes | yes |
 | `docs/HACKATHON_RC_SCOPE.md` | legacy hackathon scope | AGENTS, docs backlinks | high | no | yes | yes |
-| `docs/hackathon-final-roadmap-v2.md` | `docs/hackathon-final-roadmap.md` | docs backlinks | medium | no | yes | yes |
-| `docs/hackathon-final-sprint-sequence-v2.md` | `docs/hackathon-final-sprint-sequence.md` | docs backlinks | medium | no | yes | yes |
+| `docs/hackathon-final-roadmap-v2.md` | `docs/hackathon-final-roadmap.md` | docs backlinks | medium | yes, completed in cleanup pass | yes | no |
+| `docs/hackathon-final-sprint-sequence-v2.md` | `docs/hackathon-final-sprint-sequence.md` | docs backlinks | medium | yes, completed in cleanup pass | yes | no |
 | `docs/hackathon-rc-claims-matrix.md` | legacy hackathon claims matrix | README, hackathon docs | medium | no | yes | yes |
 | `docs/hackathon-rc-demo-runbook.md` | legacy hackathon demo runbook | README | medium | no | yes | yes |
 | `docs/hackathon-rc-demo-script.md` | legacy hackathon demo script | README | medium | no | yes | yes |
@@ -297,7 +302,7 @@ were renamed in this sprint.
 | `docs/mission-control-dry-run-ux-contract-v1.md` | `docs/mission-control-dry-run-ux.md` | docs backlinks | low | no | yes | yes |
 | `docs/mission-control-rc-ui.md` | `docs/mission-control-ui.md` | frontend/docs backlinks | medium | no | no | yes |
 | `docs/model-auto-mode-provider-selection-contract-v1.md` | `docs/model-auto-mode.md` | docs backlinks | low | no | yes | yes |
-| `docs/model-gateway-rc1-lm-studio.md` | `docs/model-gateway.md` | README, docs backlinks | medium | no | no | yes |
+| `docs/model-gateway-rc1-lm-studio.md` | `docs/model-gateway.md` | README, docs backlinks | medium | yes, completed in cleanup pass | no | no |
 | `docs/model-lifecycle-vram-budget-design-v1.md` | `docs/model-lifecycle-resource-budget.md` | docs backlinks | low | no | yes | yes |
 | `docs/model-provider-local-llm-readiness-v1.md` | `docs/model-provider-boundary.md` | docs backlinks | low | no | yes | yes |
 | `docs/multiagent-society-session-rc1.md` | `docs/society-session.md` | README, docs backlinks | medium | no | no | yes |
@@ -326,7 +331,7 @@ were renamed in this sprint.
 | `docs/runtime-state-timeout-safe-fallback-contract-v1.md` | `docs/runtime-timeout-fallback.md` | docs backlinks | low | no | yes | yes |
 | `docs/runtime-surface-boundary-closure-v1.md` | `docs/runtime-surface-boundary.md` | docs backlinks | low | no | yes | yes |
 | `docs/skill-plugin-architecture-design-v1.md` | `docs/skill-plugin-architecture.md` | docs backlinks | low | no | yes | yes |
-| `docs/skill-registry-rc1.md` | `docs/skill-registry.md` | README, docs backlinks | medium | no | no | yes |
+| `docs/skill-registry-rc1.md` | `docs/skill-registry.md` | README, docs backlinks | medium | yes, completed in cleanup pass | no | no |
 | `docs/SPRINT_SEQUENCE_HACKATHON_RC.md` | legacy hackathon sprint sequence | docs backlinks | medium | no | yes | yes |
 | `docs/system-drift-integrity-monitoring-readiness-v1.md` | `docs/system-drift-integrity-monitoring.md` | docs backlinks | low | no | yes | yes |
 | `docs/training-data-model-adaptation-governance-v1.md` | `docs/training-data-model-adaptation-governance.md` | docs backlinks | low | no | yes | yes |
@@ -376,7 +381,7 @@ Recommended next cleanup order:
 
 1. Canonical mission and README rewrite.
 2. AGENTS active priority realignment.
-3. High-visibility doc rename with compatibility pointers.
+3. High-visibility doc rename with internal reference cleanup.
 4. Generated drift hygiene for `frontend/next-env.d.ts`.
 5. Historical evidence/replay debt closure preparation.
 6. Launcher process-scope hardening.

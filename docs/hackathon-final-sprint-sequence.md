@@ -1,11 +1,11 @@
-# Hackathon Final Sprint Sequence v2
+# Hackathon Final Sprint Sequence
 
 Decision: `HACKATHON_FINAL_ROADMAP_ARCHITECTURE_REALIGNMENT_V2`
 
-This sequence turns the validated Hackathon RC baseline into a realistic
-Hackathon Final plan. It is planning only. Individual implementation sprints
-must restate scope, tests, safety gates, and rollback criteria before code
-changes.
+This is a historical hackathon planning sequence. It turns the validated
+Hackathon RC baseline into a realistic Hackathon Final plan. It is planning
+only. Individual implementation sprints must restate scope, tests, safety
+gates, and rollback criteria before code changes.
 
 ## S7 - Roadmap + Architecture Realignment v2
 

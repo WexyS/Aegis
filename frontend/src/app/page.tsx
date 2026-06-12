@@ -57,8 +57,8 @@ export default function AegisDashboard() {
           {activeTab === 'Chaos Shield' && <ChaosShieldPanel />}
           {activeTab === 'Applications' && <AppRegistryPanel />}
           {activeTab === 'Tools' && <ToolRegistryPanel />}
-          {activeTab === 'Hackathon RC' && <MissionControlRCPanel />}
-          {!['chat', 'Agent Graph', 'Vision Lab', 'Runtime Stats', 'Chaos Shield', 'Applications', 'Tools', 'Hackathon RC'].includes(activeTab) && (
+          {activeTab === 'Aegis Control' && <MissionControlRCPanel />}
+          {!['chat', 'Agent Graph', 'Vision Lab', 'Runtime Stats', 'Chaos Shield', 'Applications', 'Tools', 'Aegis Control'].includes(activeTab) && (
             <div className="flex-1 flex items-center justify-center text-[11px] font-mono uppercase tracking-[0.16em] text-foreground/30">
               {activeTab} unavailable
             </div>

@@ -1,16 +1,17 @@
-# Hackathon Final Roadmap v2
+# Hackathon Final Roadmap
 
 Decision: `HACKATHON_FINAL_ROADMAP_ARCHITECTURE_REALIGNMENT_V2`
 
-This document realigns the Aegis roadmap after the validated Hackathon RC
-baseline. It is planning and architecture only. It does not implement runtime
-behavior, model calls, backend APIs, frontend UI, launcher behavior, Memory,
-AutoPilot, Society, skills, agents, or provider integration.
+This is a historical hackathon planning document. It realigns the Aegis roadmap
+after the validated Hackathon RC baseline. It is planning and architecture
+only. It does not implement runtime behavior, model calls, backend APIs,
+frontend UI, launcher behavior, Memory, AutoPilot, Society, skills, agents, or
+provider integration.
 
 Related architecture and sprint details:
 
-- `docs/aegis-architecture-realignment-v2.md`
-- `docs/hackathon-final-sprint-sequence-v2.md`
+- `docs/aegis-architecture-realignment.md`
+- `docs/hackathon-final-sprint-sequence.md`
 
 ## Current Baseline Classification
 

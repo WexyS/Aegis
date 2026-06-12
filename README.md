@@ -1,60 +1,118 @@
 # Aegis
 
-**Aegis is a local-first, verification-backed AI control plane and AI computer operator runtime for Windows.**
+**Aegis is a local-first, free-first AI Mission Control system for Windows-first
+operator automation, runtime truth, and bounded local AI assistance.**
 
-The Aegis GitHub repository, `WexyS/Aegis`, is built for deterministic runtime truth, evidence-backed execution, policy-as-code boundaries, approval-aware automation, auditability, replayability, and bounded autonomy. It is a local AI operator foundation: closer to auditable autonomous AI mission control than a loose demo agent.
+Aegis is built to help a user inspect, understand, plan, and safely act on a
+local computer environment. Its core value is not raw autonomy. Its core value
+is trustworthy operation: backend-owned state, policy gates, approval-aware
+actions, evidence-backed execution, verifier-based completion, and honest
+reporting of unknowns, failures, and historical debt.
 
-Aegis is designed to operate as a reliable computer assistant: it receives a user command, evaluates risk, asks for approval when needed, executes through bounded tools, verifies observable side effects, records evidence, and keeps the frontend synchronized from backend truth surfaces.
+Aegis can be ambitious as a product while staying exact about current
+capability. The repository now contains both real bounded product slices and
+proposal-only planning surfaces. This README separates those categories.
 
-Aegis is not trying to be an uncontrolled autonomous agent. The project is intentionally built around deterministic runtime state, auditability, replayability, and approval-aware operation.
+## Current Product Position
 
-## Current Position
+Aegis is currently a local Mission Control workspace with:
 
-Aegis has a Foundation v1 baseline for a future local AI computer operator. The baseline is accepted as `READY_FOR_BASELINE_WITH_KNOWN_HISTORICAL_DEBT`, which means the current runtime foundation can be used as a checkpoint while known historical, unknown-era, replay, and resource debt remains visible.
+- a governed command runtime
+- real read-only maintenance diagnostics
+- a local Memory OS core
+- a real read-only AutoPilot repository structure audit
+- deterministic Society Session proposals
+- a bounded local Model Gateway for LM Studio/OpenAI-compatible local endpoints
+- a static Skill Registry metadata catalog
+- a proposal-only Bounded Agent Runtime
+- a Next.js/Electron Mission Control frontend
 
-Runtime health may still report `fail` after the baseline. That is intentional when historical evidence debt, unknown-era evidence issues, replay diagnostics debt, or resource warnings are still present. Current blockers, current evidence failures, current missing evidence, pending decisions, and restored pending decisions are tracked separately from known historical debt.
+It is not yet a full autonomous agent platform, not a general MCP runner, not a
+cloud agent, and not a production security product.
 
-The current foundation includes:
+## Local-First And Free-First
 
-- deterministic runtime authority
-- separate command lifecycle state
-- approval and cancellation governance
-- canonical tool registry and sandbox policy
-- protocol-backed WebSocket events
-- append-only runtime event journal
-- replayable action timeline
-- execution evidence and evidence audit
-- process/window verification for desktop side effects
-- backend-derived UI state with no frontend fake inference
-- read-only maintenance diagnostics
+Aegis should work without paid services as the default product posture.
 
-Post-foundation platform expansion is planned but gated. New modules such as Context Compiler integration, Memory Governance, MCP/tool gateway, model routing, skill/plugin architecture, and vertical packs must start as design or read-only readiness work before any execution path is added.
+- Local deterministic logic is preferred where it is enough.
+- Local model providers are optional and fail closed when unavailable.
+- External or paid connectors may become optional integrations later.
+- Paid/external services must not become required core dependencies.
+- Cloud routing must not be inferred from provider metadata or context
+  availability.
 
-The long-term product direction is a trustworthy local assistant that can inspect a system, explain what it finds, recommend safe actions, request approval for risky actions, and prove what it did.
+## Trust Boundaries
 
-## Foundation and Roadmap Documents
-
-- [Foundation v1 baseline](docs/foundation-baseline-v1.md)
-- [Historical evidence/replay debt cleanup design](docs/historical-evidence-replay-debt-cleanup-design-v1.md)
-- [Historical evidence/replay debt inventory](docs/historical-evidence-replay-debt-inventory-v1.md)
-- [Post-foundation architecture roadmap](docs/post-foundation-architecture-roadmap-v1.md)
-- [Policy-as-code extension](docs/policy-as-code-extension-v1.md)
-- [Context Compiler read-only integration readiness](docs/context-compiler-read-only-integration-readiness-v1.md)
-- [GitHub discoverability and SEO alignment](docs/github-discoverability-seo-v1.md)
-- GitHub Pages landing source: [docs/index.html](docs/index.html)
-- Git tag: `foundation-v1-baseline`
+- Backend-owned state is the source of truth.
+- Frontend state is presentation only, never authority.
+- Model output is proposal-only, never truth, evidence, verifier success,
+  approval, lease, capability, or execution permission.
+- AutoPilot reports are read-only analysis output, not evidence.
+- Memory retrieval is context, not authority.
+- Skill manifests are metadata, not permission.
+- Agent proposals are not execution.
+- Context packages are not permission.
+- Policy allow is not execution success.
+- Missing evidence must not be fabricated.
+- Unknown-era evidence/replay debt must not be guessed away.
+- Runtime health must not be greenwashed.
 
 ## Core Principles
 
-- **No fake systems**: UI panels must render backend snapshot, protocol event, event journal, registry, verifier, or maintenance data.
-- **Smart brain, dumb hands**: tools perform bounded operations; runtime, policy, audit, and verification decide whether work is trusted.
-- **Evidence before success**: action output is not treated as proof. Desktop actions require process/window evidence when applicable.
-- **Approval-aware execution**: low-risk actions may run automatically, medium-risk actions require approval, and critical actions are blocked.
-- **Replayable behavior**: journaled events can rebuild the action timeline and provide audit context.
-- **Bounded autonomy**: Aegis may assist, inspect, recommend, and execute approved actions, but it should not mutate the system or itself without governance.
-- **Reliability Budget**: new capabilities must improve or preserve determinism, replayability, evidence quality, approval safety, backend truth, and test confidence.
-- **Operational Simplicity Budget**: new capabilities should avoid unnecessary protocol fields, event types, FSM states, failure modes, recovery paths, or projection complexity.
-- **Human Understandability Constraint**: a single engineer should be able to mentally trace a feature's runtime flow, evidence path, and failure behavior in a short review.
+- **No fake systems**: UI panels must render backend snapshot, protocol event,
+  event journal, registry, verifier, API, or maintenance data.
+- **Smart brain, governed hands**: Aegis may propose, explain, inspect, and ask
+  for approval, but side effects require backend policy and capability gates.
+- **Evidence before success**: action output is not treated as proof. Desktop
+  side effects require verifier evidence when applicable.
+- **Approval-aware execution**: low-risk actions may run automatically, medium
+  risk actions require approval, and critical actions are blocked.
+- **Replayable behavior**: journaled events rebuild action history and expose
+  audit context.
+- **Reliable AI Computer Operator**: the first operator-facing product mode is
+  still a reliable local computer assistant, but the broader architecture is an
+  auditable Mission Control system.
+- **Reliability Budget**: new capabilities must improve or preserve
+  determinism, replayability, evidence quality, approval safety, backend truth,
+  and test confidence.
+- **Operational Simplicity Budget**: new capabilities should avoid unnecessary
+  protocol fields, event types, FSM states, failure modes, recovery paths, or
+  projection complexity.
+- **Human Understandability Constraint**: a single engineer should be able to
+  trace a feature's runtime flow, evidence path, and failure behavior in a short
+  review.
+
+## Current Module Map
+
+| Area | Current status | Boundary |
+| --- | --- | --- |
+| Command runtime | Implemented | Backend-owned lifecycle, policy, approval, evidence, verifier surfaces. |
+| Maintenance diagnostics | Implemented, read-only | Reports current and historical debt without mutating state. |
+| Memory OS | Implemented local SQLite core | Explicit propose/approve/reject/delete/search; memory is not authority. |
+| AutoPilot | Implemented read-only local scan | Repository structure audit only; report is not evidence. |
+| Society Session | Implemented deterministic proposal surface | Role output is proposal-only. |
+| Model Gateway | Implemented local provider boundary | Optional LM Studio/local OpenAI-compatible calls; output is proposal-only. |
+| Skill Registry | Implemented static metadata catalog | No skill execution endpoint. |
+| Bounded Agent Runtime | Implemented proposal-only sessions | No tool, MCP, shell, model completion, or memory write from agents. |
+| Frontend | Implemented operational shell | Presentation only; no frontend authority. |
+| Historical debt closure | Planned | No archive/compaction execution yet. |
+
+## Current Limitations
+
+Aegis does not currently provide:
+
+- uncontrolled autonomous loops
+- full MCP execution
+- arbitrary tool execution through agents
+- cloud model fallback
+- plugin marketplace
+- production-grade security certification
+- hallucination-proof model behavior
+- vector or graph memory runtime
+- full repo-audit source ingestion
+- GitHub fetching or cloning
+- web research execution
+- historical journal archive/compaction execution
 
 ## Architecture
 
@@ -68,12 +126,13 @@ graph TD
     Tools --> Verifier[Evidence and Verifier Layer]
     Verifier --> Journal[Runtime Event Journal]
     Journal --> Snapshot[Runtime Snapshot and Replay]
-    Snapshot --> UI[Next.js Runtime UI]
+    Snapshot --> UI[Next.js / Electron Mission Control]
 ```
 
 ### Truth Surfaces
 
-The frontend should not invent runtime state. These backend surfaces are the source of truth:
+The frontend should not invent runtime state. These backend surfaces are the
+source of truth:
 
 - `src/aegis/core/protocol.py`
 - `src/aegis/api/ws_bridge.py`
@@ -86,90 +145,22 @@ The frontend should not invent runtime state. These backend surfaces are the sou
 
 ### Contract Versioning Policy
 
-Version suffixes such as `/1` and `/2` identify schema, verifier, and diagnostic contracts. They are not roadmap phase labels.
+Version suffixes such as `/1` and `/2` identify schema, verifier, and
+diagnostic contracts. They are not roadmap phase labels.
 
-- Additive fields can stay on the same contract version when old readers can ignore them safely.
+- Additive fields can stay on the same contract version when old readers can
+  ignore them safely.
 - Breaking payload, verifier, or replay semantics require a new version.
-- Old journal events and snapshots must remain readable by replay and UI projection code.
+- Old journal events and snapshots must remain readable by replay and UI
+  projection code.
 - The frontend must not infer success or synthesize data when it sees an unknown version; it should render unavailable or unknown state from backend truth.
-- Do not keep parallel v1/v2 execution paths unless backward compatibility requires it and tests cover both paths.
+- Do not keep parallel execution paths unless backward compatibility requires
+  them and tests cover both paths.
 
-## Implemented Runtime Capabilities
+## Action Proposals and Maintenance Actions
 
-### Command Governance
-
-- `CommandRecord` and `CommandStatus`
-- approval manager
-- cancellation token support
-- low / medium / critical risk policy
-- approval, rejection, cancellation, blocked, and status-change events
-
-### Tool Contract and Sandbox v1
-
-- canonical `ToolSpec` registry
-- registry drift validation
-- `/tools/registry` endpoint
-- frontend tool registry panel hydrated from backend state
-- file tools v1
-- allowlisted shell v1
-- standardized risk, approval, timeout, cancellation, and evidence metadata
-
-### Verified Desktop Evidence
-
-Desktop side-effect actions such as `open_app`, `focus_app`, and `close_app` use a process/window verifier layer.
-
-The evidence model includes:
-
-- process name
-- PID list
-- HWND
-- window title
-- foreground window evidence
-- process-alive / process-not-alive checks
-- matching window count
-- check-level evidence with expected and observed values
-- graceful close and kill fallback evidence
-
-Ambiguous desktop windows are treated as failed or unverified instead of optimistic success.
-
-### Evidence Audit and Completion Gate
-
-Process/window actions are gated by backend evidence audit before completion is trusted.
-
-The audit layer protects against:
-
-- missing critical checks
-- failed critical checks
-- optimistic success without evidence
-- UI-generated verification results
-- snapshot / journal / live socket drift
-
-### Maintenance Diagnostics
-
-The current maintenance path is read-only. It reports runtime health from backend-owned sources:
-
-- runtime snapshot health
-- command lifecycle state
-- WebSocket runtime context
-- action timeline health
-- system resource snapshot
-- process resource snapshot
-- development port listener snapshot
-- workspace directory snapshot
-- app registry health
-- tool registry health
-- environment checks
-- documentation checks
-
-Maintenance scan recommendations are productized as structured backend findings.
-Every finding carries a category, severity, source, reason, and concrete evidence.
-The UI only renders these backend findings; it does not infer maintenance status or create optimistic recommendations.
-The scan does not refresh app discovery or mutate files, config, database, Git, or runtime FSM state.
-It may update the ephemeral last-scan cache used by backend snapshots.
-
-### Action Proposals and Maintenance Actions
-
-Maintenance actions start as backend-owned action proposals before any mutation occurs. Each proposal includes:
+Maintenance actions start as backend-owned action proposals before any mutation
+occurs. Each proposal includes:
 
 - reason and source finding
 - evidence references and observed evidence
@@ -178,35 +169,41 @@ Maintenance actions start as backend-owned action proposals before any mutation 
 - expected outcome and verification checks
 - read-only dry-run preview
 
-The currently supported maintenance actions are `create_logging_directory` and `create_scratch_directory`. Both create project-local directories only after user approval. Each action is constrained to the project root, passes `maintenance-mutation-safety-gate/1`, emits `maintenance-action-verifier/1` execution evidence, and triggers a read-only maintenance rescan so snapshots and live socket state converge on the same backend truth.
+The currently supported maintenance actions are `create_logging_directory` and
+`create_scratch_directory`. Both create project-local directories only after
+user approval. Each action is constrained to the project root, passes a
+maintenance mutation safety gate, emits `maintenance-action-verifier/1`
+execution evidence, and triggers a read-only maintenance rescan so snapshots and
+live socket state converge on backend truth.
 
-Each proposal includes `maintenance-action-dry-run-preview/1`, which is a read-only explanation of the approved operation, target, evidence references, preconditions, safety gate, and expected outcome. It does not mutate the filesystem and is rendered directly by the UI.
+Future maintenance actions should remain approval-gated, evidence-backed, and
+scoped by the same proposal contract.
 
-The mutation safety gate runs before any approved mutation. It verifies the supported action, approval requirement, affected resource count, directory target, allowlisted operation, project-root containment, evidence/resource alignment, target precondition, and expected postcondition. If a critical preflight check fails, the action does not mutate the filesystem.
+## Canonical Docs
 
-Action proposals also carry backend-derived lifecycle state when a matching command record exists. Proposal status is derived from the command snapshot (`approval_requested`, `approved`, `executing`, `verified`, `completed_unverified`, `failed`, `blocked`, `cancelled`, or `rejected`), not from frontend inference.
+- [Current mission](docs/aegis-current-mission.md)
+- [Capability model](docs/capability-model.md)
+- [System integrity audit](docs/system-integrity-audit.md)
+- [Historical evidence/replay debt closure](docs/historical-evidence-replay-debt-closure.md)
+- [Memory consent policy](docs/memory-consent-policy.md)
+- [Architecture realignment](docs/aegis-architecture-realignment.md)
+- [Model Gateway](docs/model-gateway.md)
+- [Skill Registry](docs/skill-registry.md)
+- [Bounded Agent Runtime](docs/bounded-agent-runtime.md)
+- [Codex skill pack for Aegis](docs/codex-skill-pack-for-aegis.md)
 
-Future maintenance actions should remain approval-gated, evidence-backed, and scoped by the same proposal contract.
-
-## Technology Stack
-
-| Layer | Technology |
-| --- | --- |
-| Backend | Python 3.11+, FastAPI, Pydantic v2, Socket.IO |
-| Runtime | FSM authority, command lifecycle, event journal, evidence audit |
-| Desktop | PyGetWindow, psutil, ctypes, PyAutoGUI |
-| Browser automation | Playwright |
-| Frontend | Next.js, React, TypeScript, Zustand, Tailwind CSS |
-| Local model integrations | Ollama / local model endpoints where configured |
+Historical hackathon and foundation documents remain in `docs/` for traceability
+but should not be treated as the current public product narrative.
 
 ## Repository Layout
 
 ```text
 src/aegis/                 Backend runtime, API, verifier, tools, orchestration
-frontend/                  Next.js runtime UI
-tests/                     Backend and source-contract tests
+frontend/                  Next.js / Electron Mission Control UI
+tests/                     Backend, API, runtime, and source-contract tests
 config/                    Runtime configuration
 schemas/                   Schema and contract assets
+docs/                      Canonical and historical documentation
 ui/                        Historical UI notes
 logs/                      Local runtime journals and logs (ignored)
 data/                      Local runtime data (ignored)
@@ -250,37 +247,6 @@ From the repository root:
 
 The default backend port is `8400`. The default frontend port is `3000`.
 
-## Hackathon RC Judge Quickstart
-
-Aegis Hackathon RC is a local Mission Control demo for a narrow governed path:
-Memory OS RC1-Core, AutoPilot RC1-Core, Deterministic Society Session RC1, and
-the Premium Mission Control RC UI.
-
-Run locally, then open `http://127.0.0.1:3000` and click `Hackathon RC`.
-
-Safe demo path:
-
-1. Run AutoPilot against a disposable local sample project.
-2. Inspect the AutoPilot report and memory candidates.
-3. Explicitly propose and approve or reject Memory items.
-4. Run a deterministic Society Session from the selected AutoPilot report.
-5. Confirm role cards, timeline, final summary, limitation labels, and Golden
-   Path completion.
-
-Judge-facing docs:
-
-- [Hackathon RC release package](docs/hackathon-rc-release-package-v1.md)
-- [Hackathon RC demo runbook](docs/hackathon-rc-demo-runbook.md)
-- [Hackathon RC demo script](docs/hackathon-rc-demo-script.md)
-- [Hackathon RC claims matrix](docs/hackathon-rc-claims-matrix.md)
-- [Hackathon RC validation manifest](docs/hackathon-rc-validation-manifest.md)
-
-Intentionally not implemented in this RC: live autonomous multi-agent runtime,
-model calls, MCP/tool calls, shell execution, cloud fallback, production
-deployment, durable AutoPilot report persistence, and durable Society session
-persistence. AutoPilot reports are not evidence, verifier-lite is not full
-verifier success, and Memory is not authority or permission.
-
 ## Validation
 
 Run the backend test suite:
@@ -296,103 +262,42 @@ cd frontend
 npm.cmd run build
 ```
 
-For browser smoke testing, Aegis uses the Python Playwright dependency from the backend environment. A separate JavaScript Playwright stack is not required.
-
-## Windows Troubleshooting
-
-### PATH Checks
-
-Use explicit Windows commands when a tool exists but PowerShell cannot find it:
+Common focused checks:
 
 ```powershell
-where.exe git
-where.exe node
-where.exe npm.cmd
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m pytest tests\test_core\test_readme_contract.py -q
+.\.venv\Scripts\python.exe -m pytest tests\test_core\test_policy_boundary.py -q
+.\.venv\Scripts\python.exe -m pytest tests\test_runtime\test_threat_model_regression.py -q
+git diff --check
 ```
 
-If Git is installed but `where.exe git` does not find it, add Git for Windows to your user PATH and open a new terminal:
+## Roadmap Toward Product Slices
 
-```powershell
-[Environment]::SetEnvironmentVariable(
-  "Path",
-  [Environment]::GetEnvironmentVariable("Path", "User") + ";C:\Program Files\Git\cmd",
-  "User"
-)
-```
+Near-term work should prioritize usable product slices over more placeholder
+contracts:
 
-For the current terminal only:
+1. Canonical docs and generated drift hygiene.
+2. Aegis Ask product slice for read-only explanation and guidance.
+3. Intent Router / Capability Broker.
+4. Real read-only capability execution with clear approval boundaries.
+5. Agent-to-skill proposal flow that can call allowed safe skills only after
+   policy gates exist.
+6. Premium Mission Control UI with truthful status hierarchy.
+7. Model-assisted Society and AutoPilot interpretation through Model Gateway.
+8. Memory Inbox and consent-based memory intelligence.
+9. Optional connector/MCP layer after capability, approval, and evidence gates.
 
-```powershell
-$env:Path += ";C:\Program Files\Git\cmd"
-```
+A future sprint is not accepted if it only adds skeletons, metadata, docs, or
+future-gated placeholders unless it is explicitly declared as an audit,
+checkpoint, or readiness sprint.
 
-### Node Commands
+## Historical Status
 
-Prefer `npm.cmd` on Windows:
+The historical `foundation-v1-baseline` tag remains a valid traceability point.
+The `hackathon-agent-runtime-foundation` tag preserves the bounded Agent Runtime
+foundation. These tags do not mean current runtime debt is hidden or resolved.
 
-```powershell
-cd frontend
-npm.cmd run build
-```
-
-## Roadmap
-
-The post-foundation roadmap is design/readiness-first. Full gates and invariants are documented in [Post-Foundation Architecture Roadmap v1](docs/post-foundation-architecture-roadmap-v1.md).
-
-Recommended sequence:
-
-- README Post-Foundation Alignment v1
-- GitHub Discoverability / SEO Alignment v1
-- Context Compiler Read-Only Integration Readiness v1
-- Policy-as-code Extension v1
-- Capability Lease Design v1
-- MCP/Tool Gateway Readiness v1
-- Memory Governance / Memory OS Design v1
-- Model Router Readiness v1
-- Skill/Plugin Architecture Design v1
-- Vertical Pack Prototypes, read-only first
-
-The Context Compiler skeleton and read-only readiness boundary already exist. Compiler output is context, not command truth, and it cannot grant capability, permission, approval, or execution authority.
-
-Post-foundation capabilities should be added only after the runtime, evidence, approval, policy, and replay foundations remain stable under tests and operator-reviewed gates.
-
-## Non-Goals for the Current Stage
-
-- uncontrolled agent loops
-- fake telemetry
-- frontend-inferred verification
-- unsandboxed tool execution
-- plugin marketplace
-- voice-first control
-- memory graph
-- self-modifying code without approval, tests, and rollback
-- journal cleanup execution
-- archive or compaction execution
-- Memory OS implementation
-- MCP execution gateway implementation
-- Model Router implementation
-- plugin or skill execution
-- vertical pack write actions
-- autonomous execution expansion
-
-## Project Status
-
-Latest stable checkpoint:
-
-- Foundation v1 baseline tagged as `foundation-v1-baseline`
-- accepted condition: `READY_FOR_BASELINE_WITH_KNOWN_HISTORICAL_DEBT`
-- current blockers, current evidence failures, current missing evidence, pending decisions, and restored pending decisions tracked separately from historical debt
-- historical evidence debt, unknown-era evidence issues, replay diagnostics debt, and resource warnings remain visible
-- runtime health may remain `fail`; this is not greenwashed or suppressed
-- app discovery and maintenance diagnostics remain read-only
-- post-foundation roadmap documented, with platform expansion still gated
-
-The current product target is:
-
-**Reliable Local AI Control Plane**
-
-`Reliable AI Computer Operator` remains the first operator-facing product mode
-inside that broader control-plane architecture.
-
-The first commercializable direction is still likely an evidence-backed local computer maintenance assistant, but the architecture is intentionally broader: a modular, auditable local control plane with policy, evidence, approval, capability, context, tool, model, and operator UX boundaries.
+Runtime health may still report `fail` while unknown-era evidence issues,
+runtime snapshot alignment, and replay diagnostics remain unresolved. That fail
+state is intentional until the separately scoped historical evidence/replay debt
+closure process is implemented and executed.
