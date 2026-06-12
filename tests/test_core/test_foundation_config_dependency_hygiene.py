@@ -26,6 +26,13 @@ MODEL_ENV_VARS = [
     "aegis_chat_model",
     "aegis_code_model",
     "aegis_embed_model",
+    "AEGIS_MODEL_GATEWAY_ENABLED",
+    "AEGIS_MODEL_PROVIDER",
+    "AEGIS_LM_STUDIO_BASE_URL",
+    "AEGIS_LM_STUDIO_MODEL",
+    "AEGIS_MODEL_TIMEOUT_SECONDS",
+    "AEGIS_MODEL_MAX_INPUT_CHARS",
+    "AEGIS_MODEL_MAX_OUTPUT_TOKENS",
 ]
 
 
@@ -75,6 +82,15 @@ def test_model_config_defaults_do_not_authorize_provider_calls(default_settings)
     assert models.model_calls_authorized is False
     assert models.embedding_generation_authorized is False
     assert models.auto_mode_enabled is False
+
+    gateway = default_settings.model_gateway
+    assert gateway.enabled is False
+    assert gateway.provider == "lm_studio"
+    assert gateway.lm_studio_base_url == "http://127.0.0.1:1234/v1"
+    assert gateway.lm_studio_model == "not_configured"
+    assert gateway.timeout_seconds == 20.0
+    assert gateway.max_input_chars == 8000
+    assert gateway.max_output_tokens == 512
 
 
 @pytest.mark.asyncio

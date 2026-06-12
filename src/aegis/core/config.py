@@ -125,6 +125,16 @@ class ModelSettings(BaseModel):
     max_replans: int = 2
 
 
+class ModelGatewaySettings(BaseModel):
+    enabled: bool = False
+    provider: str = "lm_studio"
+    lm_studio_base_url: str = "http://127.0.0.1:1234/v1"
+    lm_studio_model: str = "not_configured"
+    timeout_seconds: float = 20.0
+    max_input_chars: int = 8000
+    max_output_tokens: int = 512
+
+
 class FeatureFlags(BaseModel):
     cloud_fallback: bool = False
     multimodal: bool = False
@@ -143,6 +153,7 @@ class AegisSettings(BaseModel):
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     models: ModelSettings = Field(default_factory=ModelSettings)
+    model_gateway: ModelGatewaySettings = Field(default_factory=ModelGatewaySettings)
     features: FeatureFlags = Field(default_factory=FeatureFlags)
     env: str = "development"
     debug: bool = True
@@ -171,6 +182,16 @@ class EnvOverrides(BaseSettings):
     aegis_chat_model: str = "not_configured"
     aegis_code_model: str = "not_configured"
     aegis_embed_model: str = "not_configured"
+    aegis_model_gateway_enabled: bool = Field(False, validation_alias="AEGIS_MODEL_GATEWAY_ENABLED")
+    aegis_model_provider: str = Field("lm_studio", validation_alias="AEGIS_MODEL_PROVIDER")
+    aegis_lm_studio_base_url: str = Field(
+        "http://127.0.0.1:1234/v1",
+        validation_alias="AEGIS_LM_STUDIO_BASE_URL",
+    )
+    aegis_lm_studio_model: str = Field("not_configured", validation_alias="AEGIS_LM_STUDIO_MODEL")
+    aegis_model_timeout_seconds: float = Field(20.0, validation_alias="AEGIS_MODEL_TIMEOUT_SECONDS")
+    aegis_model_max_input_chars: int = Field(8000, validation_alias="AEGIS_MODEL_MAX_INPUT_CHARS")
+    aegis_model_max_output_tokens: int = Field(512, validation_alias="AEGIS_MODEL_MAX_OUTPUT_TOKENS")
     aegis_cloud_enabled: bool = False
     aegis_vision_feed: bool = Field(False, validation_alias="AEGIS_VISION_FEED")
     enable_deterministic_decomposition: bool | None = Field(
@@ -237,6 +258,15 @@ def load_settings(force_reload: bool = False) -> AegisSettings:
     _settings.models.max_recovery_depth = env_overrides.aegis_max_recovery_depth
     _settings.models.max_vision_attempts = env_overrides.aegis_max_vision_attempts
     _settings.models.max_replans = env_overrides.aegis_max_replans
+
+    # Model Gateway RC1
+    _settings.model_gateway.enabled = env_overrides.aegis_model_gateway_enabled
+    _settings.model_gateway.provider = env_overrides.aegis_model_provider
+    _settings.model_gateway.lm_studio_base_url = env_overrides.aegis_lm_studio_base_url
+    _settings.model_gateway.lm_studio_model = env_overrides.aegis_lm_studio_model
+    _settings.model_gateway.timeout_seconds = env_overrides.aegis_model_timeout_seconds
+    _settings.model_gateway.max_input_chars = env_overrides.aegis_model_max_input_chars
+    _settings.model_gateway.max_output_tokens = env_overrides.aegis_model_max_output_tokens
     
     # Features
     if env_overrides.aegis_cloud_enabled:

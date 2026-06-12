@@ -48,6 +48,15 @@ models:
   embedding_generation_authorized: false
   auto_mode_enabled: false
 
+model_gateway:
+  enabled: false
+  provider: "lm_studio"
+  lm_studio_base_url: "http://127.0.0.1:1234/v1"
+  lm_studio_model: "not_configured"
+  timeout_seconds: 20.0
+  max_input_chars: 8000
+  max_output_tokens: 512
+
 features:
   cloud_fallback: false
   multimodal: false
