@@ -42,7 +42,7 @@ authority.
 | Personal private content | Queue as sensitive. | Explicit approve or reject. |
 | Secret-like content | Block by default. | Do not store; allow only future explicit secure-secret flow. |
 | Credential/API key/token | Block by default. | Do not store. |
-| Imported legacy memory | Read-only until reviewed. | Approve, reject, archive, or delete. |
+| Imported older memory | Read-only until reviewed. | Approve, reject, archive, or delete. |
 
 ## Memory Inbox
 
@@ -144,7 +144,7 @@ Needed product work:
 - lifecycle filters
 - deletion/forget UI clarity
 - project/repository scope UX
-- import/legacy memory review path
+- import/older memory review path
 
 ## Intentionally Not Done
 

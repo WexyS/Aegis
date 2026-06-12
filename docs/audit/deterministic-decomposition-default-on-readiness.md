@@ -4,7 +4,7 @@
 
 **Goal:** Decide whether feature-flagged deterministic decomposition is ready for a later controlled default-on sprint.
 
-**Scope:** Audit/report only. No production behavior change, no default flip, no legacy parser cleanup, no executor/orchestrator/frontend changes, no click implementation, no target resolution, no LLM planner, and no Ultron bridge.
+**Scope:** Audit/report only. No production behavior change, no default flip, no compatibility parser cleanup, no executor/orchestrator/frontend changes, no click implementation, no target resolution, no LLM planner, and no Ultron bridge.
 
 ---
 
@@ -12,7 +12,7 @@
 
 **ready_for_default_on:** yes, for a controlled default-on sprint only.
 
-This is not approval to remove `_parse_compound_app_search()` and not approval to expand capabilities. The safe next change is to flip only `ENABLE_DETERMINISTIC_DECOMPOSITION` default behavior while keeping the legacy parser as fallback for unrelated text and still returning non-executable deterministic `unknown` results for explicit non-ready plans.
+This is not approval to remove `_parse_compound_app_search()` and not approval to expand capabilities. The safe next change is to flip only `ENABLE_DETERMINISTIC_DECOMPOSITION` default behavior while keeping the compatibility parser as fallback for unrelated text and still returning non-executable deterministic `unknown` results for explicit non-ready plans.
 
 ---
 
@@ -25,7 +25,7 @@ This is not approval to remove `_parse_compound_app_search()` and not approval t
 - `tests/test_intent/test_decomposition_adapter.py`
 - `tests/test_intent/test_parser.py`
 - `tests/test_intent/test_parser_deterministic_decomposition_smoke.py`
-- `docs/audit/legacy-compound-parser-parity.md`
+- `docs/audit/compound-parser-parity.md`
 
 ---
 
@@ -40,7 +40,7 @@ Deterministic decomposition now covers these ready compound shapes:
 | Turkish open + search | `brave açıp python nedir ara`, `chrome aç ve python nedir ara`, `brave aç sonra yapay zeka ara` | `open_app` then `search_web` |
 | English open + search | `open brave and search python`, `open chrome then search python tutorial` | `open_app` then `search_web` |
 
-Intentionally not preserved from legacy:
+Intentionally not preserved from the older path:
 
 - Unknown app compound commands becoming executable `open_app(unknownapp)`.
 - Open + click-like compounds partially executing an `open_app` step while click target resolution is unavailable.
@@ -48,13 +48,13 @@ Intentionally not preserved from legacy:
 - Missing `_require_focus` on type steps.
 - Missing `browser` context on English search compounds.
 
-Legacy fallback still matters for:
+Compatibility fallback still matters for:
 
 - unrelated text where `decompose_command()` returns `None`, such as `merhaba`;
 - existing single-intent commands and broader rule-based parser coverage;
-- legacy compound app-search phrases not yet modeled by deterministic decomposition, such as `araması yap`, `bul`, `find`, `googlela`, `launch`, and `start` forms.
+- older compound app-search phrases not yet modeled by deterministic decomposition, such as `araması yap`, `bul`, `find`, `googlela`, `launch`, and `start` forms.
 
-Behavior differs from `_parse_compound_app_search()` by design. The deterministic path is narrower and stricter: it either emits a validated normalized plan or returns a non-executable clarification/block result. The legacy compound parser is broader but can preserve unsafe or low-quality parses.
+Behavior differs from `_parse_compound_app_search()` by design. The deterministic path is narrower and stricter: it either emits a validated normalized plan or returns a non-executable clarification/block result. The compatibility compound parser is broader but can preserve unsafe or low-quality parses.
 
 ---
 
@@ -66,8 +66,8 @@ Confirmed:
 - Unresolved click does not execute under flag ON.
 - Unresolved click does not partially execute `open_app`; `brave aç ve ilk sonuca tıkla` returns one non-executable `unknown`.
 - Generic `click that button` does not produce `click`, `browser_click`, or `desktop_click`.
-- Non-ready deterministic plans do not fall through to the legacy parser because `IntentParser.parse()` returns the deterministic non-ready result when `decompose_command()` returns a plan.
-- Destructive/system-sensitive behavior is not expanded by deterministic decomposition. The normalized plan allowlist does not include file deletion, shell execution, raw click, `browser_click`, or `desktop_click`. Existing legacy risk handling remains separate and unchanged.
+- Non-ready deterministic plans do not fall through to the compatibility parser because `IntentParser.parse()` returns the deterministic non-ready result when `decompose_command()` returns a plan.
+- Destructive/system-sensitive behavior is not expanded by deterministic decomposition. The normalized plan allowlist does not include file deletion, shell execution, raw click, `browser_click`, or `desktop_click`. Existing older risk handling remains separate and unchanged.
 
 Not confirmed in this sprint:
 
@@ -123,7 +123,7 @@ Flag-on behavior is tested for:
 - unresolved click clarification;
 - unrelated text falling back to existing parser behavior.
 
-Default-on would not bypass legacy fallback for unrelated text because `decompose_command()` returns `None` for unsupported/unrelated input and the parser continues through the existing legacy path. Non-ready deterministic decisions are different: they intentionally return immediately and do not fall through.
+Default-on would not bypass compatibility fallback for unrelated text because `decompose_command()` returns `None` for unsupported/unrelated input and the parser continues through the existing older path. Non-ready deterministic decisions are different: they intentionally return immediately and do not fall through.
 
 ---
 
@@ -131,12 +131,12 @@ Default-on would not bypass legacy fallback for unrelated text because `decompos
 
 Possible regressions if made default-on:
 
-- Some broad legacy app-search forms may still rely on `_parse_compound_app_search()` because deterministic decomposition is intentionally narrower.
+- Some broad older app-search forms may still rely on `_parse_compound_app_search()` because deterministic decomposition is intentionally narrower.
 - App alias encoding/normalization issues could cause valid phrases to become `clarification_required` instead of executable plans.
-- Users relying on legacy partial execution may see safer non-executable clarification results instead.
-- If a phrase matches a deterministic non-ready pattern too aggressively, it can block legacy fallback. Current audited cases are intentional, but broader language coverage should stay conservative.
+- Users relying on older partial execution may see safer non-executable clarification results instead.
+- If a phrase matches a deterministic non-ready pattern too aggressively, it can block compatibility fallback. Current audited cases are intentional, but broader language coverage should stay conservative.
 
-Commands that should still use legacy parser or fallback:
+Commands that should still use compatibility parser or fallback:
 
 - single-intent app open/focus/close commands;
 - URL/site open commands;
@@ -144,16 +144,16 @@ Commands that should still use legacy parser or fallback:
 - git commands;
 - shell/run commands;
 - general chat/unrelated text;
-- legacy search phrases not yet represented by deterministic decomposition.
+- older search phrases not yet represented by deterministic decomposition.
 
 Test coverage gaps:
 
-- More Turkish suffix and alias variants before legacy cleanup.
-- More legacy `_parse_compound_app_search()` tails: `araması yap`, `arama yap`, `bul`, `find`, `googlela`.
+- More Turkish suffix and alias variants before older cleanup.
+- More older `_parse_compound_app_search()` tails: `araması yap`, `arama yap`, `bul`, `find`, `googlela`.
 - Explicit flag-ON smoke for destructive/system-sensitive parser inputs to prove the default-on gate does not make them more executable than today.
 - App alias encoding fix and tests remain a separate sprint.
 
-Turkish/English coverage is enough for controlled default-on of the audited high-risk compound patterns, but not enough for legacy parser removal.
+Turkish/English coverage is enough for controlled default-on of the audited high-risk compound patterns, but not enough for compatibility parser removal.
 
 ---
 
@@ -174,7 +174,7 @@ No new blocking parser tests were discovered for the audited default-on scope. T
 Recommended extra tests before or during controlled default-on:
 
 - flag-ON destructive/system-sensitive parser smoke showing behavior remains unchanged or non-executable;
-- flag-ON coverage for additional legacy app-search tails if those are considered part of default-on acceptance;
+- flag-ON coverage for additional older app-search tails if those are considered part of default-on acceptance;
 - explicit config default assertion that deterministic decomposition remains false until the controlled default-on sprint changes it.
 
 ---
@@ -183,7 +183,7 @@ Recommended extra tests before or during controlled default-on:
 
 **Can default-on be done while keeping `_parse_compound_app_search()`?** Yes. That is the recommended path.
 
-**Is cleanup safe now?** No. Legacy cleanup must wait until default-on has landed, remained green, and broader legacy fallback coverage has been reviewed.
+**Is cleanup safe now?** No. Older cleanup must wait until default-on has landed, remained green, and broader compatibility fallback coverage has been reviewed.
 
 ---
 
@@ -196,7 +196,7 @@ Constraints for that sprint:
 - flip only the deterministic decomposition default;
 - keep `_parse_compound_app_search()`;
 - keep non-ready deterministic no-fallback behavior;
-- keep unrelated text legacy fallback behavior;
+- keep unrelated text compatibility fallback behavior;
 - add the smallest necessary config/default assertion tests;
 - run the same validation suite.
 

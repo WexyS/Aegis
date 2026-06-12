@@ -32,7 +32,7 @@ def _read_plan_request(**overrides: object) -> dict[str, object]:
             {"path": "README.md", "path_type": "documentation", "metadata_only": True},
             {"path": "src/aegis/core/repo_audit_pack.py", "path_type": "source"},
             {"path": "tests/test_core/test_repo_audit_pack.py", "path_type": "test"},
-            {"path": "docs/repo-audit-pack-read-only-contract-v1.md", "path_type": "docs"},
+            {"path": "docs/repo-audit-pack-read-only-contract.md", "path_type": "docs"},
         ],
         "source_refs": [{"ref_id": "commit:f2dfae4", "ref_type": "commit"}],
         "policy_refs": ["policy:repo-audit.read-plan.future-only"],

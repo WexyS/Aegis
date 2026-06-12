@@ -32,7 +32,7 @@ def _request(**overrides: object) -> dict[str, object]:
             {"path": "README.md", "path_type": "documentation", "metadata_only": True},
             {"path": "src/aegis/core/repo_audit_pack.py", "path_type": "source"},
             {"path": "tests/test_core/test_repo_audit_pack.py", "path_type": "test"},
-            {"path": "docs/repo-audit-pack-read-only-contract-v1.md", "path_type": "docs"},
+            {"path": "docs/repo-audit-pack-read-only-contract.md", "path_type": "docs"},
         ],
         "source_refs": [{"ref_id": "commit:f2dfae4", "ref_type": "commit"}],
         "policy_refs": ["policy:repo-audit.read-plan.future-only"],
@@ -102,7 +102,7 @@ def _source_inventory_request(**overrides: object) -> dict[str, object]:
             {"path": "README.md", "path_type": "documentation"},
             {"path": "src/aegis/core/repo_audit_pack.py", "path_type": "source"},
             {"path": "tests/test_core/test_repo_audit_pack.py", "path_type": "test"},
-            {"path": "docs/repo-audit-pack-read-only-contract-v1.md", "path_type": "docs"},
+            {"path": "docs/repo-audit-pack-read-only-contract.md", "path_type": "docs"},
         ],
         "path_policy": {
             "allowed_prefixes": ["src/", "tests/", "docs/"],
@@ -219,7 +219,7 @@ def test_valid_readme_src_tests_and_docs_candidates_are_planned_without_existenc
     assert categories["README.md"] == "planned_metadata_only_candidate"
     assert categories["src/aegis/core/repo_audit_pack.py"] == "future_read_candidate"
     assert categories["tests/test_core/test_repo_audit_pack.py"] == "future_read_candidate"
-    assert categories["docs/repo-audit-pack-read-only-contract-v1.md"] == "future_read_candidate"
+    assert categories["docs/repo-audit-pack-read-only-contract.md"] == "future_read_candidate"
     for target in decision.planned_targets:
         assert target.source_existence_proven is False
         assert target.file_content_observed is False

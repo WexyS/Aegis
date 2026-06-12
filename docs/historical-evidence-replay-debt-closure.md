@@ -13,7 +13,7 @@ runtime state, Git history, or generated artifacts.
 Aegis currently keeps historical, unknown-era, and replay debt visible. That is
 correct. The next step is not to hide it; the next step is to close it with a
 clear operational model that preserves inspectability while preventing safely
-retired legacy debt from blocking current product work forever.
+retired older debt from blocking current product work forever.
 
 Missing historical evidence cannot be reconstructed unless source evidence
 actually exists. Unknown-era issues must not be guessed into success.
@@ -47,7 +47,7 @@ deleted or compacted as a side effect of this plan.
 | Debt class | Meaning | Closure treatment |
 | --- | --- | --- |
 | Active operational debt | Current blockers, current missing evidence, current evidence failures, pending approvals, restored pending work, or live runtime inconsistency. | Must be fixed or explicitly blocked before clean baseline. |
-| Historical debt | Old event/evidence/replay issues with known historical classification. | Can be archived into a legacy manifest if backup, replay, and operator gates pass. |
+| Historical debt | Old event/evidence/replay issues with known historical classification. | Can be archived into a older manifest if backup, replay, and operator gates pass. |
 | Unknown-era evidence | Events without enough session/source context to prove current or historical era. | Must remain visible unless source evidence resolves the classification. |
 | Replay boundary debt | Sequence resets, hash-chain mismatch, mixed eras, recursive snapshots, or replay discontinuities. | Requires backup, restore, replay, hash-chain checks, and operator approval before closure. |
 | Resource/log pressure | Large local journals, logs, caches, or generated artifacts. | Requires backup and explicit cleanup sprint; no blind deletion. |
@@ -85,13 +85,13 @@ The correct closure model has four durable parts:
    - Record file sizes and hashes.
    - Do not mutate source files during backup verification.
 
-2. Archived legacy manifest
+2. Archived older manifest
    - List historical and unknown-era issues exactly as observed.
    - Preserve reason, source, era classification, and uncertainty.
    - Include hash references to backed-up source artifacts.
    - Mark non-reconstructable missing evidence as non-reconstructable.
 
-3. Retired legacy baseline
+3. Retired older baseline
    - Declare the old mixed-era journal range as retired only after restore,
      replay, and hash-chain checks.
    - The retired baseline remains inspectable.
@@ -99,10 +99,10 @@ The correct closure model has four durable parts:
 
 4. Clean current operational baseline
    - New runtime health can separate current operational blockers from archived
-     legacy debt.
-   - Active runtime must not fail solely because safely retired legacy debt
+     older debt.
+   - Active runtime must not fail solely because safely retired older debt
      remains archived.
-   - Archived debt must remain reportable in a legacy section.
+   - Archived debt must remain reportable in a older section.
 
 ## Required Gates
 
@@ -133,7 +133,7 @@ Maintenance scan must not hide:
 - unverified completed actions
 - resource/log pressure
 
-Closure may move retired debt to an archived legacy section only after gates
+Closure may move retired debt to an archived older section only after gates
 pass. It must not delete the debt from observability.
 
 ## No-Guessing Rule
@@ -155,12 +155,12 @@ After a future closure sprint, maintenance scan should report:
 - current evidence failures
 - current missing evidence
 - pending decisions
-- archived legacy debt summary
-- archived legacy manifest reference
+- archived older debt summary
+- archived older manifest reference
 - replay/hash-chain closure status
 - whether archived debt still needs operator attention
 
-Current health should not fail solely because archived legacy debt is preserved.
+Current health should not fail solely because archived older debt is preserved.
 It should still fail for active blockers, current missing evidence, current
 evidence failures, replay/hash-chain issues in the current baseline, or hidden
 debt.
@@ -170,11 +170,11 @@ debt.
 Closure is accepted only when:
 
 - backup exists and restore verification passed
-- archived legacy manifest exists and is inspectable
+- archived older manifest exists and is inspectable
 - non-reconstructable evidence remains labeled as non-reconstructable
 - unknown-era issues remain labeled unless source evidence resolves them
-- clean current operational baseline is created without hiding legacy debt
-- maintenance scan separates active current blockers from archived legacy debt
+- clean current operational baseline is created without hiding older debt
+- maintenance scan separates active current blockers from archived older debt
 - no journal/evidence/replay mutation was performed without explicit operator
   approval
 - no fake evidence or verifier success was created

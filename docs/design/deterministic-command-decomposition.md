@@ -1,5 +1,4 @@
-# Deterministic Command Decomposition Design v1
-
+# Deterministic Command Decomposition Design
 **Goal:** Define how natural-language commands become explicit, ordered primitive intents before execution.
 
 **Decision:** Decomposition must happen before execution. A generic or compound user command must never reach the executor as a malformed single action.
@@ -138,7 +137,7 @@ Only `status="ready"` plans may execute automatically, and only when risk policy
 
 ---
 
-## Supported V1 Compound Patterns
+## Supported Compound Patterns
 
 ### Open App + Type
 
@@ -193,7 +192,7 @@ Expected primitives:
 ]
 ```
 
-If the second action depends on a site-local search box, that is future target resolution, not v1 deterministic search.
+If the second action depends on a site-local search box, that is future target resolution, not deterministic search.
 
 ### Focus App + Type
 

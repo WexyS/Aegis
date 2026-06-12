@@ -107,7 +107,7 @@ def _request(**overrides: object) -> dict[str, object]:
         "test_refs": ["tests/test_core/test_repo_audit_pack.py"],
         "dependency_refs": [],
         "config_refs": [],
-        "docs_refs": ["docs/repo-audit-pack-read-only-contract-v1.md"],
+        "docs_refs": ["docs/repo-audit-pack-read-only-contract.md"],
         "audit_scope": ["architecture_summary"],
         "requested_checks": ["project_structure", "unknowns_and_limitations"],
         "excluded_paths": [],

@@ -368,7 +368,7 @@ Target resolution dependency: `browser_click` and `desktop_click` should general
 | `browser_click` selector | medium | deterministic low-risk page target with single visible match | ambiguous selector, challenge, sensitive page |
 | `browser_click` coordinate | medium-high | viewport and element-at-point evidence are strong | target identity unknown |
 | `desktop_click` coordinate | high | only explicit coordinate task with strong foreground/window evidence and low-risk context | most natural-language desktop targets |
-| `desktop_click` semantic target | high | not auto-allowed in v0 | requires vision/accessibility/designated target evidence |
+| `desktop_click` semantic target | high | not auto-allowed initially | requires vision/accessibility/designated target evidence |
 
 ---
 

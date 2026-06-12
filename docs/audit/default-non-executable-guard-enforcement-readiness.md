@@ -12,13 +12,13 @@ When `request.context["enable_non_executable_guard_boundary"]` is absent:
 
 - ready actions continue through the existing orchestrator path;
 - `ACTION_STARTED` can still be emitted before executor dispatch;
-- `executor.execute(...)` is still called for executable legacy paths;
-- legacy preflight guard still runs before execution;
-- medium-risk legacy approvals still use `APPROVAL_REQUIRED` via
+- `executor.execute(...)` is still called for executable older paths;
+- compatibility preflight guard still runs before execution;
+- medium-risk older approvals still use `APPROVAL_REQUIRED` via
   `ws_bridge.emit_approval_required(...)`;
-- legacy command lifecycle still records `pending_approval` through
+- older command lifecycle still records `pending_approval` through
   `ApprovalManager.register_pending(...)`;
-- generic `click` can still reach legacy approval/execution paths depending on
+- generic `click` can still reach older approval/execution paths depending on
   risk and approval context;
 - non-executable guard events are not emitted by default;
 - `runtime_snapshot["non_executable_decisions"]` is journal-derived, but will
@@ -29,7 +29,7 @@ When `request.context["enable_non_executable_guard_boundary"]` is absent:
   those events exist.
 
 Default behavior is unchanged today. The existing default-path regression tests
-still cover low-risk execution and legacy approved click execution.
+still cover low-risk execution and older approved click execution.
 
 ## Gated Harness Coverage
 
@@ -42,7 +42,7 @@ The gated harness currently proves:
 - non-executable payloads do not include `execution_evidence`;
 - non-executable payloads do not set `success=true`, `verified=true`, or
   `action_started=true`;
-- new approval semantics use `APPROVAL_REQUESTED`, not legacy
+- new approval semantics use `APPROVAL_REQUESTED`, not older
   `APPROVAL_REQUIRED`;
 - ready `read_file` still executes under the flag;
 - unresolved generic `click` is quarantined under the flag;
@@ -66,11 +66,11 @@ Default guard enforcement is not ready until these are addressed:
 - clarification resolve lifecycle is not implemented;
 - pending clarification exists as a command lifecycle state, but there is no
   endpoint or worker handoff that can resolve it;
-- legacy `APPROVAL_REQUIRED` preflight still coexists with new
+- older `APPROVAL_REQUIRED` preflight still coexists with new
   `APPROVAL_REQUESTED`;
 - enabling all guard decisions by default can produce duplicate approval
-  semantics unless legacy preflight is migrated or fenced;
-- generic click can still execute or resume through legacy default paths;
+  semantics unless compatibility preflight is migrated or fenced;
+- generic click can still execute or resume through older default paths;
 - frontend protocol types exist, but there is no UI consuming
   `non_executable_decisions`, `pending_clarifications`, or new
   `APPROVAL_REQUESTED`/`CLARIFICATION_REQUESTED` payloads;
@@ -89,7 +89,7 @@ Must fix before default enforcement:
 
 - resolve or explicitly defer approval resolution semantics;
 - resolve or explicitly defer clarification resolution semantics;
-- fence legacy `APPROVAL_REQUIRED` so a single decision cannot emit both legacy
+- fence older `APPROVAL_REQUIRED` so a single decision cannot emit both compatibility
   and new approval events;
 - define queue/command lifecycle behavior for waiting approval and waiting
   clarification under default mode;
@@ -103,7 +103,7 @@ Nice to have before default enforcement:
 - frontend UI for pending approval and pending clarification;
 - live browser smoke showing backend-derived pending decision state;
 - richer snapshot replay tests across process restart;
-- a small migration note for legacy approval event consumers.
+- a small migration note for older approval event consumers.
 
 ## Safe Partial Enforcement Analysis
 
@@ -113,7 +113,7 @@ Safe now: almost, but not yet default-ready.
 
 Risk:
 
-- legacy click approval/resume tests still expect executable click after
+- older click approval/resume tests still expect executable click after
   approval;
 - default click behavior needs explicit migration tests;
 - UI has no pending clarification handling.
@@ -123,7 +123,7 @@ Missing tests:
 - default generic click no executor;
 - default generic click no `ACTION_STARTED`;
 - default generic click emits `CLARIFICATION_REQUESTED`;
-- legacy approved click tests either migrate or remain explicitly legacy-scoped.
+- older approved click tests either migrate or remain explicitly compatibility-scoped.
 
 Recommendation: yes as the next narrow implementation candidate, but only after
 one readiness-to-implementation sprint with default-path tests.
@@ -152,7 +152,7 @@ Safe now: partial.
 
 Risk:
 
-- existing legacy preflight already blocks some critical actions;
+- existing compatibility preflight already blocks some critical actions;
 - duplicate `COMMAND_BLOCKED` or mismatched lifecycle status can occur if both
   paths run.
 
@@ -162,7 +162,7 @@ Missing tests:
 - no executor and no `ACTION_STARTED`;
 - snapshot/action_timeline terminal state is stable.
 
-Recommendation: good second candidate after legacy block path is fenced.
+Recommendation: good second candidate after older block path is fenced.
 
 ### D. Approval Required High-Risk Actions
 
@@ -171,7 +171,7 @@ Safe now: no.
 Risk:
 
 - no approval resolve endpoint for new approval semantics;
-- legacy `APPROVAL_REQUIRED` still exists;
+- older `APPROVAL_REQUIRED` still exists;
 - frontend does not handle new approval request lifecycle.
 
 Missing tests:
@@ -179,7 +179,7 @@ Missing tests:
 - default high-risk approval waits safely;
 - approval can be cancelled;
 - approval does not imply success or verification;
-- no dual legacy/new approval events.
+- no dual compatibility/new approval events.
 
 Recommendation: do not enable before approval resolve lifecycle design.
 
@@ -197,7 +197,7 @@ Missing tests:
 
 - default ambiguous command waits safely;
 - pending clarification can be cancelled;
-- no legacy executable fallback;
+- no older executable fallback;
 - snapshot survives reconnect/replay.
 
 Recommendation: do not enable broadly before clarification resolve lifecycle
@@ -214,9 +214,9 @@ Risk:
 
 Recommendation: explicitly unsafe for the next sprint.
 
-## Legacy Generic Click Decision
+## Older Generic Click Decision
 
-Recommended next sprint: **Default Generic Click Guard Quarantine v1**.
+Recommended next sprint: **Default Generic Click Guard Quarantine**.
 
 Rationale:
 
@@ -262,13 +262,13 @@ For generic-click-only enforcement, the first minimal set is:
 - generic click appears in `non_executable_decisions.pending_clarification`;
 - generic click appears in `action_timeline` as `clarification_requested`;
 - ready `read_file` and `open_app` still execute;
-- legacy approved click tests are updated or explicitly scoped to legacy mode.
+- older approved click tests are updated or explicitly scoped to older mode.
 
 ## Final Recommendation
 
 Do not remove `enable_non_executable_guard_boundary` yet.
 
-Proceed with **Default Generic Click Guard Quarantine v1** as the next
+Proceed with **Default Generic Click Guard Quarantine** as the next
 implementation sprint. Keep it narrow, default-on only for generic unresolved
-`click`, with explicit regression tests for ready actions and legacy approval
+`click`, with explicit regression tests for ready actions and older approval
 paths.

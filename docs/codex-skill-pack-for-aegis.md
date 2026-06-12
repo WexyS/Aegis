@@ -1,6 +1,6 @@
 # Codex Development Skill Pack For Aegis
 
-Decision: `SKILL_REGISTRY_CORE_RC1_CODEX_SKILL_PACK_V1`
+Decision: `SKILL_REGISTRY_CORE_CODEX_SKILL_PACK`
 
 ## Purpose
 

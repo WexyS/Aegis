@@ -4,15 +4,15 @@
 
 **Sprint:** Generic Click Path Quarantine Audit
 
-**Scope:** Audit/report plus focused parser safety tests. No click implementation, no `browser_click`, no `desktop_click`, no target resolution, no executor/orchestrator/frontend behavior change, no parser expansion, no legacy parser removal.
+**Scope:** Audit/report plus focused parser safety tests. No click implementation, no `browser_click`, no `desktop_click`, no target resolution, no executor/orchestrator/frontend behavior change, no parser expansion, no compatibility parser removal.
 
 ## Decision
 
 `cleanup_safe_now: no`
 
-Generic `click` must be kept temporarily as a quarantined legacy/browser stub, then deprecated and removed or replaced only after explicit `browser_click` and `desktop_click` contracts exist.
+Generic `click` must be kept temporarily as a quarantined compatibility/browser stub, then deprecated and removed or replaced only after explicit `browser_click` and `desktop_click` contracts exist.
 
-Current deterministic decomposition correctly blocks unresolved click examples before dispatch, but legacy parser/rules and executor/tool paths still allow executable generic `click` for bare, count, coordinate, selector, or AI-produced click intents. That means generic click can currently reach executor when a legacy parser path or test/fake planner emits it and approval is granted.
+Current deterministic decomposition correctly blocks unresolved click examples before dispatch, but compatibility parser/rules and executor/tool paths still allow executable generic `click` for bare, count, coordinate, selector, or AI-produced click intents. That means generic click can currently reach executor when a compatibility parser path or test/fake planner emits it and approval is granted.
 
 ## Reference Inventory
 
@@ -22,20 +22,20 @@ Current deterministic decomposition correctly blocks unresolved click examples b
 | `src/aegis/intent/decomposition.py` | unresolved click token check returns clarification plan | Safe deterministic block | Blocks `click that button` and open+first-result examples without partial `open_app`. |
 | `tests/test_intent/test_decomposition.py` | raw click/future click validation tests | Test-only reference | Protects normalized plan guard. |
 | `tests/test_intent/test_parser_deterministic_decomposition_smoke.py` | unresolved click parser tests | Test-only reference | Existing plus new tests protect required ambiguous examples. |
-| `src/aegis/intent/rules.py` | `IntentRule(intent="click")` for coordinates, count, and bare `tıkla/click` | Unsafe ambiguity / legacy parser path | Emits executable generic `click` outside deterministic decomposition. Should be quarantined, then replaced by split routing. |
-| `src/aegis/intent/parser.py` | click coordinate/count parameter extraction | Legacy parser support | Supports old generic `click` contract. Not safe as final architecture. |
+| `src/aegis/intent/rules.py` | `IntentRule(intent="click")` for coordinates, count, and bare `tıkla/click` | Unsafe ambiguity / compatibility parser path | Emits executable generic `click` outside deterministic decomposition. Should be quarantined, then replaced by split routing. |
+| `src/aegis/intent/parser.py` | click coordinate/count parameter extraction | Compatibility parser support | Supports old generic `click` contract. Not safe as final architecture. |
 | `src/aegis/intent/ai_parser.py` | accepts `click` if x/y or selector exists; assigns medium risk | Unsafe ambiguity | LLM/AI path can propose generic click. Future guard should reject generic click or normalize after target resolution. |
-| `src/aegis/tools/web_tools.py` | `ClickTool` uses Playwright `page.click` or `page.mouse.click` | Browser-specific old code | This is really a browser click implementation under generic name. Keep only as legacy stub until `browser_click` exists. |
-| `src/aegis/tools/registry.py` | `TOOLS["click"] = ClickTool()` and `TOOL_SPECS["click"]` | Registered legacy executable | Generic click is still registered, medium risk, side-effecting, browser evidence policy. |
-| `config/tools.yaml` | `click` tool config | Config-only legacy reference | Requires approval, browser evidence policy. Should later become `browser_click`/`desktop_click` specs. |
+| `src/aegis/tools/web_tools.py` | `ClickTool` uses Playwright `page.click` or `page.mouse.click` | Browser-specific old code | This is really a browser click implementation under generic name. Keep only as older stub until `browser_click` exists. |
+| `src/aegis/tools/registry.py` | `TOOLS["click"] = ClickTool()` and `TOOL_SPECS["click"]` | Registered older executable | Generic click is still registered, medium risk, side-effecting, browser evidence policy. |
+| `config/tools.yaml` | `click` tool config | Config-only older reference | Requires approval, browser evidence policy. Should later become `browser_click`/`desktop_click` specs. |
 | `config/guard_rules.yaml` | `click` in approval gates | Guard config | Approval helps, but approval is not target resolution and does not make generic click safe. |
-| `src/aegis/guard/action_guard.py` | click count limit | Safe but insufficient legacy guard | Limits repeated clicks only. Does not resolve browser/desktop ambiguity. |
+| `src/aegis/guard/action_guard.py` | click count limit | Safe but insufficient older guard | Limits repeated clicks only. Does not resolve browser/desktop ambiguity. |
 | `src/aegis/orchestrator/orchestrator.py` | `click` in `VERIFIED_TOOLS`, `SIDE_EFFECTING_TOOLS`, proof policy | Unsafe executable compatibility path | Allows approved generic click through lifecycle when parser/planner emits it. Should be removed after split. |
 | `src/aegis/executor/deterministic_executor.py` | `_capture_click_context`, browser evidence for generic `click`, page acquisition for click | Browser-specific old executor path | Existing evidence is browser-oriented and should be renamed/replaced by `browser_click`; not extended as generic click. |
-| `src/aegis/executor/executor.py` | legacy executor page setup includes `click` | Deprecated legacy path | Generic browser click can run if legacy executor is used. |
-| `src/aegis/core/constants.py` | `IntentType.CLICK = "click"` | Legacy enum/reference | Keep until cleanup can safely remove compatibility references. |
-| `tests/test_executor/test_executor.py` | coordinate click success includes browser evidence | Test-only legacy compatibility | Proves current executor can execute generic click. This is useful audit evidence but should be retired after split. |
-| `tests/test_guard/test_action_guard.py` | click count guard tests | Test-only legacy guard | Can remain while legacy click is registered. |
+| `src/aegis/executor/executor.py` | older executor page setup includes `click` | Deprecated older path | Generic browser click can run if older executor is used. |
+| `src/aegis/core/constants.py` | `IntentType.CLICK = "click"` | Older enum/reference | Keep until cleanup can safely remove compatibility references. |
+| `tests/test_executor/test_executor.py` | coordinate click success includes browser evidence | Test-only older compatibility | Proves current executor can execute generic click. This is useful audit evidence but should be retired after split. |
+| `tests/test_guard/test_action_guard.py` | click count guard tests | Test-only older guard | Can remain while older click is registered. |
 | `tests/test_runtime/test_command_lifecycle.py` | approved click command resumes/executed, proof-backed click verified/unverified tests | Test-only lifecycle compatibility | Demonstrates generic click can reach orchestrator/executor after approval. |
 | `tests/test_api/test_command.py` | `click 50 times` API test | Test-only guard/API compatibility | Should later assert generic click is blocked/clarification unless split routing exists. |
 | `tests/test_runtime/test_action_timeline.py` | action-active tool `click` | Test-only projection fixture | Safe fixture, but can later be renamed to explicit split click. |
@@ -50,8 +50,8 @@ Required unresolved examples are currently non-executable:
 | Input | Current result | Safety result |
 | --- | --- | --- |
 | `click that button` | `unknown` with deterministic `clarification_required` metadata | Safe: no `click`, no `browser_click`, no `desktop_click`. |
-| `şuna tıkla` | `unknown` through legacy fallback | Safe for execution: no generic click emitted. Metadata is not deterministic because no deterministic pattern matched. |
-| `buna tıkla` | `unknown` through legacy fallback | Safe for execution: no generic click emitted. |
+| `şuna tıkla` | `unknown` through compatibility fallback | Safe for execution: no generic click emitted. Metadata is not deterministic because no deterministic pattern matched. |
+| `buna tıkla` | `unknown` through compatibility fallback | Safe for execution: no generic click emitted. |
 | `brave aç ve ilk sonuca tıkla` | `unknown` with deterministic `clarification_required` metadata | Safe: no partial `open_app(brave)`, no generic click. |
 | `chrome aç ve ilk sonuca tıkla` | `unknown` with deterministic `clarification_required` metadata | Safe: no partial `open_app(chrome)`, no generic click. |
 
@@ -61,7 +61,7 @@ The new focused parser test asserts all five examples never emit `open_app`, `cl
 
 Yes.
 
-The required unresolved examples do not produce executable click, but other legacy paths still can:
+The required unresolved examples do not produce executable click, but other older paths still can:
 
 - `tıkla` parses to `click(count=1)`.
 - `5 kere tıkla` parses to `click(count=5)`.
@@ -70,9 +70,9 @@ The required unresolved examples do not produce executable click, but other lega
 - `click` is registered in the tool registry and orchestrator executable/proof lists.
 - The deterministic executor has a working browser-oriented generic `click` path.
 
-This is the core quarantine finding: unresolved click is safe under deterministic decomposition, but legacy generic click is not yet architecturally isolated from execution.
+This is the core quarantine finding: unresolved click is safe under deterministic decomposition, but compatibility generic click is not yet architecturally isolated from execution.
 
-## Unsafe Legacy Behaviors Not To Preserve
+## Unsafe Older Behaviors Not To Preserve
 
 - Generic `click` as the internal runtime capability.
 - Bare natural language `click` dispatch.
@@ -129,7 +129,7 @@ Before any capability expansion, future work should:
 - `browser_click` and `desktop_click` contracts do not exist in tool registry.
 - Generic `click` remains registered and executable.
 - AI parser can still propose generic `click`.
-- Legacy parser still emits generic `click` for bare/count/coordinate commands.
+- Compatibility parser still emits generic `click` for bare/count/coordinate commands.
 - Existing tests still encode generic click as executable compatibility.
 
 ## Recommendation

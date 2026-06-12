@@ -1,6 +1,6 @@
 # Model Gateway
 
-Decision: `LOCAL_MODEL_GATEWAY_RC1_LM_STUDIO`
+Decision: `LOCAL_MODEL_GATEWAY_LM_STUDIO`
 
 Current status: implemented as a bounded local model-call boundary for explicit
 LM Studio/OpenAI-compatible local endpoint use. The historical decision name is
@@ -11,7 +11,7 @@ retained for traceability; public product wording should use Model Gateway.
 Model Gateway adds a bounded local model-call boundary for Aegis. It supports
 LM Studio through the local OpenAI-compatible HTTP API only.
 
-This is a backend/API capability. It does not add frontend UI, Society v2,
+This is a backend/API capability. It does not add frontend UI, model-assisted Society,
 AutoPilot integration, Memory integration, Agent Runtime integration, Skill
 Registry integration, cloud routing, hidden fallback, evidence creation,
 verifier success, approval, lease, capability grants, tool execution, MCP
@@ -47,7 +47,7 @@ Allowed base path:
 Rejected endpoint shapes include remote hosts, spoofed localhost domains,
 credentials in URLs, query strings, fragments, and unsupported paths.
 
-The gateway does not use legacy direct provider paths for new model-assisted
+The gateway does not use older direct provider paths for new model-assisted
 features. It does not silently fall back to cloud or another local provider.
 
 ## Configuration
@@ -206,7 +206,7 @@ The test suite covers:
 ## Intentionally Not Done
 
 - No frontend Model Gateway UI
-- No Society v2 model-assisted commentary
+- No model-assisted Society model-assisted commentary
 - No AutoPilot model-assisted interpretation
 - No Memory candidate refinement integration
 - No Agent Runtime or Skill Registry wiring
@@ -223,4 +223,4 @@ The test suite covers:
 - Prompt privacy still depends on future context-policy integration.
 - The API is intentionally narrow and not yet connected to product UI.
 - Future integrations must preserve the same non-authority envelope and must
-  not bypass Model Gateway through legacy direct provider paths.
+  not bypass Model Gateway through older direct provider paths.

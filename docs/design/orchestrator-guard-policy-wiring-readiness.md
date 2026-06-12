@@ -12,7 +12,7 @@
 | --- | --- |
 | `recommended_guard_insertion_point` | Per intent/action inside `Orchestrator.process`, after parser/decomposition and planner normalization, after the step `ExecutionContext` exists, and immediately before `emit_action_started(...)` and `self.executor.execute(...)`. |
 | `wiring_ready` | No. The placement is clear, but the runtime still needs a small canonical event-emission/projection adapter and command lifecycle status mapping before behavior wiring. |
-| `blockers_before_wiring` | Existing legacy approval event/status path conflicts with new `APPROVAL_REQUESTED` flow; snapshot schema lacks first-class `pending_clarification`/`last_blocked_action`; `action_timeline` only projects execution/verification events; generic `click` remains executable through legacy paths; current `CommandStatus` has no explicit `waiting_for_clarification`. |
+| `blockers_before_wiring` | Existing older approval event/status path conflicts with new `APPROVAL_REQUESTED` flow; snapshot schema lacks first-class `pending_clarification`/`last_blocked_action`; `action_timeline` only projects execution/verification events; generic `click` remains executable through older paths; current `CommandStatus` has no explicit `waiting_for_clarification`. |
 | `tests_required_before_wiring` | Add executor-spy, event-order, journal-append, snapshot-projection, action-timeline, click-quarantine, monotonic-sequence, and replay tests listed below before or in the wiring sprint. |
 | `runtime_files_likely_to_change` | `src/aegis/orchestrator/orchestrator.py`, `src/aegis/api/ws_bridge.py`, `src/aegis/core/runtime_authority.py`, `src/aegis/core/commands.py`, `src/aegis/core/action_timeline.py`, `src/aegis/core/non_executable_projection.py`, and tests under `tests/test_runtime`/`tests/test_core`. |
 | `protocol_frontend_files` | Protocol enum/frontend mirror likely remain unchanged for the already-canonical event names. Frontend rendering may later need explicit handling for pending clarification/blocked timeline rows, but this sprint does not require frontend changes. |
@@ -51,14 +51,14 @@ The planner currently mutates/enriches normalized executable intents with app re
 
 ### Current risk, guard, approval, and cancellation logic
 
-Current guard logic is legacy `self.guard.evaluate(intent)` from `aegis.guard.action_guard`, not `aegis.core.guard_policy.classify_intent_risk(...)`.
+Current guard logic is older `self.guard.evaluate(intent)` from `aegis.guard.action_guard`, not `aegis.core.guard_policy.classify_intent_risk(...)`.
 
 There are two current guard passes:
 
 - A preflight pass over the whole plan before the execution loop. It emits `GUARD_EVALUATED`, accumulates risk/warnings, may mark blocked, may register `PENDING_APPROVAL`, or may mark the command `RUNNING`.
 - A second per-step pass inside the execution loop. It emits another `GUARD_EVALUATED` and can block before `ACTION_STARTED`.
 
-Current approval behavior is legacy command lifecycle approval:
+Current approval behavior is older command lifecycle approval:
 
 - `approval_manager.register_pending(...)`
 - `ws_bridge.emit_approval_required(...)`
@@ -72,7 +72,7 @@ Cancellation exists through `CancellationToken`. It is checked before execution 
 The executable boundary is currently:
 
 1. create `step_ctx`
-2. legacy per-step guard evaluation
+2. older per-step guard evaluation
 3. `action_id = str(step_ctx.span_id)`
 4. `ws_bridge.emit_action_started(...)`
 5. `await self.executor.execute(intent, step_ctx, cancellation_token=cancellation_token)`
@@ -96,10 +96,10 @@ Protocol `RuntimeEvent` objects are created by `ws_bridge.emit_event(...)`, whic
 
 Separate from the runtime event journal, `Orchestrator.process(...)` also writes:
 
-- `self.event_logger.log(...)` for legacy/local logs
+- `self.event_logger.log(...)` for compatibility/local logs
 - `self.journal.record(...)` in `aegis.replay.golden_journal` after final status resolution
 
-The non-executable wiring should use the runtime event journal path, not only legacy event logger or golden trace.
+The non-executable wiring should use the runtime event journal path, not only older event logger or golden trace.
 
 ### Snapshot and action timeline projection
 
@@ -146,7 +146,7 @@ Recommendation:
 - **After queue insertion but before execution:** yes, indirectly. The worker calls the orchestrator, and the orchestrator should classify before dispatch.
 - **Inside worker loop before executor call:** the worker loop should remain a serial dispatcher. The actual guard branch should be inside `Orchestrator.process(...)` immediately before `emit_action_started(...)`.
 
-The future wiring should either replace or strictly supersede the legacy `self.guard.evaluate(...)` decision at the dispatch boundary. Running both as independent blockers risks double events, mismatched statuses, and conflicting approval semantics.
+The future wiring should either replace or strictly supersede the older `self.guard.evaluate(...)` decision at the dispatch boundary. Running both as independent blockers risks double events, mismatched statuses, and conflicting approval semantics.
 
 ## 3. Future Non-Executable Branch
 
@@ -177,7 +177,7 @@ If `GuardDecision.clarification_required`:
 - update snapshot/projection so `pending_clarification` is backend-derived
 - add action timeline entry kind `clarification_requested`
 - set command lifecycle to waiting for clarification
-- no legacy fallback and no partial execution
+- no compatibility fallback and no partial execution
 
 If `GuardDecision.blocked`:
 
@@ -300,7 +300,7 @@ Backend/journal/snapshot remains the source of truth. The frontend must not infe
 
 ## 8. Generic Click Quarantine Wiring Plan
 
-Current audit result: generic `click` can still reach executor through legacy parser, AI parser, registry, orchestrator verified-tool/proof lists, and deterministic executor browser-click compatibility paths.
+Current audit result: generic `click` can still reach executor through compatibility parser, AI parser, registry, orchestrator verified-tool/proof lists, and deterministic executor browser-click compatibility paths.
 
 Future enforcement:
 
@@ -366,7 +366,7 @@ Suggested focused files:
 
 Known risks before wiring:
 
-- Existing `APPROVAL_REQUIRED` legacy event can conflict with new `APPROVAL_REQUESTED` semantics.
+- Existing `APPROVAL_REQUIRED` older event can conflict with new `APPROVAL_REQUESTED` semantics.
 - `CommandStatus.PENDING_APPROVAL` exists, but there is no explicit `waiting_for_clarification` enum value.
 - Snapshot schema currently exposes command manager records but not first-class `pending_clarification` or `last_blocked_action`.
 - `action_timeline` currently mixes only execution and verification events; adding guard rows must not make them look executed.
@@ -377,11 +377,11 @@ Known risks before wiring:
 - Replay ambiguity can occur if causation ids are omitted or duplicated.
 - Duplicate sequence numbers can occur if dry-run explicit sequence numbers are reused for live journal append.
 - Accidental executor call before guard can happen if classification is added only in preflight and not at the dispatch boundary.
-- Existing preflight legacy guard plus new guard-policy branch can double-block, double-approve, or report mismatched risk.
+- Existing preflight older guard plus new guard-policy branch can double-block, double-approve, or report mismatched risk.
 
 ## 12. Recommended Next Sprint
 
-Recommended next sprint: **Runtime Non-Executable Event Adapter v1**.
+Recommended next sprint: **Runtime Non-Executable Event Adapter**.
 
 Scope should be narrow:
 

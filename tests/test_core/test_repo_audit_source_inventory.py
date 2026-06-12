@@ -40,7 +40,7 @@ def _request(**overrides: object) -> dict[str, object]:
             {"path": "pyproject.toml", "path_type": "config"},
             {"path": "src/aegis/core/repo_audit_pack.py", "path_type": "source"},
             {"path": "tests/test_core/test_repo_audit_pack.py", "path_type": "test"},
-            {"path": "docs/repo-audit-pack-read-only-contract-v1.md", "path_type": "docs"},
+            {"path": "docs/repo-audit-pack-read-only-contract.md", "path_type": "docs"},
         ],
         "path_policy": {
             "allowed_prefixes": ["src/", "tests/", "docs/"],

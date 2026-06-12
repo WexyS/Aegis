@@ -187,7 +187,7 @@ def _tool_simulation_decision(**overrides: object):
         "tool_category": "file_tool",
         "capability_category": "local_file_read",
         "risk_tier": "read_only",
-        "affected_resources": ["docs/repo-audit-pack-implementation-readiness-v1.md"],
+        "affected_resources": ["docs/repo-audit-pack-implementation-readiness.md"],
         "policy_rule_refs": ["policy:repo_audit.metadata_only"],
         "policy_decision_hint": "ready",
         "approval_hint": {"required": False, "reason": "metadata only"},
@@ -249,7 +249,7 @@ def _request(**overrides: object) -> dict[str, object]:
         "candidate_file_refs": [
             "src/aegis/core/repo_audit_pack.py",
             "tests/test_core/test_repo_audit_pack.py",
-            "docs/repo-audit-pack-read-only-contract-v1.md",
+            "docs/repo-audit-pack-read-only-contract.md",
         ],
         "excluded_path_patterns": [
             "logs/**",

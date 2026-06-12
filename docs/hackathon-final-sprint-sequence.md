@@ -1,22 +1,21 @@
 # Hackathon Final Sprint Sequence
 
-Decision: `HACKATHON_FINAL_ROADMAP_ARCHITECTURE_REALIGNMENT_V2`
+Decision: `HACKATHON_FINAL_ROADMAP_ARCHITECTURE_REALIGNMENT`
 
 This is a historical hackathon planning sequence. It turns the validated
-Hackathon RC baseline into a realistic Hackathon Final plan. It is planning
+Hackathon release baseline into a realistic Hackathon Final plan. It is planning
 only. Individual implementation sprints must restate scope, tests, safety
 gates, and rollback criteria before code changes.
 
-## S7 - Roadmap + Architecture Realignment v2
-
+## S7 - Roadmap + Architecture Realignment
 Goal: realign the final roadmap after the validated RC baseline.
 
 In scope:
 
 - classify current RC baseline
 - define final target tiers
-- define Model Gateway, Skill Registry, Bounded Agent Runtime, Society v2,
-  Memory OS v2, AutoPilot v2, premium UI, and localization boundaries
+- define Model Gateway, Skill Registry, Bounded Agent Runtime, model-assisted Society,
+  Memory OS candidate intelligence, AutoPilot mission planner, premium UI, and localization boundaries
 - define sprint sequence, risks, and baseline preservation policy
 
 Out of scope:
@@ -52,7 +51,7 @@ In scope:
 
 - inspect clean worktree
 - push current validated commits if operator approves
-- create a baseline tag such as `hackathon-rc-validated`
+- create a baseline tag such as `hackathon-release-validated`
 - document generated file drift policy
 - verify `frontend/next-env.d.ts` is not staged
 
@@ -79,7 +78,7 @@ Key risks:
 - pushing unreviewed local commits
 - tagging a dirty or partially validated state
 
-## S9 - Model Gateway RC1 for LM Studio
+## S9 - Model Gateway for LM Studio
 
 Goal: implement the first bounded local Model Gateway for LM Studio.
 
@@ -121,11 +120,11 @@ Validation:
 
 Key risks:
 
-- accidental direct use of legacy `LLMProvider`
+- accidental direct use of older `LLMProvider`
 - hidden fallback masking provider failure
 - sensitive context sent without policy
 
-## S10 - Skill Registry RC1
+## S10 - Skill Registry
 
 Goal: add a backend-owned skill manifest registry without execution.
 
@@ -171,7 +170,7 @@ Key risks:
 - broad wildcard scope
 - future skill execution implied too early
 
-## S11 - Bounded Agent Runtime RC1
+## S11 - Bounded Agent Runtime
 
 Goal: implement proposal-only agent profiles and timelines.
 
@@ -212,14 +211,14 @@ Key risks:
 - agent proposal mistaken for permission
 - model dependency breaking deterministic fallback
 
-## S12 - Model-Assisted Society v2
+## S12 - Model-Assisted model-assisted Society
 
 Goal: evolve Society from deterministic-only to deterministic plus optional
 model-assisted role commentary.
 
 In scope:
 
-- preserve RC1 deterministic roles
+- preserve deterministic roles
 - route model assistance through Model Gateway only
 - add provenance labels: `deterministic`, `model_assisted`, `mixed`
 - structured role commentary
@@ -252,7 +251,7 @@ Key risks:
 - role output loses provenance
 - degraded state hidden for demo polish
 
-## S13 - Memory OS v2 Candidate Intelligence
+## S13 - Memory OS candidate intelligence Candidate Intelligence
 
 Goal: extend Memory OS with candidate intelligence while preserving explicit
 approval.
@@ -293,7 +292,7 @@ Key risks:
 - stale memory overtrusted
 - model summaries treated as memory truth
 
-## S14 - AutoPilot v2 Read-Only Mission Planner
+## S14 - AutoPilot mission planner Read-Only Mission Planner
 
 Goal: expand AutoPilot into a read-only mission planner.
 
@@ -318,7 +317,7 @@ Out of scope:
 
 Acceptance criteria:
 
-- RC1 `repo_structure_audit` still works
+- `repo_structure_audit` still works
 - new blueprints are read-only
 - reports preserve limitations and unknowns
 - model-assisted interpretation is proposal-only
@@ -419,8 +418,7 @@ Key risks:
 - environment-dependent provider behavior
 - demo data persistence confusion
 
-## S17 - Final Submission Package v2
-
+## S17 - Final Submission Package
 Goal: freeze the final judge package.
 
 In scope:

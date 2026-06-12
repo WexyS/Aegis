@@ -3,43 +3,43 @@
 Decision: `SAFE_BASELINE_PUSH_TAG_DRIFT_HYGIENE_COMPLETE`
 
 This note records the generated drift policy used while preserving the
-Hackathon RC safe baseline. It is documentation only. It does not change
+Hackathon release safe baseline. It is documentation only. It does not change
 runtime, backend, API, frontend, launcher, Memory, AutoPilot, Society, model,
 agent, skill, evidence, verifier, approval, lease, or capability behavior.
 
 ## Baseline Push Scope
 
-S8 preserves the validated Hackathon RC and roadmap baseline before Model
+S8 preserves the validated Hackathon release and roadmap baseline before Model
 Gateway, Skill Registry, and Bounded Agent Runtime work begins.
 
 Before this hygiene note, local `main` was ahead of `origin/main` by the
 validated RC implementation and roadmap commits:
 
-- `1857b20` Align agent governance for hackathon RC
+- `1857b20` Align agent governance for hackathon release
 - `8e6eaef` Add RC readiness inventory report
-- `2b15668` Add Memory OS RC1 core backend API
-- `a40f574` Add AutoPilot RC1 core backend API
-- `98ce2e9` Add deterministic Society Session RC1 API
+- `2b15668` Add Memory OS core backend API
+- `a40f574` Add AutoPilot core backend API
+- `98ce2e9` Add deterministic Society Session API
 - `cae57b1` Add Mission Control RC UI
 - `57a3afd` Polish Mission Control RC visual layer
-- `fbf2775` Add Hackathon RC demo smoke runbook
-- `16ee3dd` Freeze Hackathon RC release package docs
+- `fbf2775` Add Hackathon release demo smoke runbook
+- `16ee3dd` Freeze Hackathon release package docs
 - `b97ffcf` Fix Electron launcher environment for RC rehearsal
 - `a5aad15` Document hackathon final roadmap realignment
 
 The intended safe baseline tag is:
 
-`hackathon-rc-safe-baseline-v1`
+`hackathon-release-safe-baseline`
 
 Tag purpose:
 
-`Hackathon RC safe baseline before model/agent/skill expansion`
+`Hackathon release safe baseline before model/agent/skill expansion`
 
 ## Baseline Limitations
 
 The baseline remains intentionally narrow:
 
-- Memory OS is RC1 lifecycle/search, not full Memory OS v2.
+- Memory OS is core lifecycle/search, not full Memory OS candidate intelligence.
 - AutoPilot is read-only repo structure audit, not a full mission planner.
 - Society is deterministic template output, not live autonomous multi-agent.
 - verifier-lite is not full verifier success.
@@ -101,7 +101,7 @@ Do not stage:
 
 Recommended next sprint after the safe baseline push/tag:
 
-`Model Gateway RC1 for LM Studio`
+`Model Gateway for LM Studio`
 
 That sprint should start from the pushed/tagged baseline and keep model output
 proposal-only, non-authoritative, and fail-closed when the provider is

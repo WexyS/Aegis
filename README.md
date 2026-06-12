@@ -293,7 +293,7 @@ checkpoint, or readiness sprint.
 
 ## Historical Status
 
-The historical `foundation-v1-baseline` tag remains a valid traceability point.
+The historical `foundation-baseline` tag remains a valid traceability point.
 The `hackathon-agent-runtime-foundation` tag preserves the bounded Agent Runtime
 foundation. These tags do not mean current runtime debt is hidden or resolved.
 

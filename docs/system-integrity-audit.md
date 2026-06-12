@@ -115,24 +115,24 @@ These must not be marketed as completed execution:
 
 | Area | Classification | Finding | Cleanup action |
 | --- | --- | --- | --- |
-| `README.md` | update wording/docs only | Current text still centers Foundation v1 and Hackathon RC and under-represents Memory OS, AutoPilot, Model Gateway, Skill Registry, and Agent Runtime. | Rewrite as current product README with real/proposal/future sections. |
+| `README.md` | update wording/docs only | Current text still centers Foundation baseline and Hackathon release and under-represents Memory OS, AutoPilot, Model Gateway, Skill Registry, and Agent Runtime. | Rewrite as current product README with real/proposal/future sections. |
 | `AGENTS.md` | update wording/docs only | Active priority still says Hackathon Release Candidate preparation. | Replace active priority with current mission and cleanup/productization guidance. |
 | `src/aegis/main.py` | refactor later | API description says deterministic autonomous runtime platform and route comments keep RC naming. | Later wording cleanup only; avoid protocol or route contract churn. |
 | Core runtime/evidence/policy modules | keep as-is | Safety contracts remain central and useful. | Do not refactor during docs cleanup. |
 | Memory OS modules | keep as-is, productize UX later | Store/API is real and local, but consent UX needs Memory Inbox and batch review. | Implement memory consent UX sprint after docs cleanup. |
 | AutoPilot modules | keep as-is, extend later | Read-only scanner is real and useful. Reports are not evidence and not durable. | Add capability broker/read-only product slice later. |
-| Society modules | update wording/docs only | Deterministic session is useful but proposal-only. Naming remains RC/hackathon-specific. | Rename public docs/UI later; keep internal constants until migration plan. |
+| Society modules | update wording/docs only | Deterministic session is useful but proposal-only. Some internals still reflect hackathon-era naming. | Rename public docs/UI later; keep internal constants until migration plan. |
 | Model Gateway modules | keep as-is, harden later | Local provider path is real but fail-closed by default. | Document as optional local model gateway, not cloud/model authority. |
 | Skill Registry modules | keep as-is | Static metadata catalog is safe. | Add execution only through future capability broker. |
 | Agent Runtime modules | keep as-is | Proposal-only runtime is preserved. It does not call models or tools. | Productize only after capability model is defined. |
 | API routes | keep as-is | API exposes real and proposal-only surfaces. | Later route docs should label authority boundaries. |
-| Frontend shell | requires follow-up product sprint | Current UI is dark, dense, RC-labeled, and operator-hostile for normal users. | Premium Mission Control redesign with backend truth preserved. |
+| Frontend shell | requires follow-up product sprint | Current UI is dark, dense, release-labeled, and operator-hostile for normal users. | Premium Mission Control redesign with backend truth preserved. |
 | `frontend/next-env.d.ts` | generated drift | Tracked Next-generated file changes between `.next/types` and `.next/dev/types`. | Dedicated generated drift hygiene sprint. |
 | `launch_aegis.bat` | refactor later | Contains a project-scoped process cleanup followed by global `taskkill /IM electron.exe`. | Narrow launcher process cleanup in a dedicated sprint. |
 | `logs/` and `data/` | unsafe to change now | Local runtime artifacts are ignored but large; journal is hundreds of MB. | No deletion now. Use historical debt closure plan. |
 | Tests | keep as-is | Broad validation exists and protects many safety boundaries. | Update only when cleanup changes public docs/contracts. |
-| Readiness docs | rename to canonical name | Many public filenames use `v1`, `v2`, `RC1`, `readiness`, or `future`. | Rename with compatibility pointers in cleanup sprint. |
-| Hackathon docs | obsolete/legacy | Useful historical record but not current mission. | Mark as legacy or move under a legacy/hackathon section. |
+| Readiness docs | rename to canonical name | Public filenames were canonicalized; lower-level readiness concepts still need consolidation. | Rename with compatibility pointers in cleanup sprint. |
+| Hackathon docs | obsolete/older | Useful historical record but not current mission. | Keep inspectable, but do not make them the current product narrative. |
 
 ## Current Runtime Health Interpretation
 
@@ -177,17 +177,17 @@ High-value product gaps:
 - no Memory Inbox / consent review queue
 - no polished Mission Control experience
 - no agent-to-skill execution path under approval and capability gates
-- no clean separation between legacy hackathon docs and current product docs
+- no clean separation between older hackathon docs and current product docs
 - no completed historical evidence/replay debt closure baseline
 
 ## UI/Product Weakness Summary
 
 The current UI is functional but not good enough for the product mission:
 
-- The sidebar still exposes `Hackathon RC` as a primary tab.
+- The sidebar still exposes `Hackathon release` as a primary tab.
 - The brand subtitle says `Runtime Core`, which reads like an internal debug
   tool instead of user-facing Mission Control.
-- The Mission Control RC panel contains machine-specific default paths such as
+- The Mission Control panel contains machine-specific default paths such as
   `C:\Users\nemes\Desktop\Aegis`.
 - Several visible concepts are internal, stale, or overly technical for normal
   users.
@@ -229,122 +229,42 @@ Docs should be reorganized into these canonical public areas:
 Hackathon docs should remain available as historical records, but they should
 not be the current public product narrative.
 
-## Naming Inventory And Rename Plan
+## Naming Cleanup Status
 
 Rule for future public docs: do not create new public-facing docs, feature
-names, sprint labels, or filenames with suffixes such as `v1`, `v2`, `RC1`,
-`RC2`, or `next`.
+names, sprint labels, or filenames with release-number or release-candidate
+suffixes. Prefer durable canonical names tied to the capability or boundary.
 
 Historical commit tags, internal schema versions, event protocol versions,
-runtime constants, database filenames, and tests may keep version labels until a
-compatibility migration is explicitly scoped.
+runtime constants, database filenames, tests, and external API endpoint paths
+may keep version labels until a compatibility migration is explicitly scoped.
 
-The following scan found the main old naming and readiness surfaces. No files
-were renamed in this sprint.
+Completed cleanup:
 
-| Former path/name | Proposed canonical path/name | References to update | Risk | Safe to rename now | Should remain legacy | Compatibility pointer needed |
-| --- | --- | --- | --- | --- | --- | --- |
-| `README.md` Foundation/Hackathon wording | keep path, rewrite current mission | README tests, docs links | medium | no | no | no |
-| `AGENTS.md` Hackathon active priority | keep path, rewrite current priority | agent instructions | medium | no | no | no |
-| `src/aegis/main.py` RC route comments | internal canonical comments later | API docs, tests if comments asserted | low | no | no | no |
-| `frontend/src/features/sidebar/components/Sidebar.tsx` `Hackathon RC` | `Mission Control` / `Release Console` label | UI tests, screenshots | medium | no | no | no |
-| `frontend/src/features/mission-control-rc` | canonical Mission Control feature path | imports, routes, tests | medium | no | no | yes |
-| `docs/action-attribution-change-intelligence-contract-v1.md` | `docs/action-attribution-change-intelligence.md` | docs backlinks | low | no | yes | yes |
-| `docs/aegis-architecture-realignment-v2.md` | `docs/aegis-architecture-realignment.md` | README, AGENTS, docs backlinks | medium | yes, completed in cleanup pass | no | no |
-| `docs/audit-query-layer-readiness-v1.md` | `docs/audit-query-layer.md` | docs backlinks | low | no | yes | yes |
-| `docs/autopilot-rc1-core.md` | `docs/autopilot.md` | README, hackathon docs | medium | no | no | yes |
-| `docs/backend-timeout-event-projection-contract-v1.md` | `docs/backend-timeout-event-projection.md` | docs backlinks | low | no | yes | yes |
-| `docs/bounded-agent-runtime-rc1.md` | `docs/bounded-agent-runtime.md` | README, docs, API docs | medium | yes, completed in cleanup pass | no | no |
-| `docs/capability-lease-design-v1.md` | `docs/capability-model.md` | README, docs backlinks | medium | no | no | yes |
-| `docs/codex-skill-pack-for-aegis-v1.md` | `docs/codex-skill-pack-for-aegis.md` | AGENTS, README, docs | medium | yes, completed in cleanup pass | no | no |
-| `docs/compliance-evidence-pack-readiness-v1.md` | `docs/compliance-evidence-pack.md` | docs backlinks | low | no | yes | yes |
-| `docs/context-compiler-read-only-contract-implementation-v1.md` | `docs/context-compiler.md` | README, docs backlinks | medium | no | yes | yes |
-| `docs/context-compiler-read-only-integration-readiness-v1.md` | `docs/context-compiler.md` or legacy pointer | README, docs backlinks | medium | no | yes | yes |
-| `docs/context-retrieval-provider-context-budget-v1.md` | `docs/context-policy.md` | docs backlinks | low | no | yes | yes |
-| `docs/developer-work-passport-contract-v1.md` | `docs/developer-work-passport.md` | docs backlinks | low | no | yes | yes |
-| `docs/external-api-sdk-readiness-v1.md` | `docs/external-api-sdk-boundary.md` | docs backlinks | low | no | yes | yes |
-| `docs/first-local-provider-health-probe-design-v1.md` | `docs/local-provider-health-probe-design.md` | docs backlinks | low | no | yes | yes |
-| `docs/foundation-3track-rc-readiness-inventory-v1.md` | legacy/hackathon inventory | README, docs backlinks | medium | no | yes | yes |
-| `docs/foundation-baseline-v1.md` | legacy foundation baseline | README, sitemap, docs backlinks | high | no | yes | yes |
-| `docs/foundation-config-dependency-hygiene-v1.md` | `docs/config-dependency-hygiene.md` | docs backlinks | low | no | yes | yes |
-| `docs/frontend-design-system-playwright-visual-pipeline-readiness-v1.md` | `docs/frontend-visual-validation.md` | docs backlinks | low | no | yes | yes |
-| `docs/github-discoverability-seo-v1.md` | `docs/github-discoverability-seo.md` | README, sitemap | medium | no | no | yes |
-| `docs/github-source-connector-readiness-v1.md` | `docs/github-source-connector.md` | docs backlinks | low | no | yes | yes |
-| `docs/HACKATHON_RC_SCOPE.md` | legacy hackathon scope | AGENTS, docs backlinks | high | no | yes | yes |
-| `docs/hackathon-final-roadmap-v2.md` | `docs/hackathon-final-roadmap.md` | docs backlinks | medium | yes, completed in cleanup pass | yes | no |
-| `docs/hackathon-final-sprint-sequence-v2.md` | `docs/hackathon-final-sprint-sequence.md` | docs backlinks | medium | yes, completed in cleanup pass | yes | no |
-| `docs/hackathon-rc-claims-matrix.md` | legacy hackathon claims matrix | README, hackathon docs | medium | no | yes | yes |
-| `docs/hackathon-rc-demo-runbook.md` | legacy hackathon demo runbook | README | medium | no | yes | yes |
-| `docs/hackathon-rc-demo-script.md` | legacy hackathon demo script | README | medium | no | yes | yes |
-| `docs/hackathon-rc-release-package-v1.md` | legacy hackathon release package | README, docs backlinks | high | no | yes | yes |
-| `docs/hackathon-rc-validation-manifest.md` | legacy hackathon validation manifest | README | medium | no | yes | yes |
-| `docs/historical-evidence-replay-debt-cleanup-design-v1.md` | `docs/historical-evidence-replay-debt-closure.md` | README, docs backlinks | high | no | yes | yes |
-| `docs/historical-evidence-replay-debt-inventory-v1.md` | `docs/historical-evidence-replay-debt-inventory.md` | README, docs backlinks | medium | no | yes | yes |
-| `docs/identity-tenant-scope-contract-v1.md` | `docs/identity-scope.md` | docs backlinks | low | no | yes | yes |
-| `docs/legacy-router-model-call-boundary-guard-v1.md` | `docs/legacy-router-model-boundary.md` | docs backlinks | low | no | yes | yes |
-| `docs/llm-authority-boundary-contract-v1.md` | `docs/model-authority-boundary.md` | docs backlinks | low | no | yes | yes |
-| `docs/local-environment-resource-hygiene-model-storage-readiness-v1.md` | `docs/local-resource-hygiene.md` | docs backlinks | low | no | yes | yes |
-| `docs/local-model-context-profile-eval-readiness-v1.md` | `docs/local-model-context-profile.md` | docs backlinks | low | no | yes | yes |
-| `docs/local-model-inventory-role-mapping-readiness-v1.md` | `docs/local-model-inventory.md` | docs backlinks | low | no | yes | yes |
-| `docs/local-provider-health-check-readiness-v1.md` | `docs/local-provider-health.md` | docs backlinks | low | no | yes | yes |
-| `docs/local-provider-health-probe-api-runtime-wiring-readiness-v1.md` | `docs/local-provider-health-probe-api-boundary.md` | docs backlinks | low | no | yes | yes |
-| `docs/local-provider-health-probe-implementation-boundary-v1.md` | `docs/local-provider-probe-boundary.md` | docs backlinks | low | no | yes | yes |
-| `docs/local-provider-health-probe-live-localhost-design-gate-v1.md` | `docs/local-provider-probe-localhost-gate.md` | docs backlinks | low | no | yes | yes |
-| `docs/local-provider-health-probe-mock-transport-runner-v1.md` | `docs/local-provider-probe-mock-runner.md` | docs backlinks | low | no | yes | yes |
-| `docs/local-provider-health-probe-real-localhost-runner-v1.md` | `docs/local-provider-probe-localhost-runner.md` | docs backlinks | low | no | yes | yes |
-| `docs/local-provider-probe-maintenance-projection-api-readiness-v1.md` | `docs/local-provider-probe-maintenance-projection.md` | docs backlinks | low | no | yes | yes |
-| `docs/local-provider-probe-maintenance-projection-api-surface-v1.md` | `docs/local-provider-probe-maintenance-api.md` | docs backlinks | low | no | yes | yes |
-| `docs/local-provider-probe-result-projection-maintenance-surface-readiness-v1.md` | `docs/local-provider-probe-result-projection.md` | docs backlinks | low | no | yes | yes |
-| `docs/mcp-tool-gateway-readiness-v1.md` | `docs/mcp-tool-gateway.md` | docs backlinks | medium | no | yes | yes |
-| `docs/memory-governance-memory-os-contract-v1.md` | `docs/memory-governance.md` | docs backlinks | medium | no | yes | yes |
-| `docs/memory-governance-memory-os-design-v1.md` | `docs/memory-os-design.md` | docs backlinks | medium | no | yes | yes |
-| `docs/memory-os-rc1-core.md` | `docs/memory-os.md` | README, docs backlinks | medium | no | no | yes |
-| `docs/mission-control-dry-run-ux-contract-v1.md` | `docs/mission-control-dry-run-ux.md` | docs backlinks | low | no | yes | yes |
-| `docs/mission-control-rc-ui.md` | `docs/mission-control-ui.md` | frontend/docs backlinks | medium | no | no | yes |
-| `docs/model-auto-mode-provider-selection-contract-v1.md` | `docs/model-auto-mode.md` | docs backlinks | low | no | yes | yes |
-| `docs/model-gateway-rc1-lm-studio.md` | `docs/model-gateway.md` | README, docs backlinks | medium | yes, completed in cleanup pass | no | no |
-| `docs/model-lifecycle-vram-budget-design-v1.md` | `docs/model-lifecycle-resource-budget.md` | docs backlinks | low | no | yes | yes |
-| `docs/model-provider-local-llm-readiness-v1.md` | `docs/model-provider-boundary.md` | docs backlinks | low | no | yes | yes |
-| `docs/multiagent-society-session-rc1.md` | `docs/society-session.md` | README, docs backlinks | medium | no | no | yes |
-| `docs/operator-browser-interstitial-classification-v1.md` | `docs/operator-browser-interstitials.md` | docs backlinks | low | no | yes | yes |
-| `docs/operator-reliability-intent-browser-hardening-v1.md` | `docs/operator-browser-reliability.md` | docs backlinks | low | no | yes | yes |
-| `docs/passive-observe-only-product-mode-readiness-v1.md` | `docs/passive-observe-mode.md` | docs backlinks | low | no | yes | yes |
-| `docs/plugin-lifecycle-type-contract-v1.md` | `docs/plugin-lifecycle.md` | docs backlinks | low | no | yes | yes |
-| `docs/plugin-manifest-drift-signature-readiness-v1.md` | `docs/plugin-manifest-drift-signature.md` | docs backlinks | low | no | yes | yes |
-| `docs/plugin-manifest-type-contract-v1.md` | `docs/plugin-manifest-contract.md` | docs backlinks | low | no | yes | yes |
-| `docs/plugin-persistence-review-store-readiness-v1.md` | `docs/plugin-review-store.md` | docs backlinks | low | no | yes | yes |
-| `docs/policy-as-code-extension-v1.md` | `docs/policy-as-code.md` | README, sitemap, docs backlinks | medium | no | no | yes |
-| `docs/policy-tool-simulation-dry-run-v1.md` | `docs/policy-tool-simulation.md` | docs backlinks | low | no | yes | yes |
-| `docs/post-foundation-architecture-roadmap-v1.md` | `docs/aegis-architecture-roadmap.md` | README, sitemap, docs backlinks | medium | no | yes | yes |
-| `docs/provider-interstitial-registry-v1.md` | `docs/provider-interstitial-registry.md` | docs backlinks | low | no | yes | yes |
-| `docs/provider-probe-maintenance-surface-ui-readiness-v1.md` | `docs/provider-probe-maintenance-ui.md` | docs backlinks | low | no | yes | yes |
-| `docs/repo-audit-dry-run-maintenance-surface-ui-readiness-v1.md` | `docs/repo-audit-maintenance-ui.md` | docs backlinks | low | no | yes | yes |
-| `docs/repo-audit-pack-future-read-plan-helper-v1.md` | `docs/repo-audit-read-plan.md` | docs backlinks | low | no | yes | yes |
-| `docs/repo-audit-pack-implementation-readiness-v1.md` | `docs/repo-audit-pack.md` | docs backlinks | low | no | yes | yes |
-| `docs/repo-audit-pack-read-only-contract-v1.md` | `docs/repo-audit-read-only-contract.md` | docs backlinks | low | no | yes | yes |
-| `docs/repo-audit-pack-read-only-inventory-runner-readiness-v1.md` | `docs/repo-audit-inventory-runner.md` | docs backlinks | low | no | yes | yes |
-| `docs/repo-audit-pack-read-only-source-inventory-design-v1.md` | `docs/repo-audit-source-inventory.md` | docs backlinks | low | no | yes | yes |
-| `docs/repo-audit-runner-backend-dry-run-api-readiness-v1.md` | `docs/repo-audit-dry-run-api.md` | docs backlinks | low | no | yes | yes |
-| `docs/repo-audit-runner-dry-run-source-plan-projection-v1.md` | `docs/repo-audit-source-plan.md` | docs backlinks | low | no | yes | yes |
-| `docs/repo-audit-runner-source-intake-integration-readiness-v1.md` | `docs/repo-audit-source-intake.md` | docs backlinks | low | no | yes | yes |
-| `docs/repo-audit-runner-source-plan-ui-cli-dry-run-display-readiness-v1.md` | `docs/repo-audit-source-plan-display.md` | docs backlinks | low | no | yes | yes |
-| `docs/runtime-state-timeout-safe-fallback-contract-v1.md` | `docs/runtime-timeout-fallback.md` | docs backlinks | low | no | yes | yes |
-| `docs/runtime-surface-boundary-closure-v1.md` | `docs/runtime-surface-boundary.md` | docs backlinks | low | no | yes | yes |
-| `docs/skill-plugin-architecture-design-v1.md` | `docs/skill-plugin-architecture.md` | docs backlinks | low | no | yes | yes |
-| `docs/skill-registry-rc1.md` | `docs/skill-registry.md` | README, docs backlinks | medium | yes, completed in cleanup pass | no | no |
-| `docs/SPRINT_SEQUENCE_HACKATHON_RC.md` | legacy hackathon sprint sequence | docs backlinks | medium | no | yes | yes |
-| `docs/system-drift-integrity-monitoring-readiness-v1.md` | `docs/system-drift-integrity-monitoring.md` | docs backlinks | low | no | yes | yes |
-| `docs/training-data-model-adaptation-governance-v1.md` | `docs/training-data-model-adaptation-governance.md` | docs backlinks | low | no | yes | yes |
-| `docs/vertical-pack-framework-v1.md` | `docs/vertical-pack-framework.md` | docs backlinks | low | no | yes | yes |
-| `docs/web-research-gateway-readiness-v1.md` | `docs/web-research-gateway.md` | docs backlinks | low | no | yes | yes |
-| `docs/audit/*-readiness.md` | legacy audit readiness records or canonical audit notes | audit index/backlinks | low | no | yes | yes |
-| `docs/design/*readiness*.md` | design notes without readiness/version labels | design backlinks | low | no | yes | yes |
-| `docs/sitemap.xml` old version URLs | canonical GitHub Pages URLs | GitHub Pages build/SEO | medium | no | no | no |
+- public docs filenames were canonicalized away from release-number and
+  release-candidate suffixes;
+- old hackathon release documents remain inspectable but no longer drive the
+  current public product narrative;
+- README, AGENTS, sitemap, GitHub Pages index, docs backlinks, and synthetic
+  test fixture paths were updated to canonical doc paths;
+- public docs now point at durable names such as `docs/model-gateway.md`,
+  `docs/skill-registry.md`, `docs/bounded-agent-runtime.md`,
+  `docs/capability-model.md`, and
+  `docs/repo-audit-pack-read-only-contract.md`.
 
-Cleanup rule: rename high-visibility public docs first, keep legacy pointer
-stubs, update README/sitemap/backlinks, run link checks, then rename lower-risk
-readiness archives in batches.
+Deferred cleanup:
 
+- some internal Python constants, database schema identifiers, generated
+  TypeScript build metadata, local provider endpoint paths, and compatibility
+  parser names still contain version-like tokens for real compatibility
+  reasons;
+- lower-level readiness docs still need content consolidation, but their public
+  filenames no longer carry release-number suffixes;
+- frontend package names such as `mission-control-rc` should be renamed only in
+  a focused frontend module migration sprint.
+
+Cleanup rule: keep compatibility identifiers until a migration exists, but do
+not introduce new public docs or feature names with release-number labels.
 ## Historical Evidence/Replay Debt Closure Plan Summary
 
 The closure model is documented in
@@ -354,11 +274,11 @@ Summary:
 
 - Do not reconstruct missing historical evidence by guessing.
 - Do not suppress unknown-era issues.
-- Create an archived legacy manifest for old evidence/replay debt.
-- Preserve a retired legacy baseline that remains inspectable.
+- Create an archived older manifest for old evidence/replay debt.
+- Preserve a retired older baseline that remains inspectable.
 - Create a clean current operational baseline only after backup, restore,
   replay, hash-chain, and operator gates pass.
-- Maintenance scan should report archived legacy debt separately from active
+- Maintenance scan should report archived older debt separately from active
   current blockers.
 
 ## Memory Consent Policy Summary

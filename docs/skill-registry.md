@@ -1,6 +1,6 @@
 # Skill Registry
 
-Decision: `SKILL_REGISTRY_CORE_RC1_CODEX_SKILL_PACK_V1`
+Decision: `SKILL_REGISTRY_CORE_CODEX_SKILL_PACK`
 
 Current status: implemented as a backend-owned static metadata catalog. The
 historical decision name is retained for traceability; public product wording

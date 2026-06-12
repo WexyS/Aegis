@@ -1,6 +1,6 @@
 # Bounded Agent Runtime
 
-Decision: `BOUNDED_AGENT_RUNTIME_RC1_PROPOSAL_ONLY`
+Decision: `BOUNDED_AGENT_RUNTIME_PROPOSAL_ONLY`
 
 Current status: implemented as a proposal-only backend/API surface. The
 historical decision name is retained for traceability; public product wording
@@ -218,7 +218,7 @@ error.
 
 ```json
 {
-  "objective": "Review the bounded runtime before Society v2.",
+  "objective": "Review the bounded runtime before model-assisted Society.",
   "context_summary": "Use Model Gateway and Skill Registry foundations.",
   "agent_ids": ["context_agent", "policy_agent", "report_agent"],
   "dry_run": true,
@@ -233,7 +233,7 @@ error.
 - Agent profiles are static.
 - No scheduler, streaming, retries, or long-running orchestration exists.
 - No tool, MCP, shell, file, browser, memory, or external API behavior exists.
-- No Society v2, AutoPilot, Memory, or frontend integration is added.
+- No model-assisted Society, AutoPilot, Memory, or frontend integration is added.
 
 ## Future Integration Notes
 

@@ -1,5 +1,4 @@
-# Approval Semantics Design v1
-
+# Approval Semantics Design
 **Goal:** Define how Aegis represents `approval_required`, `clarification_required`, `blocked`, and proposed actions before risky mutation, maintenance action, desktop click, browser click, or model-planned action is enabled.
 
 **Status:** Design-only. No production code, endpoint, frontend, executor, orchestrator, parser, click, target-resolution, model-adapter, or schema migration is implemented by this document.
@@ -119,7 +118,7 @@ Rules:
 
 - A clarification response may produce a new normalized plan.
 - Clarification must not mutate the system.
-- Unresolved clarification must never fall through to legacy executable behavior.
+- Unresolved clarification must never fall through to older executable behavior.
 - `recommended_default` is allowed only when it is non-mutating or clearly safer than alternatives.
 - If the user answer changes risk or target, the new plan must re-enter guard/risk classification.
 
@@ -228,7 +227,7 @@ For `clarification_required`:
 - The clarification request is journaled.
 - The answer may create a new normalized plan.
 - The new plan must re-enter guard/risk classification.
-- Missing or expired answer must not fall back to legacy executable behavior.
+- Missing or expired answer must not fall back to older executable behavior.
 
 For `blocked`:
 
@@ -292,7 +291,7 @@ Based on the generic click quarantine audit:
 
 - Generic `click` is deprecated/quarantined.
 - Generic `click` must not be extended.
-- Legacy generic `click` may remain only for compatibility until split migration.
+- Older generic `click` may remain only for compatibility until split migration.
 - New click work must use `browser_click` or `desktop_click`.
 - If target is unresolved, return `clarification_required`.
 - If target is high risk, return `approval_required` or `blocked`.
@@ -328,7 +327,7 @@ Recommended constraints for these slices:
 - Each slice should include focused tests before behavior changes.
 - Runtime FSM should not gain new states unless separately approved.
 - Command lifecycle and action timeline can represent approval/clarification as command/action projections without making the frontend authoritative.
-- Legacy generic click should be blocked or clarified before any split click implementation is enabled.
+- Compatibility generic click should be blocked or clarified before any split click implementation is enabled.
 
 ## Out of Scope
 
@@ -351,7 +350,7 @@ Recommended constraints for these slices:
 
 ## Remaining Design Risks
 
-- Existing production code still has legacy generic `click` compatibility paths.
+- Existing production code still has older generic `click` compatibility paths.
 - Existing command lifecycle has approval concepts, but not the first-class request schemas proposed here.
 - Existing event names differ from the proposal; a future protocol slice must decide migration versus additive compatibility.
 - Voice approval needs stricter anti-spoofing and confirmation rules before implementation.

@@ -5,8 +5,8 @@
 Decision: `AEGIS_VISION_DOCUMENTED_ONLY`
 
 This document describes the long-term Aegis direction. It is not the Hackathon
-implementation checklist. Hackathon RC scope is defined in
-`docs/HACKATHON_RC_SCOPE.md`.
+implementation checklist. Hackathon release scope is defined in
+`docs/hackathon-release-scope.md`.
 
 ## Final Identity
 
@@ -181,9 +181,9 @@ boundaries before production use.
 
 ## Post-Hackathon Roadmap
 
-After Hackathon RC, Aegis can expand through scoped, validated sprints:
+After Hackathon release, Aegis can expand through scoped, validated sprints:
 
-- harden Memory OS beyond RC1-Core
+- harden Memory OS beyond Core
 - expand AutoPilot audit capabilities
 - introduce controlled Society model assistance
 - implement source intelligence execution gates

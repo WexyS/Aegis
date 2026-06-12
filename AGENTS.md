@@ -73,8 +73,7 @@ checkpoint, or readiness sprint.
 ## Naming And Documentation
 
 - Do not create new public-facing docs, feature names, sprint labels, or
-  filenames with version-style suffixes such as `v1`, `v2`, `RC1`, `RC2`, or
-  `next`.
+  filenames with version-style suffixes or release-candidate numbering.
 - Internal protocol versions, schema versions, tests, and historical decision
   references may keep version labels when needed for compatibility.
 - Prefer canonical durable names such as `docs/model-gateway.md`,

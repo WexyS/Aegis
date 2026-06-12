@@ -1,9 +1,9 @@
 # Aegis Architecture Realignment
 
-Decision: `HACKATHON_FINAL_ROADMAP_ARCHITECTURE_REALIGNMENT_V2`
+Decision: `HACKATHON_FINAL_ROADMAP_ARCHITECTURE_REALIGNMENT`
 
 This document defines the architecture realignment after the validated
-Hackathon RC baseline and the later Agent Runtime foundation. It is not an
+Hackathon release baseline and the later Agent Runtime foundation. It is not an
 implementation sprint. It does not add model calls, provider probes, APIs,
 frontend UI, skill execution, agent execution, memory writes, or runtime
 behavior.
@@ -44,23 +44,23 @@ Current implemented surfaces:
 - FastAPI app with health, command, Memory, AutoPilot, Society, vision,
   local-provider probe projection, and repo-audit dry-run projection routes.
 - Socket.IO runtime bridge for runtime snapshots and connectivity.
-- Memory OS RC1-Core SQLite store and REST API.
-- AutoPilot RC1-Core read-only repo structure audit.
-- Deterministic Society Session RC1.
+- Memory OS Core SQLite store and REST API.
+- AutoPilot Core read-only repo structure audit.
+- Deterministic Society Session.
 - Mission Control RC frontend panel using backend APIs.
-- Legacy `LLMProvider` code path exists but is fail-closed unless explicit
+- Older `LLMProvider` code path exists but is fail-closed unless explicit
   model authorization flags are enabled.
 
 Roadmap implication:
 
-- Model Gateway RC1 should become the only accepted model-call boundary for new
+- Model Gateway should become the only accepted model-call boundary for new
   model-assisted features.
 - Existing direct provider paths should remain guarded and should not be
   expanded opportunistically.
 - Agent, Society, Memory, AutoPilot, and UI work should consume Model Gateway
   output only as proposal material.
 
-## Model Gateway RC1
+## Model Gateway
 
 Purpose:
 
@@ -116,7 +116,7 @@ Acceptance shape:
 - Every model response carries `authority=false` and
   `execution_permission=not_granted_by_model_gateway`.
 
-## Skill Registry RC1
+## Skill Registry
 
 Purpose:
 
@@ -159,7 +159,7 @@ Rules:
 - No skill executes without backend policy, capability, approval/lease where
   needed, evidence expectation, and verifier/postcondition strategy.
 
-## Bounded Agent Runtime RC1
+## Bounded Agent Runtime
 
 Purpose:
 
@@ -201,16 +201,16 @@ Rules:
 - Agents do not mark verifier success.
 - Agent loops must be bounded by max steps, timeout, and explicit stop reasons.
 
-## MultiAgent Society v2
+## MultiAgent model-assisted Society
 
 Purpose:
 
-Evolve deterministic Society RC1 into model-assisted Society v2 while keeping
+Evolve deterministic Society into model-assisted model-assisted Society while keeping
 deterministic role contracts as the safe fallback.
 
 Target behavior:
 
-- The six RC1 roles remain stable:
+- The six deterministic roles remain stable:
   - Context Planner
   - Policy Reviewer
   - Memory Curator
@@ -239,11 +239,11 @@ Rules:
 - Society never treats model commentary as truth.
 - Society cannot convert verifier-lite into full verifier success.
 
-## Memory OS v2
+## Memory OS candidate intelligence
 
 Purpose:
 
-Expand Memory OS from RC1 lifecycle/search into governed candidate intelligence
+Expand Memory OS from core lifecycle/search into governed candidate intelligence
 without silent persistence or authority overreach.
 
 Potential features:
@@ -269,7 +269,7 @@ Keep:
 - secret-like and credential-like content blocked
 - stale/conflicting/quarantined memory cannot drive actions as truth
 
-## AutoPilot v2
+## AutoPilot mission planner
 
 Purpose:
 
@@ -335,7 +335,7 @@ Localization foundation:
 
 Model Gateway feeds:
 
-- Society v2 commentary
+- model-assisted Society commentary
 - Memory candidate refinement
 - AutoPilot report interpretation
 - report summarization
@@ -344,24 +344,24 @@ Model Gateway feeds:
 Skill Registry feeds:
 
 - Bounded Agent Runtime allowed-skill lists
-- AutoPilot v2 blueprint discovery
+- AutoPilot mission planner blueprint discovery
 - proposal-only skill availability display
 
 Bounded Agent Runtime feeds:
 
-- Society v2 role timelines
+- model-assisted Society role timelines
 - report drafting
 - safe next-step proposals
 
-Memory OS v2 feeds:
+Memory OS candidate intelligence feeds:
 
 - user-approved context refs
 - candidate provenance
 - conflict/duplicate warnings
 
-AutoPilot v2 feeds:
+AutoPilot mission planner feeds:
 
-- Society v2 source facts
+- model-assisted Society source facts
 - Memory candidate proposals
 - UI mission plan status
 
@@ -382,10 +382,10 @@ No layer may feed:
 - If Skill Registry validation fails, disable the skill and preserve the RC
   path.
 - If Agent Runtime fails, show proposal generation failed and keep manual flow.
-- If Society v2 model assistance fails, fall back to deterministic RC1 role
+- If model-assisted Society model assistance fails, fall back to deterministic role
   output.
-- If Memory OS v2 governance fails, preserve RC1 proposal/approval lifecycle.
-- If AutoPilot v2 fails, preserve RC1 `repo_structure_audit`.
+- If Memory OS candidate intelligence governance fails, preserve core proposal/approval lifecycle.
+- If AutoPilot mission planner fails, preserve `repo_structure_audit`.
 - If premium UI creates ambiguity, revert to the clearer RC panel.
 
 ## Not Implemented By This Realignment
@@ -396,9 +396,9 @@ No layer may feed:
 - No skill registry runtime.
 - No skill execution.
 - No agent runtime.
-- No Society v2 runtime.
-- No Memory OS v2 runtime.
-- No AutoPilot v2 runtime.
+- No model-assisted Society runtime.
+- No Memory OS candidate intelligence runtime.
+- No AutoPilot mission planner runtime.
 - No frontend UI changes.
 - No backend API changes.
 - No launcher changes.

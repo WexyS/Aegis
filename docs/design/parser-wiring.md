@@ -1,8 +1,7 @@
-# Parser Wiring Design v1
-
+# Parser Wiring Design
 **Goal:** Define how `decompose_command(text)` should enter the existing parser and orchestrator pipeline without changing runtime behavior in this sprint.
 
-**Decision:** Wire deterministic decomposition behind a feature flag, before the legacy rule parser, but only for high-confidence compound plans that pass normalized-plan validation and adapter validation.
+**Decision:** Wire deterministic decomposition behind a feature flag, before the older rule parser, but only for high-confidence compound plans that pass normalized-plan validation and adapter validation.
 
 This document is design-only. It does not change parser, executor, orchestrator, frontend, LLM routing, click routing, target resolution, tools, runtime states, replay, or timeline behavior.
 
@@ -34,7 +33,7 @@ The decomposition layer must not execute anything. It only produces a normalized
 Run `decompose_command(text)` near the start of `IntentParser.parse()`, after byte-artifact cleanup and before:
 
 1. `normalize_text()`
-2. legacy `_parse_compound_app_search()`
+2. older `_parse_compound_app_search()`
 3. connector splitting
 4. `parse_single()`
 5. AI fallback
@@ -60,7 +59,7 @@ Deterministic decomposition exists to prevent malformed compound commands from b
 
 ### Why Behind A Feature Flag
 
-The current parser already supports many single-intent commands and has legacy compound handling. A flag allows staged rollout without breaking:
+The current parser already supports many single-intent commands and has older compound handling. A flag allows staged rollout without breaking:
 
 - `notepad ac`
 - `not defterini ac`
@@ -68,9 +67,9 @@ The current parser already supports many single-intent commands and has legacy c
 - existing URL commands
 - existing file commands
 - existing web search commands
-- existing tests that depend on legacy parser behavior
+- existing tests that depend on compatibility parser behavior
 
-### Legacy Compound Parser
+### Compatibility Compound Parser
 
 `IntentParser._parse_compound_app_search()` should remain until deterministic decomposition has equivalent parser-level tests. After parity is proven, it can be removed in a separate cleanup sprint.
 
@@ -193,7 +192,7 @@ The implementation sprint should verify how the existing approval manager expect
 
 ### Blocked
 
-Blocked means the deterministic guard rejected the plan. It must not fall through to legacy parser if falling through could execute a known-dangerous command.
+Blocked means the deterministic guard rejected the plan. It must not fall through to compatibility parser if falling through could execute a known-dangerous command.
 
 Safe fallback rule:
 
@@ -276,7 +275,7 @@ Compound commands expected to improve behind the flag:
 - Unknown app in open+type returns a non-executable result.
 - Unknown app in open+search returns a non-executable result.
 - Clarification does not reach planner/executor as an executable app/search/type action.
-- Blocked plans do not fall back to legacy parsing.
+- Blocked plans do not fall back to older parsing.
 - Approval-required plans do not execute directly.
 
 ### Guard And Metadata
@@ -295,12 +294,12 @@ Compound commands expected to improve behind the flag:
 1. Add feature flag with default off.
 2. Add adapter tests without changing default parser behavior.
 3. Implement adapter function.
-4. Wire `decompose_command(text)` behind the flag before legacy parser logic.
+4. Wire `decompose_command(text)` behind the flag before compatibility parser logic.
 5. Run parser tests with flag off.
 6. Run new parser tests with flag on.
 7. Run full backend tests.
 8. Keep `_parse_compound_app_search()` for one release window.
-9. Remove legacy compound parser only after deterministic decomposition parity is proven.
+9. Remove compatibility compound parser only after deterministic decomposition parity is proven.
 
 ---
 
@@ -309,7 +308,7 @@ Compound commands expected to improve behind the flag:
 | Failure mode | Mitigation |
 | --- | --- |
 | Duplicate parsing | Deterministic branch returns immediately only when feature flag is on and plan is explicit |
-| Legacy parser also parses same command | Do not continue to legacy parser after a non-`None` deterministic plan |
+| Compatibility parser also parses same command | Do not continue to compatibility parser after a non-`None` deterministic plan |
 | Plan order lost | Adapter iterates `plan.steps` in list order and writes `step_index` |
 | `_require_focus` dropped | Adapter copies params exactly before planner enrichment |
 | Browser context dropped | Adapter copies `browser` param exactly |
@@ -318,7 +317,7 @@ Compound commands expected to improve behind the flag:
 | Blocked plan falls through | Explicit blocked status must not fall back |
 | Chain intent mismatch | Use `list[IntentResult]`, not a new chain intent |
 | AI fallback bypasses guard | AI fallback only runs after `None`; explicit non-ready plans stop fallback |
-| Legacy force override mutates adapted result | Apply deterministic branch before final override and return immediately |
+| Older force override mutates adapted result | Apply deterministic branch before final override and return immediately |
 
 ---
 

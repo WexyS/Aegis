@@ -1,8 +1,7 @@
-# Non-Executable Decision Runtime Projection Design v1
-
+# Non-Executable Decision Runtime Projection Design
 **Date:** 2026-05-21
 
-**Sprint:** Non-Executable Decision Runtime Projection Design v1
+**Sprint:** Non-Executable Decision Runtime Projection Design
 
 **Goal:** Define how `approval_required`, `clarification_required`, and `blocked` guard decisions should appear in runtime snapshot, journal, `action_timeline`, and replay before `guard_policy` is wired into orchestrator execution.
 
@@ -40,7 +39,7 @@ Clarifications:
 - `approval_required` is non-executed and not failed.
 - `approval_required` is not unverified.
 - Approval is permission to attempt execution later; approval is not success and not verification.
-- `clarification_required` is non-executed and must not fall through to a legacy executable action.
+- `clarification_required` is non-executed and must not fall through to a older executable action.
 - `blocked` is terminal non-executed and must not be converted to `approval_required` unless a future explicit appeal policy exists.
 - `unverified` always means an action ran and the evidence contract did not prove success.
 - `failed` means execution failed, not that approval was denied or clarification was unresolved.
@@ -197,7 +196,7 @@ Replay requirements:
 - Do not execute pending approvals.
 - Do not auto-approve.
 - Do not convert blocked decisions to `approval_required`.
-- Do not convert clarification to a legacy executable fallback.
+- Do not convert clarification to a older executable fallback.
 - Distinguish non-executed decisions from executed but unverified actions.
 - Rebuild `pending_approval`, `pending_clarification`, `last_blocked_action`, `last_guard_decision`, and `action_timeline` from journal events.
 - Treat `APPROVAL_RESOLVED(status=approved)` as permission state only. It is not equivalent to `ACTION_SUCCESS`.
@@ -233,7 +232,7 @@ Projection rules:
 - Generic `click` must not create `ACTION_STARTED`.
 - Generic `click` must not create `execution_evidence`.
 - Generic `click` must appear as a non-executable guard decision.
-- Approval for a generic click, if temporarily represented for legacy compatibility, must not imply semantic target resolution.
+- Approval for a generic click, if temporarily represented for older compatibility, must not imply semantic target resolution.
 - Coordinate-only click must require explicit user coordinates and window evidence in a future policy before any dispatch is possible.
 - Coordinate-in-window evidence is geometry verification, not semantic verification.
 - Future click work must introduce explicit `browser_click` and `desktop_click` capability contracts.
@@ -288,7 +287,7 @@ Future implementation should add focused tests before wiring the guard into exec
 - Replay reconstructs approval request, clarification request, and blocked decision.
 - Replay does not auto-approve.
 - Replay does not convert blocked to approval_required.
-- Replay does not convert clarification into legacy executable fallback.
+- Replay does not convert clarification into older executable fallback.
 - `action_timeline` never shows fake verified success for non-executable decisions.
 - `sequence_num` is monotonic.
 - `causation_id` is preserved.
@@ -304,7 +303,7 @@ Recommended narrow implementation order:
 4. Action timeline projection tests for non-executed entries.
 5. Replay tests for approval, clarification, and blocked decisions.
 6. Orchestrator guard-policy wiring behind tests.
-7. Generic click guard gate that prevents legacy click from dispatching.
+7. Generic click guard gate that prevents older click from dispatching.
 8. Approval resolve endpoint.
 9. UI pending approval/clarification/blocked panels.
 10. Future `browser_click` and `desktop_click` design/implementation only after target resolution contracts exist.
