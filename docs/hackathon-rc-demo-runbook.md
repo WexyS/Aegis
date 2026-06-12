@@ -31,6 +31,10 @@ Preferred normal start:
 .\launch_aegis.bat
 ```
 
+The launcher clears inherited `ELECTRON_RUN_AS_NODE` before spawning Electron.
+If Electron does not appear from an automation shell, first confirm the current
+launcher includes that guard before changing runtime or frontend code.
+
 Manual fallback start:
 
 ```powershell

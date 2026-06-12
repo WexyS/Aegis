@@ -60,6 +60,10 @@ Preferred operator start:
 .\launch_aegis.bat
 ```
 
+The launcher clears inherited `ELECTRON_RUN_AS_NODE` before starting Electron.
+This keeps automation shells that export that variable from forcing
+`electron.exe` to run as plain Node.js.
+
 Manual start used for isolated validation:
 
 ```powershell
@@ -193,6 +197,10 @@ S5 established the full Golden Path with UI-only browser smoke:
 
 S6 validation results are recorded in
 `docs/hackathon-rc-validation-manifest.md` and in the final sprint report.
+
+S6.1 verified the normal launcher path through backend HTTP readiness, frontend
+HTTP readiness, Socket.IO events, and a visible responding Electron window on
+the `Hackathon RC` tab.
 
 ## Fallback Instructions
 

@@ -85,7 +85,7 @@ S5 validated the complete judged path:
 | frontend HTTP smoke | Passed | Isolated S6 smoke returned HTTP 200. |
 | WebSocket smoke | Passed | Browser smoke observed runtime WebSocket connection. |
 | Golden Path smoke | Passed | S6 Playwright fallback smoke completed UI-only Golden Path with no API fallback. |
-| `launch_aegis.bat` smoke | Partial | Batch launched backend/frontend and ports `8400`/`3000` listened; Electron visual window was not verified from headless automation. The launcher generated `frontend/next-env.d.ts` dev-mode drift, which was restored and not staged. |
+| `launch_aegis.bat` smoke | Passed in S6.1 | S6 was partial. S6.1 fixed launcher environment inheritance, then verified backend/frontend HTTP readiness, Socket.IO events, and a visible Electron window. The launcher generated `frontend/next-env.d.ts` dev-mode drift, which was restored and not staged. |
 
 ## Launch Script Status
 
@@ -94,8 +94,32 @@ backend, frontend dev server, and Electron workflow and keeps an orchestrator
 terminal alive. Because it starts long-running UI processes, validation must
 include a cleanup step when run from automation.
 
-S6 status: partial. Automated smoke confirmed backend and frontend HTTP
-readiness from the launcher path. Electron visual readiness was not verified.
+S6 status was partial. Automated smoke confirmed backend and frontend HTTP
+readiness from the launcher path, but Electron visual readiness was not
+verified.
+
+S6.1 status: passed for Electron visual launch. The first normal launcher run
+started backend and frontend but Electron did not open because the parent
+automation shell exported `ELECTRON_RUN_AS_NODE=1`, causing `electron.exe` to run
+as Node.js and fail before `BrowserWindow` creation. `launch_aegis.bat` now
+clears that inherited variable before `npm run electron:dev`.
+
+S6.1 verified after the launcher fix:
+
+- backend health: HTTP 200 on `http://127.0.0.1:8400/health`
+- frontend: HTTP 200 on `http://127.0.0.1:3000`
+- Electron process: visible and responding with title
+  `Aegis | Autonomous AI Mission Control`
+- WebSocket: Socket.IO connected and received `SYSTEM_ONLINE`,
+  `SNAPSHOT_CREATED`, and `heartbeat_ack`
+- Hackathon RC tab: clicked inside the Electron window and rendered the
+  judge-facing RC surface
+
+S6.1 did not rerun the full Golden Path from Electron because the normal
+launcher path uses persistent local Memory SQLite storage. The full Golden Path
+remains covered by the S5 and S6 smoke runs using temporary sample data and
+temporary Memory databases.
+
 The launch path can produce tracked `frontend/next-env.d.ts` dev-mode drift
 because Next dev rewrites the route type import. That generated drift was
 restored and must not be committed as release-package output.
@@ -136,6 +160,11 @@ Temporary screenshot paths from S6 local smoke:
 
 - `C:\Users\nemes\AppData\Local\Temp\aegis-s6-smoke-3f6h1obz\artifacts\hackathon-rc-initial.png`
 - `C:\Users\nemes\AppData\Local\Temp\aegis-s6-smoke-3f6h1obz\artifacts\hackathon-rc-final.png`
+
+Temporary screenshot paths from S6.1 Electron visual launch smoke:
+
+- `C:\Users\nemes\AppData\Local\Temp\aegis-s61-electron-initial.png`
+- `C:\Users\nemes\AppData\Local\Temp\aegis-s61-electron-hackathon-rc.png`
 
 ## Claim Hygiene
 

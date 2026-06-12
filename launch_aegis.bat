@@ -39,6 +39,10 @@ if not exist node_modules (
     npm install
 )
 
+:: Some automation shells export ELECTRON_RUN_AS_NODE=1. That makes
+:: electron.exe run as Node.js and prevents BrowserWindow from starting.
+set ELECTRON_RUN_AS_NODE=
+
 :: Using concurrently to run Next.js and Electron together
 echo [5/6] Spawning UI processes...
 start "Aegis UI" cmd /c "npm run electron:dev"
