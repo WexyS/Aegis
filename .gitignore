@@ -29,6 +29,8 @@ env/
 *.local
 .local/*bridge-token*
 .local/*bridge-audit*
+.local/*ngrok*
+ngrok*.log
 
 # Runtime data
 logs/*.jsonl

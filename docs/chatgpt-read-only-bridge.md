@@ -88,6 +88,12 @@ Start with the Windows launcher:
 .\scripts\start-aegis-bridge.bat
 ```
 
+To start the bridge and attempt to start ngrok for port `8765`:
+
+```powershell
+.\scripts\start-aegis-bridge-and-ngrok.bat
+```
+
 The launcher:
 
 - creates `.local/` if needed
@@ -95,6 +101,15 @@ The launcher:
 - sets `AEGIS_BRIDGE_TOKEN` for the bridge process
 - starts `.\.venv\Scripts\python.exe -m aegis.read_only_bridge`
 - prints the local URL, token file path, auth header name, and tunnel reminder
+
+The bridge + ngrok launcher:
+
+- reuses the same local token file
+- starts the bridge in a separate local process
+- starts `ngrok http 8765` if `ngrok` is installed and on `PATH`
+- keeps bridge startup usable even when ngrok is missing
+- prints the local URL, token file path, auth header name, OpenAPI schema path,
+  and manual Custom GPT reminders
 
 The normal launcher does not print the token. To intentionally display it for
 Custom GPT Action setup:
@@ -167,6 +182,18 @@ Configure API key auth:
 Use `scripts\show-aegis-bridge-token.ps1` when you intentionally need to copy
 the token. Do not paste the token into prompts or committed files.
 
+To show and copy the current ngrok HTTPS URL after the tunnel starts:
+
+```powershell
+.\scripts\show-aegis-ngrok-url.ps1
+```
+
+To copy a small Custom GPT Action setup summary without printing the token:
+
+```powershell
+.\scripts\copy-aegis-bridge-action-values.ps1
+```
+
 Recommended first calls:
 
 1. `GET /health`
@@ -180,12 +207,34 @@ Recommended first calls:
 
 Prefer local-only use. Custom GPT Actions normally need an HTTPS URL, so if a
 tunnel is required, configure it manually with your chosen local tunnel provider.
-The bridge does not require ngrok, Cloudflare, or any paid service. Use a
-short-lived tunnel bound to the bridge port, keep the token private, and shut the
-tunnel down after the review session.
+The bridge does not require ngrok, Cloudflare, or any paid service.
+
+For the common ngrok path:
+
+```powershell
+.\scripts\start-aegis-bridge-and-ngrok.bat
+```
+
+Then:
+
+```powershell
+.\scripts\show-aegis-ngrok-url.ps1
+```
+
+Paste the returned HTTPS URL into the OpenAPI `servers.url` field in the Custom
+GPT Action setup. The default OpenAPI file stays committed with localhost;
+operator-specific tunnel URLs should not be committed.
+
+Free ngrok URLs may change each time the tunnel starts. A static tunnel can be
+configured later if the operator has one, but static domains are not required.
+Use a short-lived tunnel bound to the bridge port, keep the token private, and
+shut the tunnel down after the review session.
 
 Do not expose the bridge without token auth. Do not expand the bridge to include
 write, execute, shell, app-launch, model-call, or external API endpoints.
+
+Stop the bridge and ngrok by closing their process windows or pressing Ctrl+C in
+each process.
 
 ## Recommended Workflow
 

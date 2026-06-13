@@ -86,7 +86,11 @@ def test_committed_launcher_scripts_do_not_contain_real_token() -> None:
     script_paths = [
         Path("scripts/start-aegis-bridge.bat"),
         Path("scripts/start-aegis-bridge.ps1"),
+        Path("scripts/start-aegis-bridge-and-ngrok.bat"),
+        Path("scripts/start-aegis-bridge-and-ngrok.ps1"),
         Path("scripts/show-aegis-bridge-token.ps1"),
+        Path("scripts/show-aegis-ngrok-url.ps1"),
+        Path("scripts/copy-aegis-bridge-action-values.ps1"),
     ]
     forbidden_literals = [
         "replace-with-local-random-token",
@@ -108,6 +112,27 @@ def test_normal_launcher_does_not_print_bridge_token() -> None:
     assert "Write-Host $token" not in content
     assert "show-aegis-bridge-token.ps1" in content
     assert "AEGIS_BRIDGE_TOKEN" in content
+
+
+def test_ngrok_launchers_do_not_print_bridge_token_or_require_static_domain() -> None:
+    launcher = Path("scripts/start-aegis-bridge-and-ngrok.ps1").read_text(encoding="utf-8")
+    values_helper = Path("scripts/copy-aegis-bridge-action-values.ps1").read_text(encoding="utf-8")
+    url_helper = Path("scripts/show-aegis-ngrok-url.ps1").read_text(encoding="utf-8")
+
+    assert "Write-Host $token" not in launcher
+    assert "Get-Content -LiteralPath $TokenPath -Raw" in launcher
+    assert "ngrok http 8765" in launcher
+    assert "ngrok http 8765" in url_helper
+    assert "This helper does not print the token" in url_helper
+    assert "This helper does not print the token" in values_helper
+    assert "static" not in launcher.lower()
+
+
+def test_bridge_launcher_prepare_only_mode_exists_for_ngrok_wrapper() -> None:
+    content = Path("scripts/start-aegis-bridge.ps1").read_text(encoding="utf-8")
+
+    assert "[switch]$PrepareOnly" in content
+    assert "if ($PrepareOnly)" in content
 
 
 @pytest.mark.asyncio

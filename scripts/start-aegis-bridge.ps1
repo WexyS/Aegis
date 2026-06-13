@@ -1,3 +1,8 @@
+param(
+    [switch]$PrepareOnly,
+    [switch]$Quiet
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -34,7 +39,9 @@ if (-not (Test-Path -LiteralPath $LocalDir -PathType Container)) {
 if (-not (Test-Path -LiteralPath $TokenPath -PathType Leaf)) {
     $token = New-AegisBridgeToken
     Set-Content -LiteralPath $TokenPath -Value $token -NoNewline -Encoding ASCII
-    Write-Host "[OK] Created local bridge token file."
+    if (-not $Quiet) {
+        Write-Host "[OK] Created local bridge token file."
+    }
 }
 else {
     $token = (Get-Content -LiteralPath $TokenPath -Raw).Trim()
@@ -47,6 +54,13 @@ else {
 }
 
 $env:AEGIS_BRIDGE_TOKEN = $token
+
+if ($PrepareOnly) {
+    if (-not $Quiet) {
+        Write-Host "Bridge token file is ready: $TokenPath"
+    }
+    return
+}
 
 Write-Host "==================================================="
 Write-Host "Aegis Read-Only ChatGPT Bridge"
