@@ -245,6 +245,33 @@ def test_closed_restored_approvals_do_not_reappear_after_replay() -> None:
     assert timeout["finding_count"] == 0
 
 
+def test_resolution_snapshot_preserves_resolved_records_even_when_snapshot_records_are_bounded() -> None:
+    manager = _manager_with_restored_executable_backlog()
+    for index in range(60):
+        manager.create_received(f"historical filler {index}", command_id=f"cmd-filler-{index}")
+    manifest = build_restored_executable_approval_resolution_manifest(manager.snapshot())
+    journal = FakeJournal()
+
+    apply_restored_executable_approval_resolution(
+        manager=manager,
+        journal=journal,
+        approval_ids=manifest["approval_ids_bound"],
+        confirmation_phrase=RESTORED_EXECUTABLE_APPROVAL_CONFIRMATION,
+        manifest_id=manifest["manifest_id"],
+    )
+
+    snapshot_event = [event for event in journal.appended if event["type"] == "SNAPSHOT_CREATED"][0]
+    snapshot_records = snapshot_event["payload"]["runtime"]["commands"]["records"]
+    preserved_ids = {
+        record["metadata"]["approval_id"]
+        for record in snapshot_records
+        if record.get("metadata", {}).get("approval_resolution_status")
+        == RESTORED_EXECUTABLE_APPROVAL_DISPOSITION
+    }
+
+    assert preserved_ids == {"approval-restored-1", "approval-restored-2"}
+
+
 def test_foundation_closure_blockers_drop_after_safe_operator_resolution() -> None:
     manager = _manager_with_restored_executable_backlog()
     pending_snapshot = manager.snapshot()

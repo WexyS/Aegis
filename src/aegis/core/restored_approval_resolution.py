@@ -190,6 +190,7 @@ def apply_restored_executable_approval_resolution(
 
     events: list[dict[str, Any]] = []
     resolved: list[dict[str, Any]] = []
+    resolved_records: list[dict[str, Any]] = []
     for item in manifest["items"]:
         approval_id = str(item["approval_id"])
         record = manager.cancel_restored_executable_approval(
@@ -224,6 +225,7 @@ def apply_restored_executable_approval_resolution(
             severity=Severity.WARNING,
         )
         appended = journal.append(event)
+        resolved_records.append(record.to_dict())
         events.append(appended.to_dict())
         resolved.append(
             {
@@ -233,10 +235,19 @@ def apply_restored_executable_approval_resolution(
                 "resolution_disposition": RESTORED_EXECUTABLE_APPROVAL_DISPOSITION,
             }
         )
+    snapshot = manager.snapshot()
+    records_by_id = {
+        str(record.get("command_id")): record
+        for record in snapshot.get("records", [])
+        if isinstance(record, dict) and record.get("command_id")
+    }
+    for record in resolved_records:
+        records_by_id[str(record["command_id"])] = record
+    snapshot["records"] = list(records_by_id.values())
     snapshot_event = create_event(
         ProtocolEventType.SNAPSHOT_CREATED,
         {
-            "runtime": {"commands": manager.snapshot()},
+            "runtime": {"commands": snapshot},
             "manifest_id": manifest_id,
             "reason": "snapshot after restored executable approval operator cancellation",
             "mutation_performed": False,

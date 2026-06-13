@@ -42,7 +42,7 @@ operator resolution:
 - stale restored-pending timeout findings: 0
 - restored executable unresolved: 0
 - restored requiring operator attention: 0
-- restored operator-cancelled records: 10
+- restored operator-cancelled records: 14
 - runtime timeout blocker findings: 0
 - websocket: `ok`
 - command lifecycle: `ok`
@@ -101,25 +101,28 @@ Snapshot attention remains visible.
 
 ## Restored Approval Operator Resolution
 
-Live backend startup restored ten executable approval records from the runtime
+Live backend startup restored executable approval records from the runtime
 journal. They were limited to the expected historical command texts:
-`open notepad` and `create file scratch/new.txt`.
+`open notepad` and `create file scratch/new.txt`. The first exact manifest
+contained 10 records; full validation later wrote four additional test-origin
+restored approvals to the live journal, and those were closed through the same
+operator-confirmed lifecycle path.
 
 Resolution details:
 
 - disposition: `operator_cancelled_restored_executable`
 - manifest id:
   `restored-executable-approval-resolution:5ba0a59e5f0fb3c55386403b`
-- restored approvals resolved: 10
+- restored approvals resolved: 14 total
 - pending decision count after: 0
 - restored unresolved count after: 0
 - stale restored unresolved count after: 0
 - runtime timeout blocker count after: 0
 - current blocker count after: 0
 
-The cancellation was journal-backed with explicit lifecycle events plus a
-corrected runtime snapshot. One overly broad intermediate reconciliation
-snapshot was appended and then superseded by a narrower corrected snapshot; no
+The cancellation was journal-backed with explicit lifecycle events plus
+corrected runtime snapshots. One overly broad intermediate reconciliation
+snapshot was appended and then superseded by narrower corrected snapshots; no
 journal history was rewritten or deleted.
 
 No approval grant, denial of a current live request, auto-resolution, command
