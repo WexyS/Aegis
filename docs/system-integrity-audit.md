@@ -274,12 +274,25 @@ Summary:
 
 - Do not reconstruct missing historical evidence by guessing.
 - Do not suppress unknown-era issues.
-- Create an archived older manifest for old evidence/replay debt.
+- Create an archived older manifest for known historical evidence/replay debt.
+- Create a quarantine manifest for unknown-era debt instead of reclassifying it
+  by guesswork.
 - Preserve a retired older baseline that remains inspectable.
 - Create a clean current operational baseline only after backup, restore,
   replay, hash-chain, and operator gates pass.
 - Maintenance scan should report archived older debt separately from active
   current blockers.
+
+Current closure tooling status:
+
+- `src/aegis/core/historical_debt_closure.py` projects a dry-run closure plan
+  from supplied maintenance/evidence/replay metadata.
+- The dry-run helper performs no journal read, archive write, quarantine write,
+  evidence mutation, verifier success creation, or runtime health change.
+- The apply-readiness helper remains fail-closed because mutation-bearing
+  closure execution is not implemented.
+- Maintenance scan now exposes active, archived, quarantined, and not-executed
+  closure state separately.
 
 ## Memory Consent Policy Summary
 

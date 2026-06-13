@@ -576,6 +576,30 @@ def test_maintenance_scan_adds_read_only_closure_readiness_diagnostic(monkeypatc
     assert closure["current_blocker_count"] == 0
     assert closure["historical_evidence_debt_count"] == 3
     assert closure["historical_missing_evidence_count"] == 2
+    assert closure["active_operational_debt"] == {
+        "status": "none",
+        "current_blocker_count": 0,
+        "current_evidence_failure_count": 0,
+        "current_missing_evidence_count": 0,
+        "pending_decision_blocker_count": 0,
+        "runtime_timeout_blocker_count": 0,
+    }
+    assert closure["archived_historical_debt"] == {
+        "status": "not_archived",
+        "historical_evidence_debt_count": 0,
+        "historical_missing_evidence_count": 0,
+        "manifest_ref": None,
+        "archive_created": False,
+    }
+    assert closure["quarantined_unknown_era_debt"] == {
+        "status": "not_quarantined",
+        "unknown_era_evidence_issue_count": 0,
+        "unknown_era_missing_evidence_count": 0,
+        "manifest_ref": None,
+        "quarantine_created": False,
+        "unknown_era_reclassified": False,
+    }
+    assert closure["closure_execution_status"] == "not_executed"
     assert closure["replay_historical_debt_present"] is True
     assert closure["system_resource_warning_count"] == 1
     assert report["summary"]["component_statuses"]["evidence_audit"] == "warning"
@@ -688,6 +712,9 @@ def test_maintenance_closure_readiness_does_not_guess_unknown_era(monkeypatch, t
     assert closure["unknown_era_evidence_issue_count"] == 1
     assert closure["unknown_era_missing_evidence_count"] == 1
     assert closure["unknown_era_operator_attention_threshold"] == 1
+    assert closure["quarantined_unknown_era_debt"]["status"] == "not_quarantined"
+    assert closure["quarantined_unknown_era_debt"]["unknown_era_reclassified"] is False
+    assert closure["closure_execution_status"] == "not_executed"
     assert "Unknown-era evidence issues require operator attention" in closure["recommendation"]
 
 

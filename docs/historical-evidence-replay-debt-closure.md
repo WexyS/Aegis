@@ -1,63 +1,88 @@
 # Historical Evidence Replay Debt Closure
 
-Decision: `HISTORICAL_EVIDENCE_REPLAY_DEBT_CLOSURE_PLANNED`
+Decision: `HISTORICAL_EVIDENCE_REPLAY_DEBT_CLOSURE_BLOCKED_WITH_PLAN`
 
-Date: 2026-06-12
+Date: 2026-06-13
 
-Scope: closure plan only. This document does not archive, compact, truncate,
-rewrite, resequence, delete, or mutate runtime journals, evidence records,
-runtime state, Git history, or generated artifacts.
+Scope: safe closure readiness only. This document does not archive, compact,
+truncate, rewrite, resequence, delete, or mutate runtime journals, evidence
+records, runtime state, Git history, or generated artifacts.
 
 ## Why This Exists
 
-Aegis currently keeps historical, unknown-era, and replay debt visible. That is
-correct. The next step is not to hide it; the next step is to close it with a
-clear operational model that preserves inspectability while preventing safely
-retired older debt from blocking current product work forever.
+Aegis keeps historical, unknown-era, and replay debt visible. That is correct.
+The next step is not to hide it; the next step is to close it with an
+operational model that preserves inspectability while preventing safely retired
+older debt from blocking current product work forever.
 
 Missing historical evidence cannot be reconstructed unless source evidence
 actually exists. Unknown-era issues must not be guessed into success.
 
 ## Current Observed State
 
-Latest read-only maintenance scan during the system integrity audit reported:
+The read-only maintenance scan for this closure sprint reported:
 
 - scan version: `maintenance-scan/1`
-- read-only: true
 - runtime health summary status: `fail`
 - current blocker count: 0
 - current evidence failure count: 0
 - current missing evidence count: 0
-- pending decision blocker count: 0
+- historical evidence debt count: 0
+- historical missing evidence count: 0
 - unknown-era evidence issue count: 25
 - unknown-era missing evidence count: 19
 - replay diagnostics status: `fail`
 - replay boundary classification:
   `historical_mixed_sequence_eras_or_reset_boundaries`
-- evidence audit status: `fail`
-- runtime snapshot status: `warning`
-- observed maintenance mutations: none
+- closure readiness status: `needs_operator_attention`
 
-The largest local runtime artifact observed during audit was
-`logs/runtime_events.jsonl`, hundreds of MB in size. That file must not be
-deleted or compacted as a side effect of this plan.
+No current evidence failure or current missing evidence was observed. Closure
+execution remains blocked because the unknown-era and replay-boundary debt
+cannot be safely retired without backup, restore, replay/hash-chain, exact-item
+listing, and operator gates.
+
+## Implementation Added
+
+This sprint added a dry-run closure planner:
+
+- module: `src/aegis/core/historical_debt_closure.py`
+- helper:
+  `build_historical_evidence_replay_debt_closure_plan(...)`
+- apply-readiness boundary:
+  `evaluate_historical_evidence_replay_debt_closure_apply_readiness(...)`
+
+The helper consumes caller-supplied maintenance/evidence/replay metadata only.
+It does not read journals, write manifests, create archives, quarantine files,
+create a clean baseline, fabricate evidence, mark verifier success, or mutate
+runtime state.
+
+The maintenance scan projection now explicitly separates:
+
+- active operational debt
+- archived historical debt status
+- quarantined unknown-era debt status
+- closure execution status
+
+Current output intentionally reports `not_archived`, `not_quarantined`, and
+`not_executed` until a future operator-approved execution sprint passes every
+gate.
 
 ## Debt Classes
 
 | Debt class | Meaning | Closure treatment |
 | --- | --- | --- |
 | Active operational debt | Current blockers, current missing evidence, current evidence failures, pending approvals, restored pending work, or live runtime inconsistency. | Must be fixed or explicitly blocked before clean baseline. |
-| Historical debt | Old event/evidence/replay issues with known historical classification. | Can be archived into a older manifest if backup, replay, and operator gates pass. |
+| Historical debt | Old event/evidence/replay issues with known historical classification. | Can be archived only after exact listing, backup, restore, replay/hash-chain, and operator gates pass. |
 | Unknown-era evidence | Events without enough session/source context to prove current or historical era. | Must remain visible unless source evidence resolves the classification. |
-| Replay boundary debt | Sequence resets, hash-chain mismatch, mixed eras, recursive snapshots, or replay discontinuities. | Requires backup, restore, replay, hash-chain checks, and operator approval before closure. |
+| Replay boundary debt | Sequence resets, hash-chain mismatch, mixed eras, recursive snapshots, or replay discontinuities. | Requires backup, restore, replay/hash-chain checks, exact boundary reasoning, and operator approval before closure. |
 | Resource/log pressure | Large local journals, logs, caches, or generated artifacts. | Requires backup and explicit cleanup sprint; no blind deletion. |
 
 ## What Can Be Repaired
 
 These may be repaired in future scoped sprints:
 
-- current missing evidence where the current command has available backend
-  evidence that was not linked correctly
+- current missing evidence where current backend evidence exists but is not
+  linked correctly
 - current evidence failures caused by verifier bugs
 - journal projection/snapshot alignment bugs
 - process-local state that can be rebuilt from canonical journal entries
@@ -85,24 +110,24 @@ The correct closure model has four durable parts:
    - Record file sizes and hashes.
    - Do not mutate source files during backup verification.
 
-2. Archived older manifest
-   - List historical and unknown-era issues exactly as observed.
+2. Archived legacy manifest
+   - List historical issues exactly as observed.
    - Preserve reason, source, era classification, and uncertainty.
    - Include hash references to backed-up source artifacts.
    - Mark non-reconstructable missing evidence as non-reconstructable.
 
-3. Retired older baseline
-   - Declare the old mixed-era journal range as retired only after restore,
-     replay, and hash-chain checks.
-   - The retired baseline remains inspectable.
-   - Retired does not mean deleted, verified, or greenwashed.
+3. Unknown-era quarantine manifest
+   - List unknown-era issues exactly as observed.
+   - Preserve why each item is still unknown.
+   - Do not convert unknown-era items into historical success.
+   - Keep the manifest inspectable after closure.
 
 4. Clean current operational baseline
    - New runtime health can separate current operational blockers from archived
-     older debt.
-   - Active runtime must not fail solely because safely retired older debt
-     remains archived.
-   - Archived debt must remain reportable in a older section.
+     or quarantined legacy debt.
+   - Active runtime must not fail solely because safely retired debt remains
+     archived.
+   - Archived and quarantined debt must remain reportable.
 
 ## Required Gates
 
@@ -110,13 +135,14 @@ No closure execution is allowed until all gates pass:
 
 - operator confirms closure scope
 - backup path is explicit and project-approved
-- backup hashes are recorded
-- restore rehearsal passes in an isolated location
-- replay verification passes or records exact irreparable gaps
-- hash-chain verification passes or records exact retired discontinuities
+- backup manifest is written and hashes are recorded
+- restore/readback verification passes in an isolated location
+- replay/hash-chain verification passes or records exact irreparable gaps
+- exact historical and unknown-era items are listed
 - current pending approvals are zero or explicitly preserved
 - current evidence failures are zero or explicitly blocked
 - current missing evidence is zero or explicitly blocked
+- maintenance scan continues to expose archived/quarantined debt separately
 - no generated artifacts or secrets are staged
 - operator confirms no-suppression and no-guessing rules
 
@@ -133,62 +159,99 @@ Maintenance scan must not hide:
 - unverified completed actions
 - resource/log pressure
 
-Closure may move retired debt to an archived older section only after gates
-pass. It must not delete the debt from observability.
+Closure may move retired debt to archived or quarantined sections only after
+all gates pass. It must not delete the debt from observability.
 
 ## No-Guessing Rule
 
-If a missing historical evidence item cannot be reconstructed from source
-records, it remains missing. The correct status is archived non-reconstructable,
-not verified.
+If missing historical evidence cannot be reconstructed from source records, it
+remains missing. The correct status is archived non-reconstructable, not
+verified.
 
 If an unknown-era item cannot be assigned to a session with source evidence, it
-remains unknown-era. The correct status is archived unknown-era, not historical
-success.
+remains unknown-era. The correct status is quarantined unknown-era, not
+historical success.
 
 ## Maintenance Scan Reporting Target
 
-After a future closure sprint, maintenance scan should report:
+Maintenance scan should report:
 
 - current operational health
 - current blockers
 - current evidence failures
 - current missing evidence
 - pending decisions
-- archived older debt summary
-- archived older manifest reference
+- archived historical debt summary
+- archived manifest reference
+- quarantined unknown-era debt summary
 - replay/hash-chain closure status
-- whether archived debt still needs operator attention
+- whether archived or quarantined debt still needs operator attention
 
 Current health should not fail solely because archived older debt is preserved.
 It should still fail for active blockers, current missing evidence, current
 evidence failures, replay/hash-chain issues in the current baseline, or hidden
 debt.
 
+## Current Closure Result
+
+Closure execution is blocked.
+
+Reasons:
+
+- replay diagnostics still fail
+- unknown-era evidence issues remain
+- unknown-era missing evidence remains
+- no backup manifest was created in this sprint
+- no restore/readback verification was performed
+- no replay/hash-chain closure verification was performed
+- no exact archive/quarantine manifest was written
+- no operator apply gate was executed
+
+This is the correct result. The sprint produced a safe dry-run contract and
+reporting separation instead of pretending debt was closed.
+
+## Tests Added
+
+Focused tests cover:
+
+- dry-run closure plan is non-mutating
+- closure blocks without backup, restore, replay/hash-chain, operator, and
+  exact-item gates
+- unknown-era issues are not guessed away
+- missing evidence is not fabricated
+- current operational debt blocks closure projection
+- apply readiness remains fail-closed because mutation-bearing closure is not
+  implemented
+- maintenance scan exposes active, archived, quarantined, and not-executed
+  closure state separately
+
 ## Acceptance Criteria
 
 Closure is accepted only when:
 
 - backup exists and restore verification passed
-- archived older manifest exists and is inspectable
+- archived legacy manifest exists and is inspectable
+- unknown-era quarantine manifest exists and is inspectable
 - non-reconstructable evidence remains labeled as non-reconstructable
 - unknown-era issues remain labeled unless source evidence resolves them
 - clean current operational baseline is created without hiding older debt
-- maintenance scan separates active current blockers from archived older debt
+- maintenance scan separates active current blockers from archived/quarantined
+  debt
 - no journal/evidence/replay mutation was performed without explicit operator
   approval
 - no fake evidence or verifier success was created
 
 ## Intentionally Not Done
 
-This plan does not:
+This sprint did not:
 
 - archive or compact logs
+- write backup artifacts
+- write archive or quarantine manifests
 - delete runtime journals
 - rewrite event sequences
 - repair hash-chain mismatches
 - fabricate missing evidence
 - convert unknown-era items into historical success
-- change maintenance scan behavior
-- change runtime health semantics
+- change runtime health to green
 - stage generated artifacts

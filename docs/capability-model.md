@@ -20,7 +20,7 @@ and runtime lifecycle handling.
 | --- | --- | --- | --- |
 | Observe | Read backend-owned state or local metadata without mutation. | maintenance scan, tool registry, app registry, runtime snapshot | Can run automatically when read-only and bounded. |
 | Explain | Summarize observed state without claiming truth beyond sources. | deterministic summaries, Model Gateway proposal text | Output is proposal/context only. |
-| Propose | Create a plan, candidate action, memory proposal, or agent proposal. | action proposals, Memory proposals, Agent Runtime sessions | Proposal is not execution permission. |
+| Propose | Create a plan, candidate action, memory proposal, or agent proposal. | action proposals, Memory proposals, historical debt closure dry-run, Agent Runtime sessions | Proposal is not execution permission. |
 | Read-only execute | Perform bounded non-mutating local inspection. | AutoPilot repository structure audit | Allowed only with scoped path and policy limits. |
 | Approval-gated mutate | Perform local mutation after explicit approval and verifier strategy. | `create_logging_directory`, `create_scratch_directory` | Requires backend approval and safety gate. |
 | Policy-gated external | Use network, MCP, external API, paid connector, or cloud model. | future only | Requires explicit policy, privacy, credential, approval, and cost gates. |
@@ -118,6 +118,7 @@ Aegis must block:
 
 - command governance and approval lifecycle
 - read-only maintenance scan
+- historical evidence/replay closure dry-run planning
 - action proposal lifecycle for narrow maintenance actions
 - local Memory OS explicit lifecycle operations
 - AutoPilot read-only repository structure audit
