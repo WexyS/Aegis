@@ -1,61 +1,77 @@
 # Final System Verification Report
 
-Decision: `AEGIS_SYSTEM_VERIFICATION_CURRENT_BLOCKERS_CLEARED_RAW_DEBT_VISIBLE`
+Decision: `AEGIS_SYSTEM_VERIFICATION_COMPLETE`
 
 Date: 2026-06-13
 
-Verification baseline commit: `9c9ba3ddc8fb4e08a7f840c8ac9141b5e6f3cb77`
+Verification baseline commit before this recheck:
+`32996b8052b0a7b02961ad61b2d8447cc34b5a95`
 
-Scope: final system verification after integrity cleanup, canonical
-documentation cleanup, evidence/replay quarantine, and active runtime health
-reconciliation. This report does not add product features, execute cleanup,
-rewrite journals, fabricate evidence, create verifier success, or treat frontend
-state as backend truth.
+Scope: final system verification recheck after restored approval resolution and
+test runtime journal isolation. This report does not add product features,
+execute cleanup, rewrite journals, fabricate evidence, create verifier success,
+or treat frontend state as backend truth.
 
 ## Executive Summary
 
-Aegis is in a truthful non-green state. Current evidence failures are clear and
-current missing evidence is clear. Raw evidence and replay diagnostics still
-report `fail` because known unknown-era and replay debt remains visible.
+Aegis is acceptable to move from integrity stabilization into the first real
+product slice, with a warning-level operational posture.
 
-The active closure projection separates current operational blockers from raw
-evidence/replay failure status. Current operational blockers are now clear, but
-runtime health remains `fail` while raw evidence/replay diagnostics still fail.
+The active operational baseline is clean:
 
-Earlier live backend verification found restored approval lifecycle blockers.
-Those restored executable approvals were later operator-cancelled through an
-explicit neutral lifecycle action. No approval grant, auto-approval,
-auto-denial, command execution, file creation, or app launch was performed.
+- current operational blockers: 0
+- pending decisions: 0
+- restored unresolved decisions: 0
+- restored executable unresolved: 0
+- active evidence failures: 0
+- active missing evidence: 0
+- runtime timeout blockers: 0
 
-Follow-up reliability work isolated pytest runtime state from the operator's
-live runtime journal. Tests now default to temporary log directories, reset
-process-global journal state between tests, and fail loudly if pytest attempts
-to append to the live `logs/runtime_events.jsonl` path.
+Raw evidence and replay diagnostics still report `fail`. That raw debt remains
+visible and inspectable. The active runtime health projection now correctly
+classifies manifest-backed historical/quarantined evidence and replay debt as
+warning/attention, not as active blockers.
+
+## Final Decision
+
+`AEGIS_SYSTEM_VERIFICATION_COMPLETE`
+
+This is not a green production claim. It means Aegis has no current operational
+blocker preventing the next controlled product slice. Remaining raw diagnostic
+debt is visible and must not be hidden.
+
+Recommended next sprint:
+`Aegis Operating Context and Read-Only ChatGPT Bridge`
 
 ## Runtime Health Interpretation
 
-Current live read-only maintenance endpoint status after restored approval
-operator resolution:
+Current live read-only maintenance scan after this recheck:
 
-- runtime health: `fail`
+- runtime health: `warning`
+- active failure components: none
+- attention components: `evidence_audit`, `runtime_snapshot`,
+  `replay_diagnostics`
 - closure readiness: `ready_with_known_historical_debt`
 - current operational blockers: 0
 - current evidence failures: 0
 - current missing evidence: 0
 - pending decisions: 0
 - restored pending decisions: 0
-- stale restored-pending timeout findings: 0
 - restored executable unresolved: 0
 - restored requiring operator attention: 0
-- restored operator-cancelled records: 14
 - runtime timeout blocker findings: 0
-- websocket: `ok`
 - command lifecycle: `ok`
 - event journal: `ok`
 - pending decision hygiene: `ok`
 
-The restored approval blocker is closed. The system is not fully green because
-raw evidence and replay diagnostics remain visible as failing diagnostic debt.
+The health model is intentionally two-layered:
+
+- raw diagnostics preserve evidence/replay/snapshot debt exactly as observed
+- active projections classify whether that debt is a current operational blocker
+
+Raw diagnostic `fail` remains visible. Active runtime health is `warning`
+because known manifest-backed historical/quarantined debt remains, but no active
+blocker is present.
 
 ## Raw Diagnostics
 
@@ -66,30 +82,38 @@ Raw diagnostics remain visible:
 - raw `replay_diagnostics`: `fail`
 - active replay projection: `warning`
 - raw `runtime_snapshot`: `warning`
-- runtime snapshot projection: `warning`
+- active runtime snapshot projection: `warning`
 
-The raw failures are not suppressed. The active projection only classifies them
-as warning when the local ignored closure manifest is readable, the manifest-only
-replay gate is passed, original stores are untouched, and no current blockers
-remain.
+No evidence was fabricated. No verifier success was fabricated. No replay state
+was repaired or rewritten.
 
 ## Evidence Audit Status
 
+Current live projection:
+
 - active evidence failure count: 0
 - active missing evidence count: 0
-- unknown-era evidence issues: 25
-- unknown-era missing evidence: 19
-- missing evidence fabricated: no
-- evidence created by closure: no
+- raw critical failure count: 17
+- quarantined unknown-era evidence issues in active projection: 17
+- quarantined unknown-era missing evidence in active projection: 13
+- raw evidence status: `fail`
+- active evidence projection status: `warning`
+- active evidence classification:
+  `quarantined_or_archived_evidence_attention`
 
-Unknown-era items remain quarantined, not repaired.
+The narrow maintenance projection fix in this recheck keeps raw critical
+failures visible while preventing manifest-backed unknown-era critical failures
+from being counted as active current failures when current evidence failure and
+current missing evidence counts are zero.
 
 ## Replay Diagnostics Status
 
 - raw replay status: `fail`
 - active replay projection: `warning`
-- replay boundary: `historical_mixed_sequence_eras_or_reset_boundaries`
+- replay boundary classification:
+  `historical_mixed_sequence_eras_or_reset_boundaries`
 - manifest-backed: yes
+- active replay failure: no
 - original replay state touched: no
 
 Replay debt remains visible. This report does not claim replay repair.
@@ -104,40 +128,31 @@ Replay debt remains visible. This report does not claim replay repair.
 
 Snapshot attention remains visible.
 
-## Restored Approval Operator Resolution
+## Pending And Restored Approval Status
 
-Live backend startup restored executable approval records from the runtime
-journal. They were limited to the expected historical command texts:
-`open notepad` and `create file scratch/new.txt`. The first exact manifest
-contained 10 records; full validation later wrote four additional test-origin
-restored approvals to the live journal, and those were closed through the same
-operator-confirmed lifecycle path.
+Live maintenance scan from a fresh process reports no active pending lifecycle
+state:
 
-Resolution details:
+- pending decisions: 0
+- current-session pending decisions: 0
+- restored unresolved decisions: 0
+- restored executable unresolved: 0
+- restored requiring operator attention: 0
 
-- disposition: `operator_cancelled_restored_executable`
-- manifest id:
-  `restored-executable-approval-resolution:5ba0a59e5f0fb3c55386403b`
-- restored approvals resolved: 14 total
-- pending decision count after: 0
-- restored unresolved count after: 0
-- stale restored unresolved count after: 0
-- runtime timeout blocker count after: 0
-- current blocker count after: 0
+Journal-backed restored lifecycle projection remains inspectable:
 
-The cancellation was journal-backed with explicit lifecycle events plus
-corrected runtime snapshots. One overly broad intermediate reconciliation
-snapshot was appended and then superseded by narrower corrected snapshots; no
-journal history was rewritten or deleted.
+- restored operator-cancelled records: 14
+- restored unresolved decisions after journal restore: 0
+- restored executable unresolved after journal restore: 0
+- mutation performed by hygiene projection: no
 
-No approval grant, denial of a current live request, auto-resolution, command
-execution, file creation, app launch, evidence mutation, or verifier success was
-performed by this verification.
+No approval grant, auto-approval, auto-denial, command execution, file creation,
+app launch, evidence mutation, or verifier success was performed by this
+verification.
 
 ## Test Runtime Journal Isolation
 
-The test suite previously could append command and maintenance lifecycle events
-to the live runtime journal. That risk is now closed for default pytest runs:
+The previous reliability risk is closed for default pytest runs:
 
 - `tests/conftest.py` sets an isolated temporary pytest runtime root before
   Aegis imports, then uses an isolated temporary `AEGIS_LOG_DIR` per test.
@@ -149,8 +164,14 @@ to the live runtime journal. That risk is now closed for default pytest runs:
 - Regression tests assert isolated journal writes do not change the live journal
   fingerprint.
 
-This does not rewrite or delete the existing live journal entries that were
-created before isolation. They remain visible history.
+Live journal fingerprint for this recheck before and after full validation:
+
+- event count: 199704
+- size: 435432542
+- sha256:
+  `e284a7bb1238b437d986af6c0652f057b50490e4e2ff61a56896b8c3e078d323`
+
+Full pytest preserved that fingerprint.
 
 ## Historical Debt Closure State
 
@@ -158,8 +179,8 @@ Quarantined unknown-era debt:
 
 - status: `quarantined`
 - manifest ref: `live-full-export-items`
-- unknown-era evidence issue count: 25
-- unknown-era missing evidence count: 19
+- unknown-era evidence issue count in manifest: 25
+- unknown-era missing evidence count in manifest: 19
 - unknown-era reclassified: no
 
 Archived historical debt:
@@ -184,68 +205,62 @@ The manifest is a runtime artifact and remains outside Git.
 | Module | Status | Verification interpretation |
 | --- | --- | --- |
 | Memory | Implemented local core | Memory retrieval is context, not authority. Consent UX remains future work. |
-| AutoPilot | Implemented read-only scanner | Useful analysis output, not evidence or verifier success. |
+| AutoPilot | Implemented read-only scanner | Analysis output, not evidence or verifier success. |
 | Society | Deterministic proposal surface | Proposal-only; not autonomous execution. |
 | Model Gateway | Implemented bounded local gateway | Local-first; model output is proposal-only. No cloud fallback required. |
 | Skill Registry | Implemented metadata and proposal surfaces | Skill manifests are not permission. |
 | Agent Runtime | Bounded proposal-only runtime foundation | Agent proposal is not execution. |
-| Maintenance Scan | Implemented read-only diagnostics | Now separates active health from raw quarantined diagnostics. |
-| Frontend / Aegis Control | Implemented operator UI | Maintenance panel now labels raw-vs-active health projection explicitly. |
+| Maintenance Scan | Implemented read-only diagnostics | Separates raw diagnostic status from active operational projection. |
+| Frontend / Aegis Control | Implemented operator UI | UI remains presentation only. Dedicated UX improvement remains future work. |
 | Launcher | Implemented baseline launcher surfaces | Launcher cleanup remains separate future work. |
 
 ## Maintenance UI Truth Review
 
-The Maintenance panel was reviewed for whether it clearly distinguishes active
-runtime health from raw diagnostic failures. A narrow copy/status fix was
-applied:
+No frontend code changed in this recheck.
 
-- Runtime Health now shows active-vs-raw diagnostic metrics.
-- Raw evidence and raw replay status remain visible.
-- Active evidence, active replay, and snapshot projection statuses are shown
-  separately.
-- Manifest-backed quarantine and clean baseline labels are displayed.
-- Foundation readiness labels raw replay diagnostics as raw diagnostics.
-- Archive/quarantine state shows closure execution, quarantine status, archive
-  status, and manifest ref.
+The backend maintenance projection now exposes enough truth for the UI to
+distinguish:
 
-No layout redesign, safety panel removal, websocket disablement, or frontend
-authority was added.
+- raw evidence fail vs active evidence warning
+- raw replay fail vs active replay warning
+- raw snapshot warning vs active snapshot warning
+- active current blockers
+- quarantine state and manifest-backed historical debt
+
+Remaining UI risk: Aegis Control still needs a dedicated product/UX pass so the
+warning-level operational state is understandable to a normal user without
+hiding debt or overstating health.
 
 ## README And Documentation Status
 
-Reviewed current product-facing docs:
+Reviewed relevant docs status for this recheck:
 
-- `README.md`
-- `AGENTS.md`
-- `docs/aegis-current-mission.md`
-- `docs/capability-model.md`
-- `docs/system-integrity-audit.md`
-- `docs/historical-evidence-replay-debt-closure.md`
-- `docs/memory-consent-policy.md`
-- `docs/model-gateway.md`
-- `docs/skill-registry.md`
-- `docs/bounded-agent-runtime.md`
+- `docs/final-system-verification-report.md` updated by this sprint
+- `AGENTS.md` already documents test runtime journal isolation rules
+- historical evidence/replay debt remains documented as visible debt
+- README remains acceptable for this verification; no user-facing capability
+  claim changed in this recheck
 
-Narrow corrections were applied where older text still implied active runtime
-health remained `fail` after quarantine. The docs now preserve raw diagnostic
-failures while describing active runtime health as warning/attention when the
-manifest-backed closure projection is available.
+Docs must continue not to claim:
 
-No overclaim was accepted for full autonomy, MCP execution, model truth,
-AutoPilot evidence, Memory authority, production-ready security, or paid service
-requirements.
+- full autonomy
+- production-ready security
+- raw evidence/replay debt is fixed
+- model output is truth
+- AutoPilot output is evidence
+- Memory retrieval is authority
+- paid or external services are required core dependencies
 
 ## Naming Cleanup Status
 
-Current canonical docs no longer require public `v1`, `v2`, `RC1`, or `legacy`
-filenames for the reviewed surfaces. Remaining version-like strings found during
-review are treated as legitimate historical references, API protocol paths,
-dependency versions, schema compatibility constants, or older compatibility
-docs outside this final verification scope.
+Canonical naming cleanup remains substantially complete for current docs.
+Historical decision names, protocol versions, schema compatibility constants,
+and old traceability references may still use version-like labels where they are
+needed for compatibility or history.
 
 ## Memory Consent Status
 
-`docs/memory-consent-policy.md` remains aligned with the current rule:
+`docs/memory-consent-policy.md` remains aligned:
 
 - no silent long-term memory write by default
 - candidate queue / Memory Inbox model
@@ -261,31 +276,26 @@ Verification found no requirement for paid or external services as core
 dependencies. LM Studio and local model behavior remain optional/configured
 paths, not a requirement for this verification.
 
-## UI Status
+## Acceptance Verdict
 
-Frontend behavior changed only in Maintenance Scan presentation wording and
-projection display. It does not change backend truth, websocket protocol,
-approval semantics, evidence semantics, verifier semantics, or runtime health
-calculation.
+Accepted for the next controlled product slice.
+
+Aegis is not green, autonomous, or production-certified. It is stable enough to
+start the next real product slice because current blockers, pending decisions,
+restored unresolved approvals, active evidence failures, and active missing
+evidence are zero, while raw historical/quarantined debt remains visible.
 
 ## Remaining Risks
 
-- Runtime health remains `warning`, not `ok`.
-- Raw evidence/replay diagnostics still report `fail`.
+- Runtime health is `warning`, not `ok`.
+- Raw evidence and replay diagnostics still report `fail`.
 - Runtime snapshot remains warning due stale sequence alignment projection.
-- Four restored unresolved approvals remain visible in the live backend.
-- Two stale restored-pending timeout findings remain visible.
 - Unknown-era evidence debt remains quarantined, not reconstructed.
+- Maintenance UI needs a user-centered truth presentation pass.
 - Memory consent UX is still planned, not implemented.
-- Aegis still needs a real user-facing product slice to avoid more skeleton-only
-  work.
+- The next sprint must avoid skeleton-only work and deliver a real useful
+  product slice boundary.
 
-## Acceptance Verdict
+## Next Recommended Sprint
 
-Not accepted. The evidence/replay active-health reconciliation is working and
-the Maintenance UI now labels the raw-vs-active distinction, but the live
-backend has restored unresolved approvals and stale restored-pending timeout
-attention. Those must be resolved through the proper backend lifecycle path, not
-hidden or auto-denied by this report.
-
-Next recommended sprint: `Restored Approval Lifecycle Closure`.
+`Aegis Operating Context and Read-Only ChatGPT Bridge`

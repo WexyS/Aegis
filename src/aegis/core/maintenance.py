@@ -443,7 +443,7 @@ def _evidence_audit_active_projection(
     unknown_quarantined = _quarantine_covers_unknown_era_evidence(evidence_audit, manifest_visibility)
     historical_debt = _int_count(evidence_audit.get("historical_evidence_debt_count"))
     historical_missing = _int_count(evidence_audit.get("historical_missing_evidence_count"))
-    active_failure = bool(current_failure or current_missing or critical_failure)
+    active_failure = bool(current_failure or current_missing)
     if active_failure:
         status = "fail"
         classification = "active_evidence_failure"

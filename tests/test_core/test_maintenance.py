@@ -27,6 +27,7 @@ def _evidence_audit_stub(
     current: int = 0,
     historical: int = 0,
     unknown: int = 0,
+    critical: int = 0,
     current_missing: int = 0,
     historical_missing: int = 0,
     unknown_missing: int = 0,
@@ -50,7 +51,7 @@ def _evidence_audit_stub(
         "check_pass_count": 0,
         "check_fail_count": 0,
         "check_unknown_count": 0,
-        "critical_failure_count": 0,
+        "critical_failure_count": critical,
         "critical_failures": [],
         "verification_counts": {},
         "verifier_counts": {},
@@ -813,6 +814,67 @@ def test_maintenance_closure_manifest_projection_keeps_quarantined_debt_visible_
         "manifest_backed_quarantined_replay_boundary"
     )
     assert report["checks"]["historical_debt_closure_manifest_store"]["status"] == "ok"
+
+
+def test_maintenance_manifest_backed_quarantine_does_not_treat_raw_critical_failures_as_active(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    _patch_closure_scan_dependencies(
+        monkeypatch,
+        tmp_path,
+        evidence=_evidence_audit_stub(status="fail", unknown=17, unknown_missing=13, critical=17),
+        replay_status="fail",
+        replay_classification="historical_mixed_sequence_eras_or_reset_boundaries",
+    )
+    store = {
+        "closure-plan-test": {
+            "status": "executed_manifest_only",
+            "plan_id": "closure-plan-test",
+            "required_gates": {
+                "replay_hash_chain": {
+                    "status": "not_required_for_manifest_only",
+                    "passed": True,
+                    "ref": "replay-gate-1",
+                },
+            },
+            "archive_manifest": {"status": "not_needed", "manifest_ref": "items-full-export"},
+            "quarantine_manifest": {
+                "status": "quarantined",
+                "unknown_era_evidence_issue_count": 25,
+                "unknown_era_missing_evidence_count": 19,
+                "manifest_ref": "items-full-export",
+                "unknown_era_reclassified": False,
+            },
+            "baseline": {"status": "clean_current_operational_baseline", "current_blocker_count": 0},
+        }
+    }
+
+    report = maintenance.run_read_only_maintenance_scan(
+        runtime_snapshot={
+            "session_id": "closure-raw-critical-quarantined",
+            "last_event_sequence": 0,
+            "queue_depth": 0,
+            "queue_capacity": 1,
+            "recovery_depth": 0,
+        },
+        websocket_clients=0,
+        closure_manifest_store=store,
+    )
+
+    projection = report["checks"]["foundation_closure_readiness"]["active_runtime_projections"][
+        "evidence_audit"
+    ]
+
+    assert projection["raw_status"] == "fail"
+    assert projection["critical_failure_count"] == 17
+    assert projection["active_evidence_failure_count"] == 0
+    assert projection["active_missing_evidence_count"] == 0
+    assert projection["status"] == "warning"
+    assert projection["classification"] == "quarantined_or_archived_evidence_attention"
+    assert report["summary"]["component_statuses"]["evidence_audit"] == "warning"
+    assert "evidence_audit" not in report["summary"]["active_failure_components"]
+    assert report["summary"]["status"] == "warning"
 
 
 def test_maintenance_manifest_backed_projection_does_not_downgrade_active_replay_failure(monkeypatch, tmp_path) -> None:
