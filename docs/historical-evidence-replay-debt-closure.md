@@ -1,6 +1,6 @@
 # Historical Evidence Replay Debt Closure
 
-Decision: `HISTORICAL_EVIDENCE_REPLAY_DEBT_CLOSURE_BLOCKED_WITH_PLAN`
+Decision: `HISTORICAL_EVIDENCE_REPLAY_APPLY_GATE_READY_BUT_BLOCKED`
 
 Date: 2026-06-13
 
@@ -43,18 +43,32 @@ listing, and operator gates.
 
 ## Implementation Added
 
-This sprint added a dry-run closure planner:
+The closure work now has a dry-run planner, exact-item manifest contract, gate
+validators, and a manifest-only apply boundary:
 
 - module: `src/aegis/core/historical_debt_closure.py`
 - helper:
   `build_historical_evidence_replay_debt_closure_plan(...)`
+- item manifest:
+  `build_historical_debt_item_manifest(...)`
+- backup metadata:
+  `build_historical_debt_backup_manifest(...)`
+- replay/hash-chain gate:
+  `build_manifest_only_replay_hash_chain_gate(...)`
 - apply-readiness boundary:
   `evaluate_historical_evidence_replay_debt_closure_apply_readiness(...)`
+- manifest-only apply:
+  `apply_manifest_only_historical_evidence_replay_quarantine(...)`
 
-The helper consumes caller-supplied maintenance/evidence/replay metadata only.
-It does not read journals, write manifests, create archives, quarantine files,
-create a clean baseline, fabricate evidence, mark verifier success, or mutate
-runtime state.
+The helpers consume caller-supplied maintenance/evidence/replay metadata only
+unless the caller explicitly supplies a manifest store. They do not read
+journals, create backup artifacts, fabricate evidence, mark verifier success,
+rewrite replay history, or mutate original runtime stores.
+
+Manifest-only apply is intentionally narrow. It can write archive/quarantine
+and clean-current-baseline state only into a caller-supplied manifest store
+after every gate passes. Original journal, evidence, and replay stores remain
+untouched.
 
 The maintenance scan projection now explicitly separates:
 
@@ -63,9 +77,8 @@ The maintenance scan projection now explicitly separates:
 - quarantined unknown-era debt status
 - closure execution status
 
-Current output intentionally reports `not_archived`, `not_quarantined`, and
-`not_executed` until a future operator-approved execution sprint passes every
-gate.
+Current live output intentionally reports `not_archived`, `not_quarantined`,
+and `not_executed` because local apply remains blocked.
 
 ## Debt Classes
 
@@ -146,6 +159,9 @@ No closure execution is allowed until all gates pass:
 - no generated artifacts or secrets are staged
 - operator confirms no-suppression and no-guessing rules
 
+The operator confirmation must reference the exact dry-run plan id or backup
+id. A generic confirmation is not sufficient.
+
 ## No-Suppression Rule
 
 Maintenance scan must not hide:
@@ -194,21 +210,24 @@ debt.
 
 ## Current Closure Result
 
-Closure execution is blocked.
+The apply gate exists, but local apply remains blocked.
 
 Reasons:
 
 - replay diagnostics still fail
 - unknown-era evidence issues remain
 - unknown-era missing evidence remains
-- no backup manifest was created in this sprint
-- no restore/readback verification was performed
-- no replay/hash-chain closure verification was performed
-- no exact archive/quarantine manifest was written
-- no operator apply gate was executed
+- live evidence classification output lists only 20 action classifications
+  while unknown-era issue count is 25
+- exact item manifest is therefore incomplete for local apply
+- no runtime backup artifact was created in this sprint
+- no restore/readback verification artifact was created
+- no operator confirmation referencing the live plan id or backup id was
+  provided
+- no local manifest store apply was executed
 
 This is the correct result. The sprint produced a safe dry-run contract and
-reporting separation instead of pretending debt was closed.
+manifest-only apply gate instead of pretending debt was closed.
 
 ## Tests Added
 
@@ -217,11 +236,16 @@ Focused tests cover:
 - dry-run closure plan is non-mutating
 - closure blocks without backup, restore, replay/hash-chain, operator, and
   exact-item gates
+- exact item manifest is required and count mismatch blocks apply
 - unknown-era issues are not guessed away
 - missing evidence is not fabricated
+- replay/hash-chain unavailable does not pass silently
+- manifest-only replay gate can pass only with explicit untouched-store reason
+- operator confirmation must reference the plan id or backup id
 - current operational debt blocks closure projection
-- apply readiness remains fail-closed because mutation-bearing closure is not
-  implemented
+- manifest-only apply refuses without a supplied manifest store
+- manifest-only apply mutates only the supplied manifest store in synthetic
+  tests
 - maintenance scan exposes active, archived, quarantined, and not-executed
   closure state separately
 
@@ -246,8 +270,8 @@ Closure is accepted only when:
 This sprint did not:
 
 - archive or compact logs
-- write backup artifacts
-- write archive or quarantine manifests
+- write local runtime backup artifacts
+- write local runtime archive or quarantine artifacts
 - delete runtime journals
 - rewrite event sequences
 - repair hash-chain mismatches

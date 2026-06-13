@@ -287,10 +287,13 @@ Current closure tooling status:
 
 - `src/aegis/core/historical_debt_closure.py` projects a dry-run closure plan
   from supplied maintenance/evidence/replay metadata.
-- The dry-run helper performs no journal read, archive write, quarantine write,
-  evidence mutation, verifier success creation, or runtime health change.
-- The apply-readiness helper remains fail-closed because mutation-bearing
-  closure execution is not implemented.
+- The helper builds an exact-item manifest, validates backup/readback and
+  replay/hash-chain gates, and requires operator confirmation that references
+  the plan id or backup id.
+- Manifest-only apply can write archive/quarantine/baseline state only into a
+  caller-supplied manifest store after all gates pass.
+- Local runtime apply remains blocked because live evidence classifications are
+  not a complete exact-item manifest and no operator confirmation was supplied.
 - Maintenance scan now exposes active, archived, quarantined, and not-executed
   closure state separately.
 

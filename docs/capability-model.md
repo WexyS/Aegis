@@ -127,6 +127,10 @@ Aegis must block:
 - static Skill Registry metadata
 - proposal-only Bounded Agent Runtime
 
+Historical evidence/replay closure apply is currently limited to a
+caller-supplied manifest store after all gates pass. It is not journal rewrite,
+evidence repair, replay repair, or runtime health suppression.
+
 ## Future Capabilities
 
 Future capability work should add real product value in this order:
