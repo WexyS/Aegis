@@ -9,8 +9,10 @@ from aegis.core.historical_debt_closure import (
     build_historical_debt_backup_manifest,
     build_historical_debt_item_manifest,
     build_historical_evidence_replay_debt_closure_plan,
+    build_manifest_only_closure_backup_manifest,
     build_manifest_only_replay_hash_chain_gate,
     evaluate_historical_evidence_replay_debt_closure_apply_readiness,
+    verify_manifest_only_closure_backup_readback,
 )
 
 
@@ -39,14 +41,15 @@ def _scan(
         )
     listed_unknown = max(0, unknown - omitted)
     for index in range(listed_unknown):
+        missing_unknown = index < unknown_missing
         action_classifications.append(
             {
                 "action_id": f"unknown-{index}",
                 "status": "success",
-                "verification_state": "missing" if index < unknown_missing else "verified",
+                "verification_state": "missing" if missing_unknown else "unverified",
                 "era": "unknown_era",
                 "era_reason": "current session id unavailable",
-                "classes": ["unknown_era_missing_evidence"] if index < unknown_missing else ["unknown_era_verified"],
+                "classes": ["unknown_era_missing_evidence"] if missing_unknown else ["unknown_era_unverified_evidence"],
             }
         )
     return {
@@ -123,6 +126,43 @@ def _exact_manifest() -> dict:
     }
 
 
+def _scan_with_full_export() -> dict:
+    scan = _scan(historical=0, historical_missing=0, unknown=25, unknown_missing=19, omitted=5)
+    export_items = []
+    for index in range(25):
+        missing_unknown = index < 19
+        export_items.append(
+            {
+                "stable_classification_id": f"action:unknown-{index}",
+                "classification_index": index + 1,
+                "action_id": f"unknown-{index}",
+                "status": "success",
+                "verification_state": "missing" if missing_unknown else "unverified",
+                "era": "unknown_era",
+                "era_reason": "current session id unavailable",
+                "classes": ["unknown_era_missing_evidence"] if missing_unknown else ["unknown_era_unverified_evidence"],
+            }
+        )
+    scan["checks"]["evidence_audit"]["full_classification_export"] = {
+        "scan_version": "evidence-classification-export/1",
+        "read_only": True,
+        "mutation_performed": False,
+        "display_limit_applied": False,
+        "stable_item_ids": True,
+        "action_classification_count": 25,
+        "command_lifecycle_classification_count": 0,
+        "omitted_action_classification_count": 0,
+        "omitted_command_lifecycle_classification_count": 0,
+        "summary_counts": {
+            "unknown_era_evidence_issue_count": 25,
+            "unknown_era_missing_evidence_count": 19,
+        },
+        "action_classifications": export_items,
+        "command_lifecycle_classifications": [],
+    }
+    return scan
+
+
 def _backup() -> dict:
     return build_historical_debt_backup_manifest(
         backup_id="backup-1",
@@ -167,6 +207,19 @@ def test_item_manifest_omitted_classifications_block_exact_apply() -> None:
     assert manifest["valid"] is False
     assert "unknown_era_item_count_mismatch" in manifest["blockers"]
     assert "item_manifest_has_omitted_classifications" in manifest["blockers"]
+
+
+def test_item_manifest_uses_full_export_instead_of_capped_projection() -> None:
+    manifest = build_historical_debt_item_manifest(_scan_with_full_export(), manifest_id="items-full-export")
+
+    assert manifest["valid"] is True
+    assert manifest["classification_source"] == "full_classification_export"
+    assert manifest["display_limit_applied"] is False
+    assert manifest["item_count"] == 25
+    assert manifest["listed_counts"]["unknown_era"] == 25
+    assert manifest["listed_counts"]["missing_evidence"] == 19
+    assert manifest["omitted_action_classification_count"] == 0
+    assert manifest["blockers"] == []
 
 
 def test_dry_run_plan_is_non_mutating_and_blocks_without_gates() -> None:
@@ -229,6 +282,46 @@ def test_backup_and_readback_failures_block_apply() -> None:
     assert "backup_manifest_unverified" in plan["blocked_reasons"]
     assert "restore_readback_not_verified" in plan["blocked_reasons"]
     assert plan["status"] == "blocked_with_plan"
+
+
+def test_manifest_only_backup_readback_verifies_counts_and_hashes() -> None:
+    scan = _scan_with_full_export()
+    item_manifest = build_historical_debt_item_manifest(scan, manifest_id="items-full-export")
+    backup = build_manifest_only_closure_backup_manifest(
+        backup_id="manifest-only-backup-1",
+        source_refs=[{"kind": "maintenance_scan", "ref": "scan-projection"}],
+        item_manifest=item_manifest,
+        maintenance_scan=scan,
+        manifest_store_ref="ignored-runtime-manifest-store",
+    )
+
+    readback = verify_manifest_only_closure_backup_readback(
+        backup,
+        item_manifest=item_manifest,
+        maintenance_scan=scan,
+        manifest_store_ref="ignored-runtime-manifest-store",
+    )
+    tampered = verify_manifest_only_closure_backup_readback(
+        {
+            **backup,
+            "content_hashes": {
+                **backup["content_hashes"],
+                "item_manifest_sha256": "sha256:tampered",
+            },
+        },
+        item_manifest=item_manifest,
+        maintenance_scan=scan,
+        manifest_store_ref="ignored-runtime-manifest-store",
+    )
+
+    assert backup["manifest_only_write"] is True
+    assert backup["original_stores_read_only"] is True
+    assert backup["writes_original_stores"] is False
+    assert backup["manifest_store_git_tracked"] is False
+    assert readback["status"] == "passed"
+    assert readback["verified"] is True
+    assert tampered["verified"] is False
+    assert "item_manifest_hash_mismatch" in tampered["blockers"]
 
 
 def test_replay_hash_chain_unavailable_does_not_pass_silently() -> None:
@@ -300,6 +393,59 @@ def test_all_gates_allow_readiness_but_apply_requires_manifest_store() -> None:
     assert blocked_apply["apply_allowed"] is False
     assert "manifest_store_missing" in blocked_apply["blocked_reasons"]
     assert blocked_apply["mutation_performed"] is False
+
+
+def test_full_export_backup_readback_and_operator_gate_allow_manifest_only_apply() -> None:
+    scan = _scan_with_full_export()
+    item_manifest = build_historical_debt_item_manifest(scan, manifest_id="items-full-export")
+    backup = build_manifest_only_closure_backup_manifest(
+        backup_id="manifest-only-backup-1",
+        source_refs=[{"kind": "maintenance_scan", "ref": "scan-projection"}],
+        item_manifest=item_manifest,
+        maintenance_scan=scan,
+        manifest_store_ref="ignored-runtime-manifest-store",
+    )
+    readback = verify_manifest_only_closure_backup_readback(
+        backup,
+        item_manifest=item_manifest,
+        maintenance_scan=scan,
+        manifest_store_ref="ignored-runtime-manifest-store",
+    )
+    replay_gate = _replay_gate()
+    provisional = build_historical_evidence_replay_debt_closure_plan(
+        scan,
+        exact_item_manifest=item_manifest,
+        backup_manifest=backup,
+        restore_verification=readback,
+        replay_hash_chain_verification=replay_gate,
+    )
+    plan = build_historical_evidence_replay_debt_closure_plan(
+        scan,
+        exact_item_manifest=item_manifest,
+        backup_manifest=backup,
+        restore_verification=readback,
+        replay_hash_chain_verification=replay_gate,
+        operator_confirmation={"status": "confirmed", "plan_id": provisional["plan_id"]},
+    )
+    store: dict = {}
+
+    result = apply_manifest_only_historical_evidence_replay_quarantine(
+        plan,
+        apply_requested=True,
+        manifest_store=store,
+    )
+
+    assert plan["status"] == "ready_for_manifest_only_apply"
+    assert plan["required_gates"]["backup_manifest"]["manifest_only_scope"] is True
+    assert plan["required_gates"]["restore_readback"]["passed"] is True
+    assert result["status"] == "executed_manifest_only"
+    assert result["original_journal_store_touched"] is False
+    assert result["original_evidence_store_touched"] is False
+    assert result["original_replay_state_touched"] is False
+    assert result["quarantine_manifest"]["unknown_era_evidence_issue_count"] == 25
+    assert result["quarantine_manifest"]["unknown_era_missing_evidence_count"] == 19
+    assert result["quarantine_manifest"]["manifest_ref"] == "items-full-export"
+    assert plan["plan_id"] in store
 
 
 def test_manifest_only_apply_writes_only_supplied_manifest_store() -> None:

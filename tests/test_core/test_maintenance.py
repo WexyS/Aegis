@@ -718,6 +718,83 @@ def test_maintenance_closure_readiness_does_not_guess_unknown_era(monkeypatch, t
     assert "Unknown-era evidence issues require operator attention" in closure["recommendation"]
 
 
+def test_maintenance_closure_manifest_projection_keeps_quarantined_debt_visible_without_greenwash(monkeypatch, tmp_path) -> None:
+    _patch_closure_scan_dependencies(
+        monkeypatch,
+        tmp_path,
+        evidence=_evidence_audit_stub(status="warning", unknown=25, unknown_missing=19),
+        replay_status="fail",
+        replay_classification="historical_mixed_sequence_eras_or_reset_boundaries",
+    )
+    store = {
+        "closure-plan-test": {
+            "apply_version": "historical-evidence-replay-debt-quarantine-apply/1",
+            "status": "executed_manifest_only",
+            "plan_id": "closure-plan-test",
+            "required_gates": {
+                "backup_manifest": {"status": "verified", "passed": True, "ref": "backup-1"},
+                "restore_readback": {"status": "passed", "passed": True, "ref": "readback-1"},
+                "replay_hash_chain": {
+                    "status": "not_required_for_manifest_only",
+                    "passed": True,
+                    "ref": "replay-gate-1",
+                },
+                "operator_confirmation": {"status": "confirmed", "passed": True, "ref": "operator-1"},
+            },
+            "archive_manifest": {
+                "status": "not_needed",
+                "historical_evidence_debt_count": 0,
+                "historical_missing_evidence_count": 0,
+                "manifest_ref": "items-full-export",
+                "archive_created": False,
+            },
+            "quarantine_manifest": {
+                "status": "quarantined",
+                "unknown_era_evidence_issue_count": 25,
+                "unknown_era_missing_evidence_count": 19,
+                "manifest_ref": "items-full-export",
+                "unknown_era_reclassified": False,
+                "must_remain_inspectable": True,
+            },
+            "baseline": {
+                "status": "clean_current_operational_baseline",
+                "current_blocker_count": 0,
+                "runtime_health_greenwashed": False,
+            },
+        }
+    }
+
+    report = maintenance.run_read_only_maintenance_scan(
+        runtime_snapshot={
+            "session_id": "closure-quarantine-projection",
+            "last_event_sequence": 0,
+            "queue_depth": 0,
+            "queue_capacity": 1,
+            "recovery_depth": 0,
+        },
+        websocket_clients=0,
+        closure_manifest_store=store,
+    )
+
+    closure = report["checks"]["foundation_closure_readiness"]
+
+    assert closure["closure_execution_status"] == "executed_manifest_only"
+    assert closure["closure_plan_id"] == "closure-plan-test"
+    assert closure["quarantined_unknown_era_debt"] == {
+        "status": "quarantined",
+        "unknown_era_evidence_issue_count": 25,
+        "unknown_era_missing_evidence_count": 19,
+        "manifest_ref": "items-full-export",
+        "quarantine_created": True,
+        "unknown_era_reclassified": False,
+    }
+    assert closure["closure_gate_statuses"]["backup_manifest"]["passed"] is True
+    assert closure["replay_diagnostics_status"] == "fail"
+    assert report["summary"]["status"] == "fail"
+    assert report["summary"]["component_statuses"]["replay_diagnostics"] == "fail"
+    assert report["checks"]["historical_debt_closure_manifest_store"]["status"] == "ok"
+
+
 def test_workspace_directory_report_is_read_only_and_evidence_backed(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(maintenance, "PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(maintenance_actions, "PROJECT_ROOT", tmp_path)

@@ -1,6 +1,6 @@
 # Historical Evidence Replay Debt Closure
 
-Decision: `HISTORICAL_EVIDENCE_REPLAY_APPLY_GATE_READY_BUT_BLOCKED`
+Decision: `HISTORICAL_EVIDENCE_REPLAY_QUARANTINE_APPLIED`
 
 Date: 2026-06-13
 
@@ -53,6 +53,10 @@ validators, and a manifest-only apply boundary:
   `build_historical_debt_item_manifest(...)`
 - backup metadata:
   `build_historical_debt_backup_manifest(...)`
+- manifest-only backup metadata:
+  `build_manifest_only_closure_backup_manifest(...)`
+- manifest-only backup readback:
+  `verify_manifest_only_closure_backup_readback(...)`
 - replay/hash-chain gate:
   `build_manifest_only_replay_hash_chain_gate(...)`
 - apply-readiness boundary:
@@ -64,6 +68,12 @@ The helpers consume caller-supplied maintenance/evidence/replay metadata only
 unless the caller explicitly supplies a manifest store. They do not read
 journals, create backup artifacts, fabricate evidence, mark verifier success,
 rewrite replay history, or mutate original runtime stores.
+
+The evidence audit now exposes an explicit full classification export for
+closure planning. The normal classification projection can remain display
+capped, but closure item manifests use `full_classification_export` when it is
+available. That export is deterministic, uncapped for closure use, includes
+stable classification ids, and reports zero omitted classifications.
 
 Manifest-only apply is intentionally narrow. It can write archive/quarantine
 and clean-current-baseline state only into a caller-supplied manifest store
@@ -78,7 +88,8 @@ The maintenance scan projection now explicitly separates:
 - closure execution status
 
 Current live output intentionally reports `not_archived`, `not_quarantined`,
-and `not_executed` because local apply remains blocked.
+and `not_executed` unless a manifest-only closure record is supplied to the
+maintenance scan projection.
 
 ## Debt Classes
 
@@ -118,9 +129,12 @@ These must not be fabricated:
 The correct closure model has four durable parts:
 
 1. Backup snapshot
-   - Copy journal, evidence, runtime metadata, and relevant config into an
-     operator-approved backup location.
-   - Record file sizes and hashes.
+   - For destructive closure, copy journal, evidence, runtime metadata, and
+     relevant config into an operator-approved backup location.
+   - For manifest-only closure, backup scope can be limited to closure input
+     metadata, the full classification export, the exact item manifest, the
+     maintenance scan projection, and the manifest store target.
+   - Record deterministic hashes over the supplied metadata.
    - Do not mutate source files during backup verification.
 
 2. Archived legacy manifest
@@ -148,8 +162,9 @@ No closure execution is allowed until all gates pass:
 
 - operator confirms closure scope
 - backup path is explicit and project-approved
-- backup manifest is written and hashes are recorded
-- restore/readback verification passes in an isolated location
+- backup manifest exists and hashes are recorded
+- readback verification proves item counts, hashes, and manifest-store target
+  metadata match
 - replay/hash-chain verification passes or records exact irreparable gaps
 - exact historical and unknown-era items are listed
 - current pending approvals are zero or explicitly preserved
@@ -210,24 +225,58 @@ debt.
 
 ## Current Closure Result
 
-The apply gate exists, but local apply remains blocked.
+The previous apply blocker was the display cap leaking into the closure item
+manifest path. The live maintenance evidence audit counted:
 
-Reasons:
+- unknown-era evidence issue count: `25`
+- unknown-era missing evidence count: `19`
 
-- replay diagnostics still fail
-- unknown-era evidence issues remain
-- unknown-era missing evidence remains
-- live evidence classification output lists only 20 action classifications
-  while unknown-era issue count is 25
-- exact item manifest is therefore incomplete for local apply
-- no runtime backup artifact was created in this sprint
-- no restore/readback verification artifact was created
-- no operator confirmation referencing the live plan id or backup id was
-  provided
-- no local manifest store apply was executed
+but the display projection exposed only `20` action classifications. That was a
+display/projection cap, not a safe exact manifest.
 
-This is the correct result. The sprint produced a safe dry-run contract and
-manifest-only apply gate instead of pretending debt was closed.
+Current implementation state:
+
+- full classification export is available for closure planning
+- display-capped classification output is no longer used as the exact closure
+  manifest source when the full export exists
+- manifest-only backup/readback metadata can prove counts and deterministic
+  hashes over the closure inputs
+- replay/hash-chain rewrite verification can be marked not required only for
+  manifest-only apply with original stores untouched and an explicit reason
+- maintenance scan can consume a supplied manifest-only closure store and keep
+  archived/quarantined debt visible
+- runtime health is still based on active component status and is not greenwashed
+  by archive/quarantine visibility
+
+The local live apply for this sprint passed the manifest-only gates and wrote
+an ignored runtime manifest at
+`logs/archive/historical-evidence-replay-quarantine-manifest.json`.
+
+Live apply summary:
+
+- plan id:
+  `closure-plan-maintenance-scan/1-live-full-export-items-live-manifest-only-backup-0-0-25-19`
+- exact closure item count: `25`
+- source action classification count: `50`
+- non-issue classification count excluded from closure manifest: `25`
+- unknown-era issue items: `25`
+- unknown-era missing evidence items: `19`
+- historical archive count: `0`
+- backup status: `verified`
+- readback status: `passed`
+- replay/hash-chain gate: `not_required_for_manifest_only`
+- operator confirmation: `confirmed` with plan id
+- original journal/evidence/replay stores touched: no
+- archive/quarantine manifest created: yes
+- clean current operational baseline created: yes, only for current blocker
+  separation
+- runtime health after apply: `fail`
+- remaining visible runtime attention: evidence audit, runtime snapshot, replay
+  diagnostics
+
+This is not evidence repair. Original journal, evidence, and replay stores
+remain untouched, missing evidence remains missing, and unknown-era items remain
+quarantined rather than fixed.
 
 ## Tests Added
 
@@ -248,6 +297,11 @@ Focused tests cover:
   tests
 - maintenance scan exposes active, archived, quarantined, and not-executed
   closure state separately
+- full evidence classification export is uncapped and carries stable item ids
+- closure manifests prefer the full export over display-capped projections
+- manifest-only backup readback verifies counts and deterministic hashes
+- maintenance scan can expose supplied manifest-only archive/quarantine records
+  without greenwashing replay failure
 
 ## Acceptance Criteria
 
@@ -270,8 +324,6 @@ Closure is accepted only when:
 This sprint did not:
 
 - archive or compact logs
-- write local runtime backup artifacts
-- write local runtime archive or quarantine artifacts
 - delete runtime journals
 - rewrite event sequences
 - repair hash-chain mismatches

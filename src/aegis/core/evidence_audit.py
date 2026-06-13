@@ -39,6 +39,7 @@ CRITICAL_CHECKS_BY_ACTION = {
 }
 
 EVIDENCE_CLASSIFICATION_VERSION = "evidence-classification/1"
+EVIDENCE_CLASSIFICATION_EXPORT_VERSION = "evidence-classification-export/1"
 NEGATIVE_EVIDENCE_VERIFIER = "executor-negative-evidence/1"
 UNKNOWN_ERA = "unknown_era"
 CURRENT_ERA = "current_session"
@@ -95,6 +96,8 @@ def audit_action_evidence(
     events: Iterable[Mapping[str, Any]],
     *,
     limit: int = 50,
+    classification_display_limit: int | None = 20,
+    include_full_classification_export: bool = False,
     session_id: str | None = None,
     include_historical: bool = False,
     commands_snapshot: Mapping[str, Any] | None = None,
@@ -245,6 +248,16 @@ def audit_action_evidence(
         current_session_id=session_id,
         replay_context=replay_context,
     )
+    full_action_classifications = _with_stable_classification_ids(
+        action_classifications,
+        source="action",
+        identity_field="action_id",
+    )
+    full_command_lifecycle_classifications = _with_stable_classification_ids(
+        command_lifecycle_classifications,
+        source="command",
+        identity_field="command_id",
+    )
     command_unverified_by_era = Counter(
         item["era"] for item in command_lifecycle_classifications
     )
@@ -274,6 +287,34 @@ def audit_action_evidence(
     current_unverified_completed = command_unverified_by_era[CURRENT_ERA]
     historical_unverified_completed = command_unverified_by_era[HISTORICAL_ERA]
     unknown_unverified_completed = command_unverified_by_era[UNKNOWN_ERA]
+
+    display_action_classifications = _display_classifications(
+        full_action_classifications,
+        limit=classification_display_limit,
+    )
+    display_command_lifecycle_classifications = _display_classifications(
+        full_command_lifecycle_classifications,
+        limit=classification_display_limit,
+    )
+    omitted_action_count = _omitted_classification_count(
+        full_action_classifications,
+        limit=classification_display_limit,
+    )
+    omitted_command_count = _omitted_classification_count(
+        full_command_lifecycle_classifications,
+        limit=classification_display_limit,
+    )
+    summary_counts = {
+        "current_evidence_failure_count": era_issue_counts[CURRENT_ERA],
+        "current_missing_evidence_count": current_missing,
+        "historical_evidence_debt_count": era_issue_counts[HISTORICAL_ERA],
+        "historical_missing_evidence_count": historical_missing,
+        "unknown_era_evidence_issue_count": era_issue_counts[UNKNOWN_ERA],
+        "unknown_era_missing_evidence_count": unknown_missing,
+        "current_unverified_completed_count": current_unverified_completed,
+        "historical_unverified_completed_count": historical_unverified_completed,
+        "unknown_era_unverified_completed_count": unknown_unverified_completed,
+    }
 
     classification = {
         "scan_version": EVIDENCE_CLASSIFICATION_VERSION,
@@ -308,13 +349,19 @@ def audit_action_evidence(
             "Historical evidence debt remains visible and requires a separate hygiene/classification flow.",
             "Unknown-era evidence issues remain non-success until source or session evidence is available.",
         ],
-        "action_classifications": action_classifications[:20],
-        "command_lifecycle_classifications": command_lifecycle_classifications[:20],
-        "omitted_action_classification_count": max(0, len(action_classifications) - 20),
-        "omitted_command_lifecycle_classification_count": max(0, len(command_lifecycle_classifications) - 20),
+        "display_limit": classification_display_limit,
+        "display_limit_applied": classification_display_limit is not None,
+        "full_classification_export_available": include_full_classification_export,
+        "action_classification_count": len(full_action_classifications),
+        "command_lifecycle_classification_count": len(full_command_lifecycle_classifications),
+        "summary_counts": dict(summary_counts),
+        "action_classifications": display_action_classifications,
+        "command_lifecycle_classifications": display_command_lifecycle_classifications,
+        "omitted_action_classification_count": omitted_action_count,
+        "omitted_command_lifecycle_classification_count": omitted_command_count,
     }
 
-    return {
+    report = {
         "scan_version": "evidence-audit/2",
         "read_only": True,
         "status": status,
@@ -353,6 +400,35 @@ def audit_action_evidence(
         "mutation_performed": False,
         "classification": classification,
     }
+    if include_full_classification_export:
+        report["full_classification_export"] = {
+            "scan_version": EVIDENCE_CLASSIFICATION_EXPORT_VERSION,
+            "read_only": True,
+            "mutation_performed": False,
+            "export_scope": "closure_planning",
+            "scope": classification["scope"],
+            "current_session_id": session_id,
+            "display_limit_applied": False,
+            "deterministic_order": "projected_action_timeline_then_command_lifecycle_records",
+            "stable_item_ids": True,
+            "action_classification_count": len(full_action_classifications),
+            "command_lifecycle_classification_count": len(full_command_lifecycle_classifications),
+            "omitted_action_classification_count": 0,
+            "omitted_command_lifecycle_classification_count": 0,
+            "summary_counts": dict(summary_counts),
+            "count_reconciliation": {
+                "classification_lists_uncapped": True,
+                "summary_counts_source": "full_action_and_command_lifecycle_classification_pass",
+                "item_manifest_guidance": (
+                    "Closure manifests must derive from this uncapped export, not from display-capped "
+                    "classification projections. Unknown-era and missing-evidence items remain inspectable."
+                ),
+            },
+            "replay_context": replay_context,
+            "action_classifications": full_action_classifications,
+            "command_lifecycle_classifications": full_command_lifecycle_classifications,
+        }
+    return report
 
 
 def _action_event_index(events: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -517,6 +593,41 @@ def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [dict(item) for item in value if isinstance(item, Mapping)]
+
+
+def _with_stable_classification_ids(
+    items: list[dict[str, Any]],
+    *,
+    source: str,
+    identity_field: str,
+) -> list[dict[str, Any]]:
+    stable_items: list[dict[str, Any]] = []
+    for index, item in enumerate(items, start=1):
+        data = dict(item)
+        identity = str(data.get(identity_field) or "").strip()
+        if not identity:
+            identity = f"unknown-{source}-{index}"
+        data["stable_classification_id"] = f"{source}:{identity}"
+        data["classification_index"] = index
+        stable_items.append(data)
+    return stable_items
+
+
+def _display_classifications(
+    items: list[dict[str, Any]],
+    *,
+    limit: int | None,
+) -> list[dict[str, Any]]:
+    if limit is None:
+        return [dict(item) for item in items]
+    bounded_limit = max(int(limit), 0)
+    return [dict(item) for item in items[:bounded_limit]]
+
+
+def _omitted_classification_count(items: list[dict[str, Any]], *, limit: int | None) -> int:
+    if limit is None:
+        return 0
+    return max(0, len(items) - max(int(limit), 0))
 
 
 def _string_or_none(value: Any) -> str | None:

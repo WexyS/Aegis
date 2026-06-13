@@ -287,15 +287,23 @@ Current closure tooling status:
 
 - `src/aegis/core/historical_debt_closure.py` projects a dry-run closure plan
   from supplied maintenance/evidence/replay metadata.
-- The helper builds an exact-item manifest, validates backup/readback and
+- The helper builds an exact-item manifest from the full uncapped evidence
+  classification export when available, validates backup/readback and
   replay/hash-chain gates, and requires operator confirmation that references
   the plan id or backup id.
 - Manifest-only apply can write archive/quarantine/baseline state only into a
   caller-supplied manifest store after all gates pass.
-- Local runtime apply remains blocked because live evidence classifications are
-  not a complete exact-item manifest and no operator confirmation was supplied.
+- Local runtime apply remains a gated operation; display-capped evidence
+  projections are no longer accepted as the exact closure manifest source when
+  the full export exists.
 - Maintenance scan now exposes active, archived, quarantined, and not-executed
-  closure state separately.
+  closure state separately, and can project a supplied manifest-only closure
+  store without changing runtime health semantics.
+- A local manifest-only quarantine apply has been performed for the 25
+  unknown-era evidence issues and 19 unknown-era missing evidence items. The
+  ignored runtime manifest remains outside Git, original stores were untouched,
+  and runtime health remains failure-visible while replay/runtime/evidence
+  diagnostics still require attention.
 
 ## Memory Consent Policy Summary
 

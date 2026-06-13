@@ -128,8 +128,9 @@ Aegis must block:
 - proposal-only Bounded Agent Runtime
 
 Historical evidence/replay closure apply is currently limited to a
-caller-supplied manifest store after all gates pass. It is not journal rewrite,
-evidence repair, replay repair, or runtime health suppression.
+caller-supplied manifest store after all gates pass. It uses the full uncapped
+classification export for exact item manifests when available. It is not
+journal rewrite, evidence repair, replay repair, or runtime health suppression.
 
 ## Future Capabilities
 

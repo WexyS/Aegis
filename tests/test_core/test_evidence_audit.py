@@ -380,3 +380,34 @@ def test_evidence_audit_does_not_guess_unknown_era_unverified_completed() -> Non
     command_classification = report["classification"]["command_lifecycle_classifications"][0]
     assert command_classification["era"] == "unknown_era"
     assert "unknown_era_unverified_completed" in command_classification["classes"]
+
+
+def test_full_classification_export_is_uncapped_and_stable_for_closure() -> None:
+    events = [
+        create_event(
+            ProtocolEventType.ACTION_COMPLETED,
+            {"action_id": f"unknown-missing-{index}", "success": True},
+        ).to_dict()
+        for index in range(25)
+    ]
+
+    report = audit_action_evidence(
+        events,
+        include_historical=True,
+        include_full_classification_export=True,
+    )
+
+    display = report["classification"]
+    export = report["full_classification_export"]
+    assert display["action_classification_count"] == 25
+    assert len(display["action_classifications"]) == 20
+    assert display["omitted_action_classification_count"] == 5
+    assert export["display_limit_applied"] is False
+    assert export["action_classification_count"] == 25
+    assert len(export["action_classifications"]) == 25
+    assert export["omitted_action_classification_count"] == 0
+    assert export["summary_counts"]["unknown_era_evidence_issue_count"] == 25
+    assert export["summary_counts"]["unknown_era_missing_evidence_count"] == 25
+    assert export["action_classifications"][0]["stable_classification_id"] == "action:unknown-missing-0"
+    assert export["action_classifications"][-1]["stable_classification_id"] == "action:unknown-missing-24"
+    assert report["mutation_performed"] is False

@@ -95,7 +95,7 @@ Aegis should work without paid services as the default product posture.
 | Skill Registry | Implemented static metadata catalog | No skill execution endpoint. |
 | Bounded Agent Runtime | Implemented proposal-only sessions | No tool, MCP, shell, model completion, or memory write from agents. |
 | Frontend | Implemented operational shell | Presentation only; no frontend authority. |
-| Historical debt closure | Planned | No archive/compaction execution yet. |
+| Historical debt closure | Manifest-only quarantine applied | Unknown-era debt can be quarantined in an ignored manifest store; no journal/evidence/replay repair or archive/compaction execution. |
 
 ## Current Limitations
 

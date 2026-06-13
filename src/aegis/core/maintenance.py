@@ -135,6 +135,8 @@ def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
     process_resources = checks["process_resources"]
     network_ports = checks["network_ports"]
     app_discovery = checks["app_discovery"]
+    closure_manifest_store = checks.get("historical_debt_closure_manifest_store")
+    closure_manifest_store = closure_manifest_store if isinstance(closure_manifest_store, dict) else {}
 
     current_evidence_failure_count = _int_count(evidence_audit.get("current_evidence_failure_count"))
     current_missing_evidence_count = _int_count(evidence_audit.get("current_missing_evidence_count"))
@@ -211,6 +213,7 @@ def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
         runtime_timeout_blocker_count=runtime_timeout_blocker_count,
         system_resource_warning_count=system_resource_warning_count,
     )
+    manifest_visibility = _closure_manifest_visibility(closure_manifest_store)
 
     return {
         "scan_version": CLOSURE_READINESS_VERSION,
@@ -238,22 +241,12 @@ def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
             "pending_decision_blocker_count": pending_decision_blocker_count,
             "runtime_timeout_blocker_count": runtime_timeout_blocker_count,
         },
-        "archived_historical_debt": {
-            "status": "not_archived",
-            "historical_evidence_debt_count": 0,
-            "historical_missing_evidence_count": 0,
-            "manifest_ref": None,
-            "archive_created": False,
-        },
-        "quarantined_unknown_era_debt": {
-            "status": "not_quarantined",
-            "unknown_era_evidence_issue_count": 0,
-            "unknown_era_missing_evidence_count": 0,
-            "manifest_ref": None,
-            "quarantine_created": False,
-            "unknown_era_reclassified": False,
-        },
-        "closure_execution_status": "not_executed",
+        "archived_historical_debt": manifest_visibility["archived_historical_debt"],
+        "quarantined_unknown_era_debt": manifest_visibility["quarantined_unknown_era_debt"],
+        "closure_execution_status": manifest_visibility["closure_execution_status"],
+        "closure_plan_id": manifest_visibility["closure_plan_id"],
+        "closure_gate_statuses": manifest_visibility["closure_gate_statuses"],
+        "closure_remaining_blockers": manifest_visibility["remaining_blockers"],
         "replay_historical_debt_present": replay_historical_debt_present,
         "replay_diagnostics_status": replay_status,
         "replay_boundary_classification": replay_classification,
@@ -279,6 +272,86 @@ def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
             "Maintenance scan performed no mutation and did not resolve approvals, rewrite evidence, or alter journal history.",
             "Foundation release tagging should be a later explicit operator action.",
         ],
+    }
+
+
+def _closure_manifest_store_projection(store: dict[str, Any] | None) -> dict[str, Any]:
+    records = store if isinstance(store, dict) else {}
+    entries = []
+    for plan_id in sorted(str(key) for key in records):
+        record = records.get(plan_id)
+        if isinstance(record, dict):
+            entries.append({"plan_id": plan_id, "record": dict(record)})
+    latest = entries[-1] if entries else {}
+    return {
+        "scan_version": "historical-debt-closure-manifest-store-projection/1",
+        "read_only": True,
+        "mutation_performed": False,
+        "status": "ok" if entries else "unknown",
+        "entry_count": len(entries),
+        "latest_plan_id": latest.get("plan_id"),
+        "latest_record": latest.get("record"),
+    }
+
+
+def _closure_manifest_visibility(projection: dict[str, Any]) -> dict[str, Any]:
+    record = projection.get("latest_record") if isinstance(projection.get("latest_record"), dict) else {}
+    archive = record.get("archive_manifest") if isinstance(record.get("archive_manifest"), dict) else {}
+    quarantine = record.get("quarantine_manifest") if isinstance(record.get("quarantine_manifest"), dict) else {}
+    gates = record.get("required_gates") if isinstance(record.get("required_gates"), dict) else {}
+    gate_statuses = {
+        str(name): {
+            "status": gate.get("status"),
+            "passed": gate.get("passed"),
+            "ref": gate.get("ref"),
+        }
+        for name, gate in gates.items()
+        if isinstance(gate, dict)
+    }
+    if record:
+        archived = {
+            "status": str(archive.get("status") or "not_archived"),
+            "historical_evidence_debt_count": _int_count(archive.get("historical_evidence_debt_count")),
+            "historical_missing_evidence_count": _int_count(archive.get("historical_missing_evidence_count")),
+            "manifest_ref": archive.get("manifest_ref"),
+            "archive_created": archive.get("status") == "archived",
+        }
+        quarantined = {
+            "status": str(quarantine.get("status") or "not_quarantined"),
+            "unknown_era_evidence_issue_count": _int_count(quarantine.get("unknown_era_evidence_issue_count")),
+            "unknown_era_missing_evidence_count": _int_count(quarantine.get("unknown_era_missing_evidence_count")),
+            "manifest_ref": quarantine.get("manifest_ref"),
+            "quarantine_created": quarantine.get("status") == "quarantined",
+            "unknown_era_reclassified": quarantine.get("unknown_era_reclassified") is True,
+        }
+        return {
+            "archived_historical_debt": archived,
+            "quarantined_unknown_era_debt": quarantined,
+            "closure_execution_status": str(record.get("status") or "executed_manifest_only"),
+            "closure_plan_id": record.get("plan_id"),
+            "closure_gate_statuses": gate_statuses,
+            "remaining_blockers": [],
+        }
+    return {
+        "archived_historical_debt": {
+            "status": "not_archived",
+            "historical_evidence_debt_count": 0,
+            "historical_missing_evidence_count": 0,
+            "manifest_ref": None,
+            "archive_created": False,
+        },
+        "quarantined_unknown_era_debt": {
+            "status": "not_quarantined",
+            "unknown_era_evidence_issue_count": 0,
+            "unknown_era_missing_evidence_count": 0,
+            "manifest_ref": None,
+            "quarantine_created": False,
+            "unknown_era_reclassified": False,
+        },
+        "closure_execution_status": "not_executed",
+        "closure_plan_id": None,
+        "closure_gate_statuses": {},
+        "remaining_blockers": [],
     }
 
 
@@ -403,6 +476,7 @@ def _read_only_contract() -> dict[str, Any]:
             "network_port_snapshot",
             "workspace_directory_snapshot",
             "foundation_closure_readiness_projection",
+            "historical_debt_closure_manifest_projection",
         ],
         "allowed_ephemeral_state": [
             "last_maintenance_scan_cache",
@@ -928,6 +1002,7 @@ def run_read_only_maintenance_scan(
     websocket_clients: int | None = None,
     queue_depth: int | None = None,
     queue_capacity: int | None = None,
+    closure_manifest_store: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Read-only health report for runtime maintenance v1."""
     global _last_scan
@@ -950,6 +1025,7 @@ def run_read_only_maintenance_scan(
     evidence_audit = audit_action_evidence(
         recent_events,
         limit=50,
+        include_full_classification_export=True,
         session_id=effective_session_id,
         include_historical=True,
         commands_snapshot=commands,
@@ -1020,6 +1096,8 @@ def run_read_only_maintenance_scan(
         "process_resources": process_resources,
         "network_ports": network_ports,
     }
+    if closure_manifest_store is not None:
+        checks["historical_debt_closure_manifest_store"] = _closure_manifest_store_projection(closure_manifest_store)
     checks["foundation_closure_readiness"] = _foundation_closure_readiness(checks)
     findings = _findings_from_checks(checks)
     action_proposals = build_maintenance_action_proposals(findings, checks, commands_snapshot=commands)

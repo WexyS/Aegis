@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import hashlib
+import json
 from typing import Any, Mapping, MutableMapping
 from uuid import uuid4
 
@@ -45,15 +47,19 @@ def build_historical_debt_item_manifest(
     scan = deepcopy(dict(maintenance_scan))
     checks = _mapping(scan.get("checks"))
     evidence = _mapping(checks.get("evidence_audit"))
-    classification = _mapping(evidence.get("classification"))
+    full_export = _mapping(evidence.get("full_classification_export"))
+    classification_source = "full_classification_export" if full_export else "display_classification_projection"
+    classification = full_export or _mapping(evidence.get("classification"))
     action_classifications = _list(classification.get("action_classifications"))
     command_classifications = _list(classification.get("command_lifecycle_classifications"))
     items: list[dict[str, Any]] = []
 
     for index, item in enumerate(action_classifications, start=1):
-        items.append(_item_from_action_classification(item, index))
+        if _classification_requires_closure_item(item):
+            items.append(_item_from_action_classification(item, index))
     for index, item in enumerate(command_classifications, start=1):
-        items.append(_item_from_command_classification(item, index))
+        if _classification_requires_closure_item(item):
+            items.append(_item_from_command_classification(item, index))
 
     expected = _expected_counts(scan)
     omitted_action_count = _count(classification.get("omitted_action_classification_count"))
@@ -70,10 +76,18 @@ def build_historical_debt_item_manifest(
         "manifest_id": manifest_id or f"closure-items-{uuid4().hex}",
         "created_at": created_at or _now_utc(),
         "source_scan_version": scan.get("scan_version"),
+        "classification_source": classification_source,
+        "classification_export_version": classification.get("scan_version"),
+        "display_limit_applied": bool(classification.get("display_limit_applied")),
         "read_only": True,
         "mutation_performed": False,
         "items": items,
         "item_count": len(items),
+        "source_action_classification_count": len(action_classifications),
+        "source_command_lifecycle_classification_count": len(command_classifications),
+        "non_issue_classification_count": (
+            len(action_classifications) + len(command_classifications) - len(items)
+        ),
         "expected_counts": expected,
         "listed_counts": _listed_counts(items),
         "omitted_action_classification_count": omitted_action_count,
@@ -115,6 +129,122 @@ def build_historical_debt_backup_manifest(
         "item_counts": dict(item_counts),
         "readback_verification_status": "not_checked",
         "limitations": list(limitations or []),
+    }
+
+
+def build_manifest_only_closure_backup_manifest(
+    *,
+    backup_id: str,
+    source_refs: list[Mapping[str, Any]],
+    item_manifest: Mapping[str, Any],
+    maintenance_scan: Mapping[str, Any],
+    manifest_store_ref: str,
+    created_at: str | None = None,
+    manifest_store_git_tracked: bool = False,
+    limitations: list[str] | None = None,
+) -> dict[str, Any]:
+    """Create deterministic backup metadata for a manifest-only closure apply.
+
+    This helper hashes caller-supplied metadata only. It does not copy, read, or
+    rewrite the original journal, evidence, replay, or manifest stores.
+    """
+
+    manifest = deepcopy(dict(item_manifest))
+    scan = deepcopy(dict(maintenance_scan))
+    counts = _mapping(manifest.get("listed_counts"))
+    if not counts:
+        counts = _listed_counts([_mapping(item) for item in _list(manifest.get("items"))])
+    backup = build_historical_debt_backup_manifest(
+        backup_id=backup_id,
+        created_at=created_at,
+        source_refs=source_refs,
+        covered_stores=[
+            "closure_input_metadata",
+            "classification_export",
+            "item_manifest",
+            "maintenance_scan_projection",
+            "manifest_store",
+        ],
+        content_hashes={
+            "item_manifest_sha256": _stable_json_hash(manifest),
+            "maintenance_scan_projection_sha256": _stable_json_hash(scan),
+            "manifest_store_ref_sha256": _stable_json_hash({"manifest_store_ref": str(manifest_store_ref)}),
+        },
+        item_counts=counts,
+        status="verified",
+        limitations=limitations,
+    )
+    backup.update({
+        "backup_scope": "manifest_only_closure_metadata",
+        "manifest_only_write": True,
+        "original_stores_read_only": True,
+        "writes_original_stores": False,
+        "journal_rewrite_planned": False,
+        "evidence_rewrite_planned": False,
+        "replay_rewrite_planned": False,
+        "manifest_store_ref": str(manifest_store_ref),
+        "manifest_store_git_tracked": bool(manifest_store_git_tracked),
+    })
+    return backup
+
+
+def verify_manifest_only_closure_backup_readback(
+    backup_manifest: Mapping[str, Any],
+    *,
+    item_manifest: Mapping[str, Any],
+    maintenance_scan: Mapping[str, Any],
+    manifest_store_ref: str,
+) -> dict[str, Any]:
+    """Verify supplied manifest-only backup metadata without reading files."""
+
+    backup = _mapping(backup_manifest)
+    hashes = _mapping(backup.get("content_hashes"))
+    blockers: list[str] = []
+    if backup.get("status") not in {"ok", "verified"}:
+        blockers.append("backup_manifest_unverified")
+    if backup.get("manifest_only_write") is not True:
+        blockers.append("backup_manifest_not_manifest_only")
+    if backup.get("original_stores_read_only") is not True or backup.get("writes_original_stores") is not False:
+        blockers.append("backup_original_store_scope_unsafe")
+    if backup.get("manifest_store_git_tracked") is True:
+        blockers.append("manifest_store_target_not_git_excluded")
+    if str(backup.get("manifest_store_ref") or "") != str(manifest_store_ref):
+        blockers.append("manifest_store_ref_mismatch")
+    expected_item_hash = _stable_json_hash(item_manifest)
+    expected_scan_hash = _stable_json_hash(maintenance_scan)
+    expected_store_hash = _stable_json_hash({"manifest_store_ref": str(manifest_store_ref)})
+    if hashes.get("item_manifest_sha256") != expected_item_hash:
+        blockers.append("item_manifest_hash_mismatch")
+    if hashes.get("maintenance_scan_projection_sha256") != expected_scan_hash:
+        blockers.append("maintenance_scan_projection_hash_mismatch")
+    if hashes.get("manifest_store_ref_sha256") != expected_store_hash:
+        blockers.append("manifest_store_ref_hash_mismatch")
+    backup_counts = _mapping(backup.get("item_counts"))
+    manifest_counts = _mapping(item_manifest.get("listed_counts"))
+    if not manifest_counts:
+        manifest_counts = _listed_counts([_mapping(item) for item in _list(item_manifest.get("items"))])
+    if backup_counts != manifest_counts:
+        blockers.append("backup_item_counts_mismatch")
+
+    return {
+        "verification_version": "historical-evidence-replay-debt-backup-readback/1",
+        "status": "passed" if not blockers else "failed",
+        "verified": not blockers,
+        "verification_id": f"backup-readback-{backup.get('backup_id') or 'unknown'}",
+        "backup_id": backup.get("backup_id"),
+        "manifest_store_ref": str(manifest_store_ref),
+        "read_only": True,
+        "mutation_performed": False,
+        "original_stores_touched": False,
+        "checks": {
+            "backup_manifest_readable": True,
+            "item_manifest_readable": True,
+            "counts_match": "backup_item_counts_mismatch" not in blockers,
+            "hashes_match": not any("hash_mismatch" in blocker for blocker in blockers),
+            "manifest_store_target_known": bool(str(manifest_store_ref).strip()),
+            "manifest_store_git_tracked": bool(backup.get("manifest_store_git_tracked")),
+        },
+        "blockers": _unique(blockers),
     }
 
 
@@ -269,6 +399,7 @@ def build_historical_evidence_replay_debt_closure_plan(
             "unknown_era_evidence_issue_count": expected["unknown_era_evidence_issue_count"],
             "unknown_era_missing_evidence_count": expected["unknown_era_missing_evidence_count"],
             "listed_item_count": item_validation["listed_unknown_era_count"],
+            "manifest_ref": item_manifest.get("manifest_id"),
             "unknown_era_reclassified": False,
             "quarantine_created": False,
         },
@@ -448,6 +579,7 @@ def apply_manifest_only_historical_evidence_replay_quarantine(
         ),
         "unknown_era_evidence_issue_count": plan["unknown_era_quarantine_projection"]["unknown_era_evidence_issue_count"],
         "unknown_era_missing_evidence_count": plan["unknown_era_quarantine_projection"]["unknown_era_missing_evidence_count"],
+        "manifest_ref": plan["unknown_era_quarantine_projection"].get("manifest_ref"),
         "unknown_era_reclassified": False,
         "must_remain_inspectable": True,
     }
@@ -459,9 +591,20 @@ def apply_manifest_only_historical_evidence_replay_quarantine(
         "runtime_health_greenwashed": False,
     }
     manifest_store[str(plan["plan_id"])] = {
+        "apply_version": CLOSURE_APPLY_RESULT_VERSION,
+        "status": "executed_manifest_only",
+        "plan_id": plan["plan_id"],
+        "source_plan_status": plan.get("status"),
+        "required_gates": deepcopy(_mapping(plan.get("required_gates"))),
         "archive_manifest": archive_manifest,
         "quarantine_manifest": quarantine_manifest,
         "baseline": baseline,
+        "original_journal_store_touched": False,
+        "original_evidence_store_touched": False,
+        "original_replay_state_touched": False,
+        "evidence_created": False,
+        "verifier_success_created": False,
+        "runtime_health_greenwashed": False,
     }
 
     return {
@@ -580,6 +723,25 @@ def _disposition_reason(disposition: str) -> str:
     }.get(disposition, "unsupported disposition")
 
 
+def _classification_requires_closure_item(item: Any) -> bool:
+    data = _mapping(item)
+    verification_state = str(data.get("verification_state") or "")
+    classes = [str(value) for value in _list(data.get("classes"))]
+    if verification_state in {"missing", "failed", "unverified"}:
+        return True
+    return any(
+        marker in class_name
+        for class_name in classes
+        for marker in (
+            "missing_evidence",
+            "failed_evidence",
+            "unverified_evidence",
+            "unverified_completed",
+            "verifier_check_failed",
+        )
+    )
+
+
 def _issue_type(classes: list[str], *, evidence_missing: bool) -> str:
     if evidence_missing:
         return "missing_evidence"
@@ -687,14 +849,34 @@ def _backup_manifest_gate(value: Mapping[str, Any] | None) -> dict[str, Any]:
     data = _mapping(value)
     status = str(data.get("status") or "missing")
     covered = set(str(item) for item in _list(data.get("covered_stores")))
-    required = {"journal", "evidence", "replay"}
+    original_required = {"journal", "evidence", "replay"}
+    manifest_only_required = {
+        "closure_input_metadata",
+        "classification_export",
+        "item_manifest",
+        "maintenance_scan_projection",
+        "manifest_store",
+    }
     blockers: list[str] = []
     if status not in {"ok", "verified"}:
         blockers.append("backup_manifest_unverified")
     if not str(data.get("backup_id") or "").strip():
         blockers.append("backup_id_missing")
-    if not required.issubset(covered):
+    manifest_only_scope = manifest_only_required.issubset(covered)
+    original_store_scope = original_required.issubset(covered)
+    if not (manifest_only_scope or original_store_scope):
         blockers.append("backup_missing_required_stores")
+    if manifest_only_scope:
+        if data.get("manifest_only_write") is not True:
+            blockers.append("backup_manifest_only_write_missing")
+        if data.get("original_stores_read_only") is not True:
+            blockers.append("backup_original_stores_not_read_only")
+        if data.get("writes_original_stores") is not False:
+            blockers.append("backup_writes_original_stores")
+        if data.get("manifest_store_git_tracked") is True:
+            blockers.append("backup_manifest_store_not_git_excluded")
+        if not str(data.get("manifest_store_ref") or "").strip():
+            blockers.append("backup_manifest_store_ref_missing")
     if not isinstance(data.get("item_counts"), Mapping):
         blockers.append("backup_item_counts_missing")
     if not _list(data.get("source_refs")):
@@ -705,6 +887,8 @@ def _backup_manifest_gate(value: Mapping[str, Any] | None) -> dict[str, Any]:
         "required": True,
         "backup_id": data.get("backup_id"),
         "ref": data.get("backup_id") or data.get("manifest_ref"),
+        "manifest_only_scope": manifest_only_scope,
+        "original_store_scope": original_store_scope,
         "blockers": blockers,
     }
 
@@ -851,3 +1035,8 @@ def _unique(values: list[str]) -> list[str]:
 
 def _now_utc() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _stable_json_hash(value: Any) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
