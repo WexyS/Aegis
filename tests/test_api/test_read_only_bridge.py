@@ -74,6 +74,42 @@ def _assert_read_only_health(data: dict[str, object]) -> None:
     assert data["command_execution_endpoint"] is False
 
 
+def test_gitignore_excludes_local_bridge_token_path() -> None:
+    gitignore = Path(".gitignore").read_text(encoding="utf-8")
+
+    assert ".local/" in gitignore
+    assert "*bridge-token*" in gitignore
+    assert "*bridge-audit*" in gitignore
+
+
+def test_committed_launcher_scripts_do_not_contain_real_token() -> None:
+    script_paths = [
+        Path("scripts/start-aegis-bridge.bat"),
+        Path("scripts/start-aegis-bridge.ps1"),
+        Path("scripts/show-aegis-bridge-token.ps1"),
+    ]
+    forbidden_literals = [
+        "replace-with-local-random-token",
+        "test-bridge-token",
+        "sk-",
+        "ghp_",
+        "github_pat_",
+    ]
+
+    for script_path in script_paths:
+        content = script_path.read_text(encoding="utf-8")
+        for literal in forbidden_literals:
+            assert literal not in content
+
+
+def test_normal_launcher_does_not_print_bridge_token() -> None:
+    content = Path("scripts/start-aegis-bridge.ps1").read_text(encoding="utf-8")
+
+    assert "Write-Host $token" not in content
+    assert "show-aegis-bridge-token.ps1" in content
+    assert "AEGIS_BRIDGE_TOKEN" in content
+
+
 @pytest.mark.asyncio
 async def test_token_required(app) -> None:
     async with await _client(app) as client:

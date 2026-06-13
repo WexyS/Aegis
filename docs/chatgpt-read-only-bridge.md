@@ -78,20 +78,66 @@ Denied paths are rejected before file content is read.
 
 ## Authentication Setup
 
-Set a local token before starting the bridge:
+The recommended local launcher creates a random token automatically and stores
+it only in `.local/aegis-bridge-token.txt`. The `.local/` directory is ignored
+by git.
+
+Start with the Windows launcher:
+
+```powershell
+.\scripts\start-aegis-bridge.bat
+```
+
+The launcher:
+
+- creates `.local/` if needed
+- creates `.local/aegis-bridge-token.txt` if missing
+- sets `AEGIS_BRIDGE_TOKEN` for the bridge process
+- starts `.\.venv\Scripts\python.exe -m aegis.read_only_bridge`
+- prints the local URL, token file path, auth header name, and tunnel reminder
+
+The normal launcher does not print the token. To intentionally display it for
+Custom GPT Action setup:
+
+```powershell
+.\scripts\show-aegis-bridge-token.ps1
+```
+
+That helper requires typing `SHOW` before it prints the token.
+
+To reset the token, stop the bridge, delete:
+
+```text
+.local/aegis-bridge-token.txt
+```
+
+Then rerun:
+
+```powershell
+.\scripts\start-aegis-bridge.bat
+```
+
+Manual token setup is still supported if needed:
 
 ```powershell
 $env:AEGIS_BRIDGE_TOKEN = "replace-with-local-random-token"
 ```
 
-Do not commit or paste the real token into docs, prompts, screenshots, or
-OpenAPI examples.
+Do not commit or paste the real token into docs, prompts, screenshots, issue
+comments, or OpenAPI examples.
 
 ## Run Locally
 
 From the Aegis repo:
 
 ```powershell
+.\scripts\start-aegis-bridge.bat
+```
+
+Direct module startup remains available for advanced/manual use:
+
+```powershell
+$env:AEGIS_BRIDGE_TOKEN = "replace-with-local-random-token"
 .\.venv\Scripts\python.exe -m aegis.read_only_bridge
 ```
 
@@ -115,7 +161,11 @@ Use `docs/aegis-read-only-bridge-openapi.yaml` as the Custom GPT Action schema.
 Configure API key auth:
 
 - header name: `X-Aegis-Bridge-Token`
-- value: the local operator-provided token
+- value: the local operator-provided token from
+  `.local/aegis-bridge-token.txt`
+
+Use `scripts\show-aegis-bridge-token.ps1` when you intentionally need to copy
+the token. Do not paste the token into prompts or committed files.
 
 Recommended first calls:
 
@@ -128,7 +178,9 @@ Recommended first calls:
 
 ## Tunnel Notes
 
-Prefer local-only use. If a tunnel is required for Custom GPT Actions, use a
+Prefer local-only use. Custom GPT Actions normally need an HTTPS URL, so if a
+tunnel is required, configure it manually with your chosen local tunnel provider.
+The bridge does not require ngrok, Cloudflare, or any paid service. Use a
 short-lived tunnel bound to the bridge port, keep the token private, and shut the
 tunnel down after the review session.
 

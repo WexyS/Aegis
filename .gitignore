@@ -25,6 +25,10 @@ env/
 .env
 .env.local
 .env.production
+.local/
+*.local
+.local/*bridge-token*
+.local/*bridge-audit*
 
 # Runtime data
 logs/*.jsonl
