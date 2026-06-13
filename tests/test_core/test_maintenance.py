@@ -161,6 +161,7 @@ def _patch_closure_scan_dependencies(
         "collect_network_port_snapshot",
         lambda: {"scan_version": "network-ports/1", "read_only": True, "status": "ok", "ports": []},
     )
+    monkeypatch.setattr(maintenance, "_load_local_closure_manifest_store", lambda *args, **kwargs: None)
 
 
 def test_maintenance_scan_findings_have_source_contract() -> None:
@@ -790,9 +791,84 @@ def test_maintenance_closure_manifest_projection_keeps_quarantined_debt_visible_
     }
     assert closure["closure_gate_statuses"]["backup_manifest"]["passed"] is True
     assert closure["replay_diagnostics_status"] == "fail"
-    assert report["summary"]["status"] == "fail"
-    assert report["summary"]["component_statuses"]["replay_diagnostics"] == "fail"
+    assert report["summary"]["status"] == "warning"
+    assert report["summary"]["component_statuses"]["evidence_audit"] == "warning"
+    assert report["summary"]["component_statuses"]["replay_diagnostics"] == "warning"
+    assert report["summary"]["raw_component_statuses"]["replay_diagnostics"] == "fail"
+    assert report["summary"]["active_failure_components"] == []
+    assert closure["active_runtime_projections"]["evidence_audit"]["classification"] == (
+        "quarantined_or_archived_evidence_attention"
+    )
+    assert closure["active_runtime_projections"]["replay_diagnostics"]["classification"] == (
+        "manifest_backed_quarantined_replay_boundary"
+    )
     assert report["checks"]["historical_debt_closure_manifest_store"]["status"] == "ok"
+
+
+def test_maintenance_manifest_backed_projection_does_not_downgrade_active_replay_failure(monkeypatch, tmp_path) -> None:
+    _patch_closure_scan_dependencies(
+        monkeypatch,
+        tmp_path,
+        evidence=_evidence_audit_stub(status="warning", unknown=25, unknown_missing=19),
+        replay_status="fail",
+        replay_classification="sequence_gap_or_snapshot_resync_boundary",
+    )
+    store = {
+        "closure-plan-test": {
+            "status": "executed_manifest_only",
+            "plan_id": "closure-plan-test",
+            "required_gates": {
+                "replay_hash_chain": {
+                    "status": "not_required_for_manifest_only",
+                    "passed": True,
+                    "ref": "replay-gate-1",
+                },
+            },
+            "archive_manifest": {"status": "not_needed", "manifest_ref": "items-full-export"},
+            "quarantine_manifest": {
+                "status": "quarantined",
+                "unknown_era_evidence_issue_count": 25,
+                "unknown_era_missing_evidence_count": 19,
+                "manifest_ref": "items-full-export",
+                "unknown_era_reclassified": False,
+            },
+            "baseline": {"status": "clean_current_operational_baseline", "current_blocker_count": 0},
+        }
+    }
+
+    report = maintenance.run_read_only_maintenance_scan(
+        runtime_snapshot={
+            "session_id": "closure-active-replay",
+            "last_event_sequence": 0,
+            "queue_depth": 0,
+            "queue_capacity": 1,
+            "recovery_depth": 0,
+        },
+        websocket_clients=0,
+        closure_manifest_store=store,
+    )
+
+    closure = report["checks"]["foundation_closure_readiness"]
+
+    assert closure["active_runtime_projections"]["replay_diagnostics"]["active_replay_failure"] is True
+    assert report["summary"]["component_statuses"]["replay_diagnostics"] == "fail"
+    assert "replay_diagnostics" in report["summary"]["active_failure_components"]
+    assert report["summary"]["status"] == "fail"
+
+
+def test_local_closure_manifest_loader_reports_corruption_without_mutation(tmp_path) -> None:
+    manifest_path = tmp_path / "archive" / "historical-evidence-replay-quarantine-manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text("{not-json", encoding="utf-8")
+
+    projection = maintenance._load_local_closure_manifest_store(tmp_path)
+
+    assert projection["status"] == "fail"
+    assert projection["read_only"] is True
+    assert projection["mutation_performed"] is False
+    assert projection["source"] == "local_file"
+    assert projection["path"] == str(manifest_path)
+    assert projection["blockers"]
 
 
 def test_workspace_directory_report_is_read_only_and_evidence_backed(monkeypatch, tmp_path) -> None:

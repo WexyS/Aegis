@@ -86,6 +86,7 @@ The maintenance scan projection now explicitly separates:
 - archived historical debt status
 - quarantined unknown-era debt status
 - closure execution status
+- raw component diagnostics from active runtime health projections
 
 Current live output intentionally reports `not_archived`, `not_quarantined`,
 and `not_executed` unless a manifest-only closure record is supplied to the
@@ -220,8 +221,10 @@ Maintenance scan should report:
 
 Current health should not fail solely because archived older debt is preserved.
 It should still fail for active blockers, current missing evidence, current
-evidence failures, replay/hash-chain issues in the current baseline, or hidden
-debt.
+evidence failures, active replay/hash-chain issues in the current baseline, or
+hidden debt. Manifest-backed quarantine may downgrade raw historical/unknown-era
+diagnostic failures to warning/attention only when archived or quarantined debt
+remains visible and original stores are untouched.
 
 ## Current Closure Result
 
@@ -245,8 +248,10 @@ Current implementation state:
   manifest-only apply with original stores untouched and an explicit reason
 - maintenance scan can consume a supplied manifest-only closure store and keep
   archived/quarantined debt visible
-- runtime health is still based on active component status and is not greenwashed
-  by archive/quarantine visibility
+- maintenance scan can read the ignored local manifest from `logs/archive/`
+  without staging or committing the runtime artifact
+- runtime health is based on active component status and is not greenwashed by
+  archive/quarantine visibility
 
 The local live apply for this sprint passed the manifest-only gates and wrote
 an ignored runtime manifest at
@@ -270,13 +275,18 @@ Live apply summary:
 - archive/quarantine manifest created: yes
 - clean current operational baseline created: yes, only for current blocker
   separation
-- runtime health after apply: `fail`
+- raw evidence audit status after apply: `fail`
+- raw replay diagnostics status after apply: `fail`
+- active runtime health after manifest-backed separation: `warning`
+- active failure components after separation: none
 - remaining visible runtime attention: evidence audit, runtime snapshot, replay
   diagnostics
 
 This is not evidence repair. Original journal, evidence, and replay stores
 remain untouched, missing evidence remains missing, and unknown-era items remain
-quarantined rather than fixed.
+quarantined rather than fixed. Raw diagnostics remain visible, while active
+health now distinguishes manifest-backed quarantine attention from active
+failure.
 
 ## Tests Added
 
@@ -302,6 +312,10 @@ Focused tests cover:
 - manifest-only backup readback verifies counts and deterministic hashes
 - maintenance scan can expose supplied manifest-only archive/quarantine records
   without greenwashing replay failure
+- maintenance scan can auto-load the ignored local quarantine manifest
+- manifest-backed historical mixed-era replay boundaries can be reported as
+  attention while active sequence-gap replay failures remain fail
+- corrupted manifest loading blocks health downgrade
 
 ## Acceptance Criteria
 

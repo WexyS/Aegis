@@ -297,7 +297,8 @@ The historical `foundation-baseline` tag remains a valid traceability point.
 The `hackathon-agent-runtime-foundation` tag preserves the bounded Agent Runtime
 foundation. These tags do not mean current runtime debt is hidden or resolved.
 
-Runtime health may still report `fail` while unknown-era evidence issues,
-runtime snapshot alignment, and replay diagnostics remain unresolved. That fail
-state is intentional until the separately scoped historical evidence/replay debt
-closure process is implemented and executed.
+Raw evidence and replay diagnostics may still report `fail` while unknown-era
+evidence issues, runtime snapshot alignment, and replay diagnostics remain
+visible. Active runtime health can now separate the manifest-backed quarantined
+debt as warning/attention when the ignored closure manifest is readable and no
+current blockers remain. This is not evidence repair or replay repair.

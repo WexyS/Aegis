@@ -131,6 +131,9 @@ Historical evidence/replay closure apply is currently limited to a
 caller-supplied manifest store after all gates pass. It uses the full uncapped
 classification export for exact item manifests when available. It is not
 journal rewrite, evidence repair, replay repair, or runtime health suppression.
+Runtime health may use the manifest to separate active failures from visible
+quarantined attention, but the manifest is not evidence, verifier success, or
+permission.
 
 ## Future Capabilities
 

@@ -302,8 +302,10 @@ Current closure tooling status:
 - A local manifest-only quarantine apply has been performed for the 25
   unknown-era evidence issues and 19 unknown-era missing evidence items. The
   ignored runtime manifest remains outside Git, original stores were untouched,
-  and runtime health remains failure-visible while replay/runtime/evidence
-  diagnostics still require attention.
+  raw evidence/replay diagnostics remain visible, and active runtime health now
+  separates manifest-backed quarantine attention from true active failures.
+  Current live health is warning/attention-only when the ignored manifest is
+  readable, with no active failure components.
 
 ## Memory Consent Policy Summary
 

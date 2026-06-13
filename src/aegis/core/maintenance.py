@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ _last_scan: dict[str, Any] | None = None
 STATUS_RANK = {"ok": 0, "unknown": 1, "warning": 2, "fail": 3}
 CLOSURE_READINESS_VERSION = "foundation-closure-readiness/1"
 UNKNOWN_ERA_OPERATOR_ATTENTION_THRESHOLD = 1
+LOCAL_CLOSURE_MANIFEST_PATH = Path("archive") / "historical-evidence-replay-quarantine-manifest.json"
 FINDING_CATEGORIES = {
     "telemetry",
     "runtime",
@@ -163,6 +165,11 @@ def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
     replay_boundary = replay_boundary if isinstance(replay_boundary, dict) else {}
     replay_historical_debt_present = replay_status not in {"ok", "unknown"}
     replay_classification = str(replay_boundary.get("classification") or "unknown")
+    manifest_visibility = _closure_manifest_visibility(closure_manifest_store)
+    unknown_era_quarantined = _quarantine_covers_unknown_era_evidence(
+        evidence_audit,
+        manifest_visibility,
+    )
 
     lifecycle_blocker_count = 1 if command_lifecycle.get("status") == "fail" else 0
     runtime_snapshot_blocker_count = 1 if runtime_snapshot.get("status") == "fail" else 0
@@ -186,7 +193,7 @@ def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
         closure_readiness_status = "blocked_current_issue"
     elif current_blocker_count > 0:
         closure_readiness_status = "needs_operator_attention"
-    elif unknown_era_evidence_issue_count >= UNKNOWN_ERA_OPERATOR_ATTENTION_THRESHOLD:
+    elif unknown_era_evidence_issue_count >= UNKNOWN_ERA_OPERATOR_ATTENTION_THRESHOLD and not unknown_era_quarantined:
         closure_readiness_status = "needs_operator_attention"
     elif unknown_inputs:
         closure_readiness_status = "unknown"
@@ -213,7 +220,6 @@ def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
         runtime_timeout_blocker_count=runtime_timeout_blocker_count,
         system_resource_warning_count=system_resource_warning_count,
     )
-    manifest_visibility = _closure_manifest_visibility(closure_manifest_store)
 
     return {
         "scan_version": CLOSURE_READINESS_VERSION,
@@ -232,6 +238,7 @@ def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
         "historical_missing_evidence_count": historical_missing_evidence_count,
         "unknown_era_evidence_issue_count": unknown_era_evidence_issue_count,
         "unknown_era_missing_evidence_count": unknown_era_missing_evidence_count,
+        "unknown_era_quarantined_by_manifest": unknown_era_quarantined,
         "unknown_era_operator_attention_threshold": UNKNOWN_ERA_OPERATOR_ATTENTION_THRESHOLD,
         "active_operational_debt": {
             "status": "present" if current_blocker_count else "none",
@@ -263,6 +270,11 @@ def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
             "process_resources": process_resources.get("status"),
             "network_ports": network_ports.get("status"),
         },
+        "active_runtime_projections": {
+            "evidence_audit": _evidence_audit_active_projection(evidence_audit, manifest_visibility),
+            "replay_diagnostics": _replay_diagnostics_active_projection(replay_diagnostics, manifest_visibility),
+            "runtime_snapshot": _runtime_snapshot_active_projection(runtime_snapshot, manifest_visibility),
+        },
         "unknown_inputs": unknown_inputs,
         "recommendation": " ".join(recommendations),
         "guidance": [
@@ -275,7 +287,12 @@ def _foundation_closure_readiness(checks: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _closure_manifest_store_projection(store: dict[str, Any] | None) -> dict[str, Any]:
+def _closure_manifest_store_projection(
+    store: dict[str, Any] | None,
+    *,
+    source: str = "supplied",
+    path: str | None = None,
+) -> dict[str, Any]:
     records = store if isinstance(store, dict) else {}
     entries = []
     for plan_id in sorted(str(key) for key in records):
@@ -288,10 +305,51 @@ def _closure_manifest_store_projection(store: dict[str, Any] | None) -> dict[str
         "read_only": True,
         "mutation_performed": False,
         "status": "ok" if entries else "unknown",
+        "source": source,
+        "path": path,
         "entry_count": len(entries),
         "latest_plan_id": latest.get("plan_id"),
         "latest_record": latest.get("record"),
+        "blockers": [],
     }
+
+
+def _closure_manifest_store_error_projection(*, path: str, reason: str) -> dict[str, Any]:
+    return {
+        "scan_version": "historical-debt-closure-manifest-store-projection/1",
+        "read_only": True,
+        "mutation_performed": False,
+        "status": "fail",
+        "source": "local_file",
+        "path": path,
+        "entry_count": 0,
+        "latest_plan_id": None,
+        "latest_record": None,
+        "blockers": [reason],
+    }
+
+
+def _load_local_closure_manifest_store(log_dir: Path) -> dict[str, Any] | None:
+    manifest_path = log_dir / LOCAL_CLOSURE_MANIFEST_PATH
+    if not manifest_path.exists():
+        return None
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return _closure_manifest_store_error_projection(
+            path=str(manifest_path),
+            reason=f"closure_manifest_read_error:{type(exc).__name__}",
+        )
+    if not isinstance(payload, dict):
+        return _closure_manifest_store_error_projection(
+            path=str(manifest_path),
+            reason="closure_manifest_not_object",
+        )
+    return _closure_manifest_store_projection(
+        payload,
+        source="local_file",
+        path=str(manifest_path),
+    )
 
 
 def _closure_manifest_visibility(projection: dict[str, Any]) -> dict[str, Any]:
@@ -330,6 +388,7 @@ def _closure_manifest_visibility(projection: dict[str, Any]) -> dict[str, Any]:
             "closure_execution_status": str(record.get("status") or "executed_manifest_only"),
             "closure_plan_id": record.get("plan_id"),
             "closure_gate_statuses": gate_statuses,
+            "baseline": record.get("baseline") if isinstance(record.get("baseline"), dict) else {},
             "remaining_blockers": [],
         }
     return {
@@ -351,7 +410,128 @@ def _closure_manifest_visibility(projection: dict[str, Any]) -> dict[str, Any]:
         "closure_execution_status": "not_executed",
         "closure_plan_id": None,
         "closure_gate_statuses": {},
+        "baseline": {},
         "remaining_blockers": [],
+    }
+
+
+def _quarantine_covers_unknown_era_evidence(
+    evidence_audit: dict[str, Any],
+    manifest_visibility: dict[str, Any],
+) -> bool:
+    quarantined = manifest_visibility.get("quarantined_unknown_era_debt")
+    quarantined = quarantined if isinstance(quarantined, dict) else {}
+    return (
+        manifest_visibility.get("closure_execution_status") == "executed_manifest_only"
+        and quarantined.get("status") == "quarantined"
+        and quarantined.get("unknown_era_reclassified") is False
+        and bool(quarantined.get("manifest_ref"))
+        and _int_count(quarantined.get("unknown_era_evidence_issue_count"))
+        >= _int_count(evidence_audit.get("unknown_era_evidence_issue_count"))
+        and _int_count(quarantined.get("unknown_era_missing_evidence_count"))
+        >= _int_count(evidence_audit.get("unknown_era_missing_evidence_count"))
+    )
+
+
+def _evidence_audit_active_projection(
+    evidence_audit: dict[str, Any],
+    manifest_visibility: dict[str, Any],
+) -> dict[str, Any]:
+    current_failure = _int_count(evidence_audit.get("current_evidence_failure_count"))
+    current_missing = _int_count(evidence_audit.get("current_missing_evidence_count"))
+    critical_failure = _int_count(evidence_audit.get("critical_failure_count"))
+    unknown_quarantined = _quarantine_covers_unknown_era_evidence(evidence_audit, manifest_visibility)
+    historical_debt = _int_count(evidence_audit.get("historical_evidence_debt_count"))
+    historical_missing = _int_count(evidence_audit.get("historical_missing_evidence_count"))
+    active_failure = bool(current_failure or current_missing or critical_failure)
+    if active_failure:
+        status = "fail"
+        classification = "active_evidence_failure"
+    elif unknown_quarantined or historical_debt or historical_missing:
+        status = "warning"
+        classification = "quarantined_or_archived_evidence_attention"
+    else:
+        status = str(evidence_audit.get("status") or "unknown")
+        classification = "raw_evidence_status"
+    return {
+        "status": status,
+        "classification": classification,
+        "raw_status": evidence_audit.get("status"),
+        "active_evidence_failure_count": current_failure,
+        "active_missing_evidence_count": current_missing,
+        "critical_failure_count": critical_failure,
+        "quarantined_unknown_era_evidence_issue_count": _int_count(evidence_audit.get("unknown_era_evidence_issue_count"))
+        if unknown_quarantined else 0,
+        "quarantined_unknown_era_missing_evidence_count": _int_count(evidence_audit.get("unknown_era_missing_evidence_count"))
+        if unknown_quarantined else 0,
+        "missing_evidence_fabricated": False,
+        "evidence_created": False,
+    }
+
+
+def _replay_diagnostics_active_projection(
+    replay_diagnostics: dict[str, Any],
+    manifest_visibility: dict[str, Any],
+) -> dict[str, Any]:
+    raw_status = str(replay_diagnostics.get("status") or "unknown")
+    boundary = replay_diagnostics.get("replay_boundary")
+    boundary = boundary if isinstance(boundary, dict) else {}
+    classification = str(boundary.get("classification") or "unknown")
+    gates = manifest_visibility.get("closure_gate_statuses")
+    gates = gates if isinstance(gates, dict) else {}
+    replay_gate = gates.get("replay_hash_chain") if isinstance(gates.get("replay_hash_chain"), dict) else {}
+    manifest_backed = (
+        manifest_visibility.get("closure_execution_status") == "executed_manifest_only"
+        and replay_gate.get("passed") is True
+        and replay_gate.get("status") in {"not_required_for_manifest_only", "passed", "verified", "ok"}
+    )
+    legacy_boundary = classification in {
+        "historical_mixed_sequence_eras_or_reset_boundaries",
+        "historical_control_plane_bloat",
+    }
+    if raw_status == "fail" and manifest_backed and legacy_boundary:
+        status = "warning"
+        active_failure = False
+        projection = "manifest_backed_quarantined_replay_boundary"
+    else:
+        status = raw_status
+        active_failure = raw_status == "fail"
+        projection = "raw_replay_status"
+    return {
+        "status": status,
+        "classification": projection,
+        "raw_status": raw_status,
+        "replay_boundary_classification": classification,
+        "manifest_backed": manifest_backed,
+        "active_replay_failure": active_failure,
+        "original_replay_state_touched": False,
+    }
+
+
+def _runtime_snapshot_active_projection(
+    runtime_snapshot: dict[str, Any],
+    manifest_visibility: dict[str, Any],
+) -> dict[str, Any]:
+    baseline = manifest_visibility.get("baseline")
+    baseline = baseline if isinstance(baseline, dict) else {}
+    sequence_aligned = runtime_snapshot.get("sequence_aligned") is True
+    baseline_clean = baseline.get("status") == "clean_current_operational_baseline"
+    if sequence_aligned:
+        status = "ok"
+        classification = "snapshot_aligned"
+    elif baseline_clean and runtime_snapshot.get("status") == "warning":
+        status = "warning"
+        classification = "stale_snapshot_projection_with_clean_current_baseline"
+    else:
+        status = str(runtime_snapshot.get("status") or "unknown")
+        classification = "raw_runtime_snapshot_status"
+    return {
+        "status": status,
+        "classification": classification,
+        "raw_status": runtime_snapshot.get("status"),
+        "sequence_aligned": sequence_aligned,
+        "clean_operational_baseline_status": baseline.get("status"),
+        "snapshot_rewritten": False,
     }
 
 
@@ -375,7 +555,7 @@ def _websocket_report(
 
 
 def _runtime_health_summary(checks: dict[str, Any]) -> dict[str, Any]:
-    statuses = {
+    raw_statuses = {
         "event_journal": checks["event_journal"]["status"],
         "evidence_audit": checks["evidence_audit"]["status"],
         "tool_registry": checks["tool_registry"]["status"],
@@ -393,9 +573,26 @@ def _runtime_health_summary(checks: dict[str, Any]) -> dict[str, Any]:
         "network_ports": checks["network_ports"]["status"],
         "workspace_directories": checks["workspace_directories"]["status"],
     }
+    if "historical_debt_closure_manifest_store" in checks:
+        raw_statuses["historical_debt_closure_manifest_store"] = checks[
+            "historical_debt_closure_manifest_store"
+        ].get("status", "unknown")
+    statuses = dict(raw_statuses)
+    closure = checks.get("foundation_closure_readiness")
+    projections = closure.get("active_runtime_projections") if isinstance(closure, dict) else {}
+    projections = projections if isinstance(projections, dict) else {}
+    for name in ("evidence_audit", "replay_diagnostics", "runtime_snapshot"):
+        projection = projections.get(name) if isinstance(projections.get(name), dict) else {}
+        projected_status = projection.get("status")
+        if projected_status:
+            statuses[name] = str(projected_status)
     reasons = [
         name for name, status in statuses.items()
         if status not in {"ok", "unknown"}
+    ]
+    active_failures = [
+        name for name, status in statuses.items()
+        if status == "fail"
     ]
     return {
         "scan_version": "runtime-health/1",
@@ -403,6 +600,9 @@ def _runtime_health_summary(checks: dict[str, Any]) -> dict[str, Any]:
         "status": _worst_status(*statuses.values()),
         "source_of_truth": "backend_snapshot_protocol_event_journal",
         "component_statuses": statuses,
+        "raw_component_statuses": raw_statuses,
+        "active_failure_components": active_failures,
+        "active_runtime_projections": projections,
         "attention": reasons[:10],
     }
 
@@ -1073,6 +1273,11 @@ def run_read_only_maintenance_scan(
     documentation = _documentation_report(PROJECT_ROOT)
     workspace_directories = _workspace_directories_report(PROJECT_ROOT)
     read_only_contract = _read_only_contract()
+    closure_manifest_projection = (
+        _closure_manifest_store_projection(closure_manifest_store)
+        if closure_manifest_store is not None
+        else _load_local_closure_manifest_store(log_dir)
+    )
     checks = {
         "tool_registry": tool_registry,
         "event_journal": event_journal,
@@ -1096,8 +1301,8 @@ def run_read_only_maintenance_scan(
         "process_resources": process_resources,
         "network_ports": network_ports,
     }
-    if closure_manifest_store is not None:
-        checks["historical_debt_closure_manifest_store"] = _closure_manifest_store_projection(closure_manifest_store)
+    if closure_manifest_projection is not None:
+        checks["historical_debt_closure_manifest_store"] = closure_manifest_projection
     checks["foundation_closure_readiness"] = _foundation_closure_readiness(checks)
     findings = _findings_from_checks(checks)
     action_proposals = build_maintenance_action_proposals(findings, checks, commands_snapshot=commands)
