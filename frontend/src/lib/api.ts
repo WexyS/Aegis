@@ -5,6 +5,7 @@ import {
   SocietySession,
   SocietySessionListResponse,
 } from '@/types/rc';
+import { AskRequest, AskResponse } from '@/types/ask';
 import {
   AppRegistrySnapshot,
   ApprovalHygieneDenyResponse,
@@ -19,6 +20,24 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLI
 
 export function getVisionStreamUrl(): string {
   return new URL('/vision/stream', API_URL).toString();
+}
+
+export async function askAegis(payload: AskRequest): Promise<AskResponse> {
+  const url = new URL('/ask', API_URL);
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify(payload),
+  });
+  const body = await parseJsonBody<AskResponse | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Aegis Ask failed: ${response.status}`));
+  }
+  if (!body || !('answer' in body)) {
+    throw new Error('Aegis Ask returned no answer.');
+  }
+  return body as AskResponse;
 }
 
 export async function fetchAppRegistry(refresh = false): Promise<AppRegistrySnapshot> {

@@ -51,6 +51,7 @@ Read-only work can be useful and real. It still needs scope limits.
 
 Current read-only work:
 
+- Aegis Ask read-only explanation and safe next-step planning
 - AutoPilot local repository structure audit
 - maintenance diagnostics
 - registry/catalog projection
@@ -132,6 +133,7 @@ Aegis must block:
 - local Model Gateway boundary
 - static Skill Registry metadata
 - proposal-only Bounded Agent Runtime
+- Aegis Ask read-only explanation slice
 
 Historical evidence/replay closure apply is currently limited to a
 caller-supplied manifest store after all gates pass. It uses the full uncapped
@@ -145,13 +147,12 @@ permission.
 
 Future capability work should add real product value in this order:
 
-1. Aegis Ask read-only explanation.
-2. Intent Router / Capability Broker.
-3. More read-only local inspection capabilities.
-4. Memory Inbox and consent-based memory intelligence.
-5. Agent-to-skill proposal flow.
-6. Approved local safe actions with evidence/verifier strategy.
-7. Optional MCP and external connector layer.
+1. Intent Router / Capability Broker.
+2. More read-only local inspection capabilities.
+3. Memory Inbox and consent-based memory intelligence.
+4. Agent-to-skill proposal flow.
+5. Approved local safe actions with evidence/verifier strategy.
+6. Optional MCP and external connector layer.
 
 ## Safety Boundary
 

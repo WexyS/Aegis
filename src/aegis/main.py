@@ -133,6 +133,10 @@ def create_app():
     from aegis.api.routes_agent_runtime import router as agent_runtime_router
     fastapi_app.include_router(agent_runtime_router)
 
+    # Aegis Ask read-only product slice
+    from aegis.api.routes_ask import router as ask_router
+    fastapi_app.include_router(ask_router)
+
     # Wrap FastAPI with Socket.IO ASGI middleware
     asgi_app = create_socketio_app(fastapi_app)
 

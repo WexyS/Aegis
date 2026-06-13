@@ -30,6 +30,11 @@ inspect files through the read-only bridge, compare Codex reports against repo
 state, and draft precise future Codex prompts. It does not control Codex and
 does not execute commands.
 
+The read-only ChatGPT bridge, local launcher scripts, and local ngrok launcher
+scripts are implemented as operator-started helper surfaces. They do not add
+write, execute, shell, MCP, runtime dispatch, evidence, verifier, approval,
+lease, or mutation authority.
+
 ## Latest Accepted State
 
 Latest accepted verification decision: `AEGIS_SYSTEM_VERIFICATION_COMPLETE`
@@ -171,6 +176,11 @@ does not execute skills.
 Agent Runtime: implemented bounded proposal-only sessions. Agents do not call
 tools, MCP, shell, model completions, or memory writes in the current runtime.
 
+Aegis Ask: implemented read-only explanation and safe next-step planning over
+backend-owned status and metadata. It is not command execution, tool execution,
+plugin execution, model authority, memory write, evidence, verifier success, or
+approval/capability/lease grant.
+
 Frontend / Aegis Control: implemented operator UI. It must remain presentation
 only and needs a product UX pass.
 
@@ -182,7 +192,8 @@ future work.
 - Runtime health is warning-level, not green.
 - Raw evidence and replay diagnostics still fail.
 - UI/product experience needs serious improvement.
-- Aegis Ask is not implemented yet.
+- Aegis Ask is implemented as a narrow read-only explanation slice, not an
+  execution surface.
 - Full autonomous operation is not implemented.
 - Real tool/MCP execution is not implemented.
 - Skill Registry is metadata, not execution.
@@ -222,11 +233,11 @@ Implemented:
 - local Model Gateway boundary
 - static Skill Registry
 - bounded Agent Runtime proposal sessions
+- read-only ChatGPT bridge and local launcher helpers
+- Aegis Ask read-only explanation slice
 
 Planned:
 
-- read-only ChatGPT bridge for external review
-- Aegis Ask product slice
 - better Mission Control UI
 - capability broker
 - approval-gated safe execution slices
@@ -247,5 +258,6 @@ Do not claim:
 
 ## Next Direction
 
-First create and validate the read-only bridge plus Custom GPT context. Then
-proceed to the Aegis Ask Product Slice with a real useful read-only user flow.
+Continue productization after Aegis Ask by improving source-specific read-only
+summaries, capability broker design, and Mission Control UX without weakening
+runtime truth or approval/evidence/verifier boundaries.

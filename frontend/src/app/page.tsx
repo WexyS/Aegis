@@ -19,6 +19,7 @@ import { AppRegistryPanel } from '@/features/runtime/components/AppRegistryPanel
 import { ToolRegistryPanel } from '@/features/runtime/components/ToolRegistryPanel';
 import { SystemOverview } from '@/features/dashboard/components/SystemOverview';
 import { MissionControlRCPanel } from '@/features/mission-control-rc/components/MissionControlRCPanel';
+import { AskAegisPanel } from '@/features/ask/components/AskAegisPanel';
 
 import { connectRuntime, disconnectRuntime } from '@/lib/socket';
 
@@ -51,6 +52,7 @@ export default function AegisDashboard() {
         {/* CENTER CONTENT */}
         <div className="flex-1 min-h-0 min-w-0 flex flex-col glass-panel rounded-lg overflow-hidden relative">
           {activeTab === 'chat' && <ChatPanel />}
+          {activeTab === 'Ask Aegis' && <AskAegisPanel />}
           {activeTab === 'Agent Graph' && <AgentGraphPanel />}
           {activeTab === 'Vision Lab' && <VisionLabPanel />}
           {activeTab === 'Runtime Stats' && <RuntimeStatsPanel />}
@@ -58,7 +60,7 @@ export default function AegisDashboard() {
           {activeTab === 'Applications' && <AppRegistryPanel />}
           {activeTab === 'Tools' && <ToolRegistryPanel />}
           {activeTab === 'Aegis Control' && <MissionControlRCPanel />}
-          {!['chat', 'Agent Graph', 'Vision Lab', 'Runtime Stats', 'Chaos Shield', 'Applications', 'Tools', 'Aegis Control'].includes(activeTab) && (
+          {!['chat', 'Ask Aegis', 'Agent Graph', 'Vision Lab', 'Runtime Stats', 'Chaos Shield', 'Applications', 'Tools', 'Aegis Control'].includes(activeTab) && (
             <div className="flex-1 flex items-center justify-center text-[11px] font-mono uppercase tracking-[0.16em] text-foreground/30">
               {activeTab} unavailable
             </div>

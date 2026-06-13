@@ -25,6 +25,7 @@ Aegis is currently a local Mission Control workspace with:
 - a bounded local Model Gateway for LM Studio/OpenAI-compatible local endpoints
 - a static Skill Registry metadata catalog
 - a proposal-only Bounded Agent Runtime
+- Aegis Ask for read-only status explanation and safe next-step planning
 - a Next.js/Electron Mission Control frontend
 
 It is not yet a full autonomous agent platform, not a general MCP runner, not a
@@ -94,6 +95,7 @@ Aegis should work without paid services as the default product posture.
 | Model Gateway | Implemented local provider boundary | Optional LM Studio/local OpenAI-compatible calls; output is proposal-only. |
 | Skill Registry | Implemented static metadata catalog | No skill execution endpoint. |
 | Bounded Agent Runtime | Implemented proposal-only sessions | No tool, MCP, shell, model completion, or memory write from agents. |
+| Aegis Ask | Implemented read-only explanation slice | Answers status/capability/safety questions without execution, memory writes, evidence, verifier success, or grants. |
 | Frontend | Implemented operational shell | Presentation only; no frontend authority. |
 | Historical debt closure | Manifest-only quarantine applied | Unknown-era debt can be quarantined in an ignored manifest store; no journal/evidence/replay repair or archive/compaction execution. |
 
@@ -190,6 +192,7 @@ scoped by the same proposal contract.
 - [Model Gateway](docs/model-gateway.md)
 - [Skill Registry](docs/skill-registry.md)
 - [Bounded Agent Runtime](docs/bounded-agent-runtime.md)
+- [Aegis Ask](docs/aegis-ask-product-slice.md)
 - [Codex skill pack for Aegis](docs/codex-skill-pack-for-aegis.md)
 
 Historical hackathon and foundation documents remain in `docs/` for traceability
@@ -276,16 +279,14 @@ git diff --check
 Near-term work should prioritize usable product slices over more placeholder
 contracts:
 
-1. Canonical docs and generated drift hygiene.
-2. Aegis Ask product slice for read-only explanation and guidance.
-3. Intent Router / Capability Broker.
-4. Real read-only capability execution with clear approval boundaries.
-5. Agent-to-skill proposal flow that can call allowed safe skills only after
+1. Premium Mission Control UI with truthful status hierarchy.
+2. Intent Router / Capability Broker.
+3. Real read-only capability execution with clear approval boundaries.
+4. Agent-to-skill proposal flow that can call allowed safe skills only after
    policy gates exist.
-6. Premium Mission Control UI with truthful status hierarchy.
-7. Model-assisted Society and AutoPilot interpretation through Model Gateway.
-8. Memory Inbox and consent-based memory intelligence.
-9. Optional connector/MCP layer after capability, approval, and evidence gates.
+5. Model-assisted Society and AutoPilot interpretation through Model Gateway.
+6. Memory Inbox and consent-based memory intelligence.
+7. Optional connector/MCP layer after capability, approval, and evidence gates.
 
 A future sprint is not accepted if it only adds skeletons, metadata, docs, or
 future-gated placeholders unless it is explicitly declared as an audit,

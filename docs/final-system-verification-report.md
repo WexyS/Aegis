@@ -298,4 +298,6 @@ evidence are zero, while raw historical/quarantined debt remains visible.
 
 ## Next Recommended Sprint
 
-`Aegis Operating Context and Read-Only ChatGPT Bridge`
+Historical note: this report is a verification artifact. The read-only ChatGPT
+bridge has since been implemented. The current controlled product direction is
+`Aegis Ask Product Slice`.
