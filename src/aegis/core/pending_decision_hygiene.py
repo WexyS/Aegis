@@ -74,8 +74,41 @@ def build_pending_decision_hygiene_report(
         1 for item in classifications
         if "blocked_non_executable_historical" in item["classes"]
     )
+    restored_unresolved_executable_count = sum(
+        1 for item in classifications
+        if "restored_unresolved_executable" in item["classes"]
+    )
+    restored_unresolved_non_executable_count = sum(
+        1 for item in classifications
+        if "restored_unresolved_non_executable" in item["classes"]
+    )
+    restored_stale_non_executable_count = sum(
+        1 for item in classifications
+        if "restored_stale_non_executable" in item["classes"]
+    )
+    restored_orphaned_state_only_count = sum(
+        1 for item in classifications
+        if "restored_orphaned_state_only" in item["classes"]
+    )
+    restored_resolved_by_later_event_count = sum(
+        1 for item in classifications
+        if "restored_resolved_by_later_event" in item["classes"]
+    )
+    restored_closure_candidate_count = sum(
+        1 for item in classifications
+        if "restored_closure_candidate" in item["classes"]
+    )
+    restored_requires_operator_attention_count = sum(
+        1 for item in classifications
+        if "restored_requires_operator_attention" in item["classes"]
+    )
+    restored_closure_blocked_count = sum(
+        1 for item in classifications
+        if "restored_closure_blocked" in item["classes"]
+    )
 
     decision_type_distribution = Counter(item["decision_type"] for item in classifications)
+    classification_distribution = Counter(item["classification"] for item in classifications)
     source_distribution = Counter(item["restored_source"] for item in classifications)
     risk_distribution = Counter(item["risk_level"] for item in classifications)
     resume_distribution = Counter(item["resume_classification"] for item in classifications)
@@ -110,6 +143,14 @@ def build_pending_decision_hygiene_report(
         "missing_decision_reference_count": missing_reference_count,
         "already_resolved_conflict_count": already_resolved_conflict_count,
         "blocked_non_executable_historical_count": blocked_non_executable_count,
+        "restored_unresolved_executable_count": restored_unresolved_executable_count,
+        "restored_unresolved_non_executable_count": restored_unresolved_non_executable_count,
+        "restored_stale_non_executable_count": restored_stale_non_executable_count,
+        "restored_orphaned_state_only_count": restored_orphaned_state_only_count,
+        "restored_resolved_by_later_event_count": restored_resolved_by_later_event_count,
+        "restored_closure_candidate_count": restored_closure_candidate_count,
+        "restored_requires_operator_attention_count": restored_requires_operator_attention_count,
+        "restored_closure_blocked_count": restored_closure_blocked_count,
         "resumable_count": resume_distribution.get("resumable", 0),
         "state_only_count": resume_distribution.get("state_only", 0),
         "non_executing_count": resume_distribution.get("non_executing", 0),
@@ -117,6 +158,7 @@ def build_pending_decision_hygiene_report(
         "policy_unknown_count": policy_unknown_count,
         "risk_unknown_count": risk_unknown_count,
         "decision_type_distribution": dict(sorted(decision_type_distribution.items())),
+        "classification_distribution": dict(sorted(classification_distribution.items())),
         "source_distribution": dict(sorted(source_distribution.items())),
         "risk_distribution": dict(sorted(risk_distribution.items())),
         "resume_distribution": dict(sorted(resume_distribution.items())),
@@ -130,8 +172,8 @@ def build_pending_decision_hygiene_report(
             "restored_at_is_original_age": False,
         },
         "recommendation": (
-            "Operator review required for pending restored decisions; maintenance scan performed no "
-            "mutation and bulk hygiene actions are not available in this sprint."
+            "Operator review required for pending restored decisions; executable restored approvals "
+            "must not be granted through generic approval controls. Maintenance scan performed no mutation."
             if pending_count
             else "No pending approval or clarification decisions were present in the backend lifecycle snapshot."
         ),
@@ -140,7 +182,8 @@ def build_pending_decision_hygiene_report(
             "No decisions were resolved by this scan.",
             "No local/frontend deletion was performed.",
             "No approval was granted by this hygiene diagnostic.",
-            "Future bulk deny or quarantine requires explicit operator confirmation and backend lifecycle handling.",
+            "Executable restored approvals remain blockers until explicit operator resolution.",
+            "Stale or orphaned restored decisions may become closure candidates only when non-executable.",
         ],
         "safety": {
             "no_mutation_performed": True,
@@ -184,6 +227,16 @@ def _classify_pending_decision(
     policy_rule = _string_or_none(metadata.get("policy_rule"))
     risk_level = _string_or_none(record.get("risk_level")) or "unknown"
     action = _action_name(record, metadata)
+    lifecycle = _lifecycle_classification(
+        restored=restored,
+        decision_type=decision_type,
+        status=status,
+        expected_status=expected_status,
+        resolution_status=resolution_status,
+        resume_classification=resume_classification,
+        staleness=staleness,
+        action=action,
+    )
     classes = _classes_for_decision(
         restored=restored,
         staleness=staleness,
@@ -195,10 +248,18 @@ def _classify_pending_decision(
         metadata=metadata,
         policy_rule=policy_rule,
     )
+    classes = sorted(set(classes + lifecycle["classes"]))
 
     return {
         "command_id": command_id,
         "decision_type": decision_type,
+        "classification": lifecycle["classification"],
+        "classification_reason": lifecycle["reason"],
+        "executable": lifecycle["executable"],
+        "closure_allowed": lifecycle["closure_allowed"],
+        "closure_reason": lifecycle["closure_reason"],
+        "closure_blocker": lifecycle["closure_blocker"],
+        "user_facing_explanation": lifecycle["user_facing_explanation"],
         "status": status,
         "expected_pending_status": expected_status,
         "text": str(record.get("text") or ""),
@@ -214,6 +275,8 @@ def _classify_pending_decision(
         ),
         "restored_at": _int_or_none(metadata.get("restored_at")),
         "source_snapshot_sequence": _int_or_none(metadata.get("source_snapshot_sequence")),
+        "source_event_reference": _source_event_reference(metadata, restored=restored),
+        "later_resolution_reference": _later_resolution_reference(metadata),
         "staleness": staleness,
         "decision_reference_present": bool(decision_reference),
         "decision_reference_key": decision_key if decision_reference else None,
@@ -226,6 +289,163 @@ def _classify_pending_decision(
         "action": action,
         "classes": classes,
     }
+
+
+def _lifecycle_classification(
+    *,
+    restored: bool,
+    decision_type: str,
+    status: str,
+    expected_status: str,
+    resolution_status: str,
+    resume_classification: str,
+    staleness: dict[str, Any],
+    action: str | None,
+) -> dict[str, Any]:
+    resolved_by_later_event = (
+        (bool(status) and status != expected_status)
+        or resolution_status not in {"waiting_for_approval", "waiting_for_clarification", "pending"}
+    )
+    executable = decision_type == "approval" and resume_classification == "resumable"
+    if not restored:
+        return {
+            "classification": "current_session_pending",
+            "classes": ["current_session_pending"],
+            "reason": "decision belongs to the current backend lifecycle snapshot",
+            "executable": executable,
+            "closure_allowed": False,
+            "closure_reason": None,
+            "closure_blocker": "current_session_decision_requires_normal_operator_resolution",
+            "user_facing_explanation": (
+                "This is a current pending backend decision and must be resolved through normal controls."
+            ),
+        }
+
+    if resolved_by_later_event:
+        return {
+            "classification": "restored_resolved_by_later_event",
+            "classes": ["restored_resolved_by_later_event"],
+            "reason": "restored decision carries a terminal status or resolution metadata",
+            "executable": False,
+            "closure_allowed": False,
+            "closure_reason": "already reconciled by lifecycle state",
+            "closure_blocker": None,
+            "user_facing_explanation": (
+                "This restored decision has later lifecycle truth and should not remain actionable."
+            ),
+        }
+
+    if executable:
+        return {
+            "classification": "restored_unresolved_executable",
+            "classes": [
+                "restored_unresolved_executable",
+                "restored_requires_operator_attention",
+                "restored_closure_blocked",
+            ],
+            "reason": f"restored approval can resume an executable action ({action or 'unknown_action'})",
+            "executable": True,
+            "closure_allowed": False,
+            "closure_reason": None,
+            "closure_blocker": "restored_executable_requires_explicit_operator_resolution",
+            "user_facing_explanation": (
+                "This restored approval could still authorize work; it remains blocked and cannot be auto-closed."
+            ),
+        }
+
+    if resume_classification == "non_executing":
+        classes = ["restored_unresolved_non_executable"]
+        if staleness.get("stale") is True:
+            classes.extend(["restored_stale_non_executable", "restored_closure_candidate"])
+            classification = "restored_stale_non_executable"
+            closure_allowed = True
+            closure_reason = "stale restored decision is non-executable"
+            closure_blocker = None
+            explanation = (
+                "This restored decision is stale and non-executable; a future explicit operator closure may close it."
+            )
+        else:
+            classes.extend(["restored_requires_operator_attention", "restored_closure_blocked"])
+            classification = "restored_unresolved_non_executable"
+            closure_allowed = False
+            closure_reason = None
+            closure_blocker = "non_executable_restored_decision_not_stale_or_not_proven_orphaned"
+            explanation = (
+                "This restored decision is non-executable but still requires operator review before closure."
+            )
+        return {
+            "classification": classification,
+            "classes": classes,
+            "reason": "restored decision is marked non-executing by backend metadata",
+            "executable": False,
+            "closure_allowed": closure_allowed,
+            "closure_reason": closure_reason,
+            "closure_blocker": closure_blocker,
+            "user_facing_explanation": explanation,
+        }
+
+    if resume_classification == "state_only":
+        return {
+            "classification": "restored_orphaned_state_only",
+            "classes": [
+                "restored_orphaned_state_only",
+                "restored_closure_candidate",
+            ],
+            "reason": "restored decision has state-only lifecycle metadata and no resumable execution path",
+            "executable": False,
+            "closure_allowed": True,
+            "closure_reason": "state-only restored decision may be closed by explicit operator hygiene",
+            "closure_blocker": None,
+            "user_facing_explanation": (
+                "This restored decision appears state-only; closure still requires explicit backend operator action."
+            ),
+        }
+
+    return {
+        "classification": "restored_closure_blocked",
+        "classes": [
+            "restored_closure_blocked",
+            "restored_requires_operator_attention",
+        ],
+        "reason": "restored decision could not be classified as safely non-executable",
+        "executable": False,
+        "closure_allowed": False,
+        "closure_reason": None,
+        "closure_blocker": "unknown_restored_decision_requires_operator_attention",
+        "user_facing_explanation": (
+            "This restored decision has unknown execution semantics and remains blocked for operator review."
+        ),
+    }
+
+
+def _source_event_reference(metadata: dict[str, Any], *, restored: bool) -> dict[str, Any] | None:
+    if not restored:
+        return None
+    reference: dict[str, Any] = {
+        "restored_source": _string_or_none(metadata.get("restored_source")) or "restored_unknown_source",
+    }
+    sequence = _int_or_none(metadata.get("source_snapshot_sequence"))
+    if sequence is not None:
+        reference["source_snapshot_sequence"] = sequence
+    return reference
+
+
+def _later_resolution_reference(metadata: dict[str, Any]) -> dict[str, Any] | None:
+    for key in (
+        "later_resolution_sequence",
+        "resolution_event_sequence",
+        "resolved_event_sequence",
+        "resolution_sequence_num",
+    ):
+        sequence = _int_or_none(metadata.get(key))
+        if sequence is not None:
+            return {"sequence_num": sequence, "metadata_key": key}
+    event_id = _string_or_none(metadata.get("later_resolution_event_id")) or _string_or_none(
+        metadata.get("resolution_event_id")
+    )
+    if event_id:
+        return {"event_id": event_id}
+    return None
 
 
 def _staleness(

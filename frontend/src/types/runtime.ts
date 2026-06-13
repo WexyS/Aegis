@@ -694,6 +694,14 @@ export interface PendingDecisionHygieneDiagnostics {
   missing_decision_reference_count?: number;
   already_resolved_conflict_count?: number;
   blocked_non_executable_historical_count?: number;
+  restored_unresolved_executable_count?: number;
+  restored_unresolved_non_executable_count?: number;
+  restored_stale_non_executable_count?: number;
+  restored_orphaned_state_only_count?: number;
+  restored_resolved_by_later_event_count?: number;
+  restored_closure_candidate_count?: number;
+  restored_requires_operator_attention_count?: number;
+  restored_closure_blocked_count?: number;
   resumable_count?: number;
   state_only_count?: number;
   non_executing_count?: number;
@@ -701,6 +709,7 @@ export interface PendingDecisionHygieneDiagnostics {
   policy_unknown_count?: number;
   risk_unknown_count?: number;
   decision_type_distribution?: Record<string, number>;
+  classification_distribution?: Record<string, number>;
   source_distribution?: Record<string, number>;
   risk_distribution?: Record<string, number>;
   resume_distribution?: Record<string, number>;

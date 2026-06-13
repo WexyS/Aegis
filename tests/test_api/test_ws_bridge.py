@@ -941,6 +941,54 @@ async def test_ws_approval_decision_deny_emits_rejected_truth_and_snapshot_witho
 
 
 @pytest.mark.asyncio
+async def test_ws_restored_approval_grant_is_blocked_without_queue_or_resolution_event(monkeypatch) -> None:
+    manager = get_approval_manager()
+    manager.reset_for_tests()
+    manager.register_pending(
+        command_id="cmd-ws-restored-grant",
+        text="open notepad",
+        trace_id="11111111-1111-4111-8111-111111111114",
+        risk_level=RiskLevel.MEDIUM,
+        reason="restored approval required",
+        metadata={
+            "approval_id": "approval-ws-restored-grant",
+            "restored_from_journal": True,
+            "restored_source": "command_event_replay",
+            "resume_allowed": True,
+        },
+    )
+    emitted: list[tuple[ProtocolEventType, dict]] = []
+    snapshots: list[str] = []
+    queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+
+    async def fake_emit_event(event_type, payload, **kwargs):
+        emitted.append((event_type, payload))
+
+    async def fake_emit_snapshot(*, to, last_sequence_num=0):
+        snapshots.append(to)
+
+    monkeypatch.setattr(ws_bridge, "_command_queue", queue)
+    monkeypatch.setattr(ws_bridge, "_command_queue_capacity", 4)
+    monkeypatch.setattr(ws_bridge, "emit_event", fake_emit_event)
+    monkeypatch.setattr(ws_bridge, "_emit_snapshot", fake_emit_snapshot)
+
+    await ws_bridge.resolve_approval(
+        "sid-restored-grant",
+        {"approval_id": "approval-ws-restored-grant", "decision": "grant"},
+    )
+
+    updated = manager.get("cmd-ws-restored-grant")
+    assert updated is not None
+    assert updated.status.value == "pending_approval"
+    assert updated.approved is False
+    assert updated.rejected is False
+    assert updated.metadata["approval_resolution_status"] == "waiting_for_approval"
+    assert queue.qsize() == 0
+    assert emitted == []
+    assert snapshots == []
+
+
+@pytest.mark.asyncio
 async def test_action_failed_event_carries_execution_evidence(monkeypatch) -> None:
     emitted: list[tuple[ProtocolEventType, dict]] = []
 

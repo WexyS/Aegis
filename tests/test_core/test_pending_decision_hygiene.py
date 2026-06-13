@@ -233,3 +233,119 @@ def test_classifier_keeps_non_executable_historical_decision_non_executing() -> 
     assert "blocked_non_executable_historical" in classification["classes"]
     assert report["non_executing_count"] == 1
     assert report["resumable_count"] == 0
+
+
+def test_classifier_marks_restored_executable_approval_as_operator_attention_blocker() -> None:
+    record = _pending_record(
+        "cmd-restored-executable",
+        "create file scratch/new.txt",
+        metadata={
+            "approval_id": "approval-restored-executable",
+            "resume_allowed": True,
+            "restored_from_journal": True,
+            "restored_source": "command_event_replay",
+            "source_snapshot_sequence": 119248,
+        },
+    )
+
+    report = build_pending_decision_hygiene_report({"pending_approvals": [record]})
+    classification = report["classifications"][0]
+
+    assert classification["classification"] == "restored_unresolved_executable"
+    assert classification["executable"] is True
+    assert classification["closure_allowed"] is False
+    assert classification["closure_blocker"] == "restored_executable_requires_explicit_operator_resolution"
+    assert classification["source_event_reference"] == {
+        "restored_source": "command_event_replay",
+        "source_snapshot_sequence": 119248,
+    }
+    assert "restored_requires_operator_attention" in classification["classes"]
+    assert "restored_closure_blocked" in classification["classes"]
+    assert report["restored_unresolved_executable_count"] == 1
+    assert report["restored_requires_operator_attention_count"] == 1
+    assert report["restored_closure_blocked_count"] == 1
+    assert report["restored_closure_candidate_count"] == 0
+
+
+def test_classifier_marks_stale_restored_non_executable_as_closure_candidate() -> None:
+    record = _pending_record(
+        "cmd-restored-click",
+        "click 10 20",
+        created_at=1_000,
+        updated_at=1_000,
+        metadata={
+            "approval_id": "approval-restored-click",
+            "resume_allowed": False,
+            "policy_rule": "generic_click.quarantined.approval_required",
+            "restored_from_journal": True,
+            "restored_source": "command_event_replay",
+        },
+    )
+
+    report = build_pending_decision_hygiene_report(
+        {"pending_approvals": [record]},
+        generated_at_ms=100_000,
+        stale_after_ms=50_000,
+    )
+    classification = report["classifications"][0]
+
+    assert classification["classification"] == "restored_stale_non_executable"
+    assert classification["executable"] is False
+    assert classification["closure_allowed"] is True
+    assert classification["closure_reason"] == "stale restored decision is non-executable"
+    assert classification["closure_blocker"] is None
+    assert "restored_closure_candidate" in classification["classes"]
+    assert report["restored_stale_non_executable_count"] == 1
+    assert report["restored_closure_candidate_count"] == 1
+
+
+def test_classifier_marks_restored_state_only_clarification_as_closure_candidate() -> None:
+    record = _pending_record(
+        "cmd-restored-clarification",
+        "click that",
+        status="waiting_for_clarification",
+        metadata={
+            "clarification_id": "clarification-restored",
+            "resume_allowed": False,
+            "restored_from_journal": True,
+            "restored_source": "runtime_snapshot",
+        },
+    )
+
+    report = build_pending_decision_hygiene_report({"pending_clarifications": [record]})
+    classification = report["classifications"][0]
+
+    assert classification["classification"] == "restored_orphaned_state_only"
+    assert classification["executable"] is False
+    assert classification["closure_allowed"] is True
+    assert "restored_closure_candidate" in classification["classes"]
+    assert report["restored_orphaned_state_only_count"] == 1
+    assert report["restored_closure_candidate_count"] == 1
+
+
+def test_classifier_marks_restored_later_resolved_conflict_as_reconciled() -> None:
+    record = _pending_record(
+        "cmd-restored-resolved",
+        "open notepad",
+        status="rejected",
+        metadata={
+            "approval_id": "approval-restored-resolved",
+            "approval_resolution_status": "approval_denied",
+            "restored_from_journal": True,
+            "restored_source": "command_event_replay",
+            "resolution_event_sequence": 119300,
+        },
+    )
+
+    report = build_pending_decision_hygiene_report({"pending_approvals": [record]})
+    classification = report["classifications"][0]
+
+    assert classification["classification"] == "restored_resolved_by_later_event"
+    assert classification["closure_allowed"] is False
+    assert classification["closure_reason"] == "already reconciled by lifecycle state"
+    assert classification["later_resolution_reference"] == {
+        "sequence_num": 119300,
+        "metadata_key": "resolution_event_sequence",
+    }
+    assert "already_resolved_conflict" in classification["classes"]
+    assert report["restored_resolved_by_later_event_count"] == 1

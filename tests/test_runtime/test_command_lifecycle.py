@@ -447,9 +447,42 @@ def test_approval_manager_restores_pending_approval_snapshot() -> None:
     assert snapshot["pending_approvals"][0]["metadata"]["restored_source"] == "runtime_snapshot"
     assert isinstance(snapshot["pending_approvals"][0]["metadata"]["restored_at"], int)
 
-    approved = restored.approve("22222222-2222-4222-8222-222222222222")
-    assert approved.status == CommandStatus.APPROVED
-    assert approved.approved is True
+    with pytest.raises(ValueError, match="Restored approval decisions cannot be granted"):
+        restored.approve("22222222-2222-4222-8222-222222222222")
+
+    still_pending = restored.get("22222222-2222-4222-8222-222222222222")
+    assert still_pending is not None
+    assert still_pending.status == CommandStatus.PENDING_APPROVAL
+    assert still_pending.approved is False
+    assert still_pending.approval_required is True
+
+
+def test_approval_manager_blocks_restored_approval_grant_by_decision_id_without_execution() -> None:
+    manager = ApprovalManager()
+    manager.register_pending(
+        command_id="cmd-restored-grant-blocked",
+        text="open notepad",
+        trace_id="trace-restored-grant-blocked",
+        risk_level=RiskLevel.MEDIUM,
+        reason="approval required",
+        metadata={
+            "approval_id": "approval-restored-grant-blocked",
+            "restored_from_journal": True,
+            "restored_source": "command_event_replay",
+            "resume_allowed": True,
+        },
+    )
+
+    with pytest.raises(ValueError, match="Restored approval decisions cannot be granted"):
+        manager.resolve_approval("approval-restored-grant-blocked", approved=True)
+
+    record = manager.get("cmd-restored-grant-blocked")
+    assert record is not None
+    assert record.status == CommandStatus.PENDING_APPROVAL
+    assert record.approved is False
+    assert record.rejected is False
+    assert record.metadata["approval_resolution_status"] == "waiting_for_approval"
+    assert manager.snapshot()["pending_approvals"][0]["command_id"] == "cmd-restored-grant-blocked"
 
 
 def test_approval_manager_tracks_pending_clarification_as_first_class_lifecycle() -> None:
@@ -774,6 +807,58 @@ def test_restore_reconciles_pending_snapshot_with_later_denied_approval_event() 
     assert hygiene["restored_unresolved_count"] == 0
     assert restored.get(pending.command_id).status == CommandStatus.REJECTED
     assert restored.get(pending.command_id).metadata["approval_resolution_status"] == "approval_denied"
+
+
+def test_restore_reconciles_pending_snapshot_with_later_cancelled_approval_event() -> None:
+    source = ApprovalManager()
+    pending = source.register_pending(
+        command_id="55555555-5555-4555-7655-555555555555",
+        text="open notepad",
+        trace_id="trace-cancelled-overlay",
+        risk_level=RiskLevel.MEDIUM,
+        reason="medium risk requires approval",
+        metadata={"approval_id": "approval-cancelled-overlay"},
+    )
+    snapshot = source.snapshot()
+    cancelled = source.cancel(pending.command_id, reason="operator cancelled restored approval")
+
+    class FakeJournal:
+        def recent_events(self) -> list[dict]:
+            return [
+                {
+                    "event_type": "SNAPSHOT_CREATED",
+                    "sequence_num": 102,
+                    "payload": {
+                        "runtime": {
+                            "commands": snapshot,
+                        },
+                    },
+                },
+                {
+                    "event_type": "COMMAND_CANCELLED",
+                    "sequence_num": 103,
+                    "payload": {
+                        "command_id": pending.command_id,
+                        "command": cancelled.to_dict(),
+                    },
+                },
+            ]
+
+        def events_after(self, sequence_num: int) -> list[dict]:
+            raise AssertionError("recent journal tail has enough state")
+
+    restored = ApprovalManager()
+
+    assert restore_approval_manager_from_journal(journal=FakeJournal(), manager=restored) is True
+    restored_snapshot = restored.snapshot()
+    assert restored_snapshot["pending_approvals"] == []
+    hygiene = build_pending_decision_hygiene_report(restored_snapshot, generated_at_ms=10_000)
+    assert hygiene["restored_unresolved_count"] == 0
+    restored_record = restored.get(pending.command_id)
+    assert restored_record.status == CommandStatus.CANCELLED
+    assert restored_record.approval_required is False
+    assert restored_record.active is False
+    assert restored_record.approved is False
 
 
 def test_restore_reconciles_pending_snapshot_with_later_hygiene_denied_approval_event() -> None:

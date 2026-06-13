@@ -700,5 +700,8 @@ def test_threat_lifecycle_resolution_wording_keeps_execution_separate_from_resol
     assert "state-only" in pending_panel
     assert "does not reparse or execute" in pending_panel
     assert "Grant records the decision only" in pending_panel
+    assert "restored grant blocked" in pending_panel
+    assert "Restored approvals cannot be granted from this panel" in pending_panel
+    assert "Review only" in pending_panel
     assert "APPROVAL_RESOLVED" in socket_client
     assert "CLARIFICATION_RESOLVED" in socket_client

@@ -807,6 +807,18 @@ def _findings_from_checks(checks: dict[str, Any]) -> list[dict[str, Any]]:
                 "pending_count": pending_decision_hygiene.get("pending_count"),
                 "restored_unresolved_count": pending_decision_hygiene.get("restored_unresolved_count"),
                 "stale_restored_unresolved_count": pending_decision_hygiene.get("stale_restored_unresolved_count"),
+                "restored_unresolved_executable_count": pending_decision_hygiene.get(
+                    "restored_unresolved_executable_count"
+                ),
+                "restored_closure_candidate_count": pending_decision_hygiene.get(
+                    "restored_closure_candidate_count"
+                ),
+                "restored_requires_operator_attention_count": pending_decision_hygiene.get(
+                    "restored_requires_operator_attention_count"
+                ),
+                "restored_closure_blocked_count": pending_decision_hygiene.get(
+                    "restored_closure_blocked_count"
+                ),
                 "unknown_age_count": pending_decision_hygiene.get("unknown_age_count"),
                 "approval_count": pending_decision_hygiene.get("approval_count"),
                 "clarification_count": pending_decision_hygiene.get("clarification_count"),

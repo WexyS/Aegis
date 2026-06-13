@@ -312,6 +312,52 @@ class TestCommandEndpoint:
         assert manager.get("cmd-restored-preview").to_dict() == before
 
     @pytest.mark.asyncio
+    async def test_http_restored_approval_grant_is_blocked_without_execution(self, monkeypatch) -> None:
+        from aegis.core.constants import RiskLevel
+
+        manager = get_approval_manager()
+        manager.reset_for_tests()
+        manager.register_pending(
+            command_id="cmd-restored-http-grant",
+            text="open notepad",
+            trace_id="trace-restored-http-grant",
+            risk_level=RiskLevel.MEDIUM,
+            reason="restored approval",
+            metadata={
+                "approval_id": "approval-restored-http-grant",
+                "restored_from_journal": True,
+                "restored_source": "command_event_replay",
+                "resume_allowed": True,
+            },
+        )
+        queue: asyncio.Queue = asyncio.Queue(maxsize=4)
+        emitted: list[tuple[str, dict]] = []
+
+        async def fake_emit_event(event_type, payload, **kwargs):
+            emitted.append((event_type.value, payload))
+
+        monkeypatch.setattr(ws_bridge, "_command_queue", queue)
+        monkeypatch.setattr(ws_bridge, "_command_queue_capacity", 4)
+        monkeypatch.setattr(ws_bridge, "emit_event", fake_emit_event)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post(
+                "/command/approvals/approval-restored-http-grant/resolve",
+                json={"decision": "grant"},
+            )
+
+        record = manager.get("cmd-restored-http-grant")
+        assert r.status_code == 409
+        assert "Restored approval decisions cannot be granted" in r.json()["detail"]
+        assert record.status.value == "pending_approval"
+        assert record.approved is False
+        assert record.rejected is False
+        assert record.metadata["approval_resolution_status"] == "waiting_for_approval"
+        assert queue.qsize() == 0
+        assert emitted == []
+
+    @pytest.mark.asyncio
     async def test_approval_hygiene_deny_selected_requires_confirmation_reason_and_rejects_grant_like_payload(self) -> None:
         from aegis.core.constants import RiskLevel
 

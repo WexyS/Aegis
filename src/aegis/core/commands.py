@@ -71,6 +71,10 @@ class ApprovalManager:
         "Approval was recorded, but this decision is non-executable until a "
         "deterministic execution contract exists."
     )
+    RESTORED_APPROVAL_GRANT_BLOCKED_REASON = (
+        "Restored approval decisions cannot be granted through the normal approval path; "
+        "leave them blocked or use an explicit deny-only hygiene flow."
+    )
     NON_EXECUTED_CLARIFICATION_REASON = (
         "Clarification was recorded, but v1 does not resume execution from "
         "clarification answers."
@@ -437,6 +441,8 @@ class ApprovalManager:
     ) -> CommandRecord:
         if record.status != CommandStatus.PENDING_APPROVAL:
             raise ValueError(f"Command {record.command_id} is not pending approval")
+        if record.metadata.get("restored_from_journal") is True:
+            raise ValueError(self.RESTORED_APPROVAL_GRANT_BLOCKED_REASON)
 
         record.approved = True
         record.rejected = False

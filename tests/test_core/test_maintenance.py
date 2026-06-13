@@ -328,6 +328,10 @@ def test_maintenance_scan_surfaces_read_only_pending_decision_hygiene() -> None:
     assert hygiene["status"] == "warning"
     assert hygiene["pending_count"] == 1
     assert hygiene["restored_unresolved_count"] == 1
+    assert hygiene["restored_unresolved_executable_count"] == 1
+    assert hygiene["restored_requires_operator_attention_count"] == 1
+    assert hygiene["restored_closure_blocked_count"] == 1
+    assert hygiene["restored_closure_candidate_count"] == 0
     assert hygiene["current_session_pending_count"] == 0
     assert hygiene["approval_count"] == 1
     assert hygiene["clarification_count"] == 0
@@ -339,6 +343,9 @@ def test_maintenance_scan_surfaces_read_only_pending_decision_hygiene() -> None:
     assert "pending_decision_hygiene_diagnostics" in report["checks"]["read_only_contract"]["allowed_observations"]
     assert finding["read_only"] is True
     assert finding["evidence"]["restored_unresolved_count"] == 1
+    assert finding["evidence"]["restored_unresolved_executable_count"] == 1
+    assert finding["evidence"]["restored_requires_operator_attention_count"] == 1
+    assert finding["evidence"]["restored_closure_blocked_count"] == 1
     assert manager.snapshot()["pending_approvals"] == []
 
 
@@ -687,6 +694,9 @@ def test_maintenance_closure_readiness_requires_attention_for_pending_decisions(
     assert closure["restored_pending_count"] == 1
     assert closure["current_blocker_count"] == 1
     assert closure["mutation_performed"] is False
+    hygiene = report["checks"]["pending_decision_hygiene"]
+    assert hygiene["restored_unresolved_executable_count"] == 1
+    assert hygiene["restored_requires_operator_attention_count"] == 1
 
 
 def test_maintenance_closure_readiness_does_not_guess_unknown_era(monkeypatch, tmp_path) -> None:

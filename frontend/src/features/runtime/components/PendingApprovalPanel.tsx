@@ -388,7 +388,8 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
   const resources = Array.isArray(proposal?.affected_resources) ? proposal.affected_resources : [];
   const evidenceRefs = Array.isArray(proposal?.evidence_refs) ? proposal.evidence_refs : [];
   const approvalId = getMetadataString(command, 'approval_id') || command.command_id;
-  const restored = getRestoredDecisionLabel(command);
+  const restoredLabel = getRestoredDecisionLabel(command);
+  const restoredDecision = isRestoredDecision(command);
   const ageLabel = getDecisionAgeLabel(command);
   const resumeAllowed = command.metadata?.resume_allowed === true;
   const resumeStatus = getMetadataString(command, 'approval_resume_status');
@@ -432,9 +433,9 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
           <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${riskBadgeStyle(command.risk_level)}`}>{command.risk_level} risk</span>
           <span className="text-[9px] font-mono text-foreground/35">{command.verification_state}</span>
         </div>
-        {restored && (
+        {restoredLabel && (
           <div className="inline-flex rounded-md border border-warning/25 bg-warning/10 px-2 py-0.5 text-[9px] font-mono uppercase tracking-widest text-warning">
-            {restored}
+            {restoredLabel}
           </div>
         )}
         {ageLabel && (
@@ -446,13 +447,20 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
           <div className="flex items-center justify-between gap-2">
             <span className="truncate">approval id: {approvalId}</span>
             <span className={resumeAllowed ? 'text-warning' : 'text-foreground/45'}>
-              {resumeStatus === 'queued_for_execution'
+              {restoredDecision
+                ? 'restored grant blocked'
+                : resumeStatus === 'queued_for_execution'
                 ? 'queued for backend policy gate'
                 : resumeAllowed
                   ? 'backend-gated state update'
                   : 'state-only / non-executing'}
             </span>
           </div>
+          {restoredDecision && (
+            <p className="mt-1 text-warning/80">
+              Restored approvals cannot be granted from this panel. Use deny-only hygiene with confirmation, or leave the decision blocked.
+            </p>
+          )}
           {nonExecutable && (
             <p className="mt-1 text-warning/80">
               Grant records the decision only; quarantined or unresolved click actions are not executed by this control.
@@ -489,15 +497,25 @@ const ApprovalItem = React.memo(({ command }: { command: CommandRecord }) => {
         )}
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => void resolve('grant')}
-          disabled={controlsDisabled}
-          aria-busy={resolving === 'grant'}
-          className="flex items-center justify-center gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-success hover:bg-success/15 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
-        >
-          <Check size={12} /> {resolving === 'grant' ? 'Resolving' : 'Grant'}
-        </button>
+        {restoredDecision ? (
+          <button
+            type="button"
+            disabled
+            className="flex items-center justify-center gap-2 rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-warning opacity-60"
+          >
+            <ShieldAlert size={12} /> Review only
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void resolve('grant')}
+            disabled={controlsDisabled}
+            aria-busy={resolving === 'grant'}
+            className="flex items-center justify-center gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-success hover:bg-success/15 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+          >
+            <Check size={12} /> {resolving === 'grant' ? 'Resolving' : 'Grant'}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void resolve('deny')}
