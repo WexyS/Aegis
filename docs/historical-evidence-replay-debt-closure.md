@@ -18,9 +18,9 @@ older debt from blocking current product work forever.
 Missing historical evidence cannot be reconstructed unless source evidence
 actually exists. Unknown-era issues must not be guessed into success.
 
-## Current Observed State
+## Initial Observed State
 
-The read-only maintenance scan for this closure sprint reported:
+The read-only maintenance scan before manifest-only quarantine reported:
 
 - scan version: `maintenance-scan/1`
 - runtime health summary status: `fail`
@@ -40,6 +40,11 @@ No current evidence failure or current missing evidence was observed. Closure
 execution remains blocked because the unknown-era and replay-boundary debt
 cannot be safely retired without backup, restore, replay/hash-chain, exact-item
 listing, and operator gates.
+
+After the manifest-only quarantine apply, raw evidence and replay diagnostics
+remain visible as `fail`, but active runtime health reports `warning` when the
+ignored closure manifest is readable and no current blockers remain. Unknown-era
+evidence remains quarantined, not fixed.
 
 ## Implementation Added
 

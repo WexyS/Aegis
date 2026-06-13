@@ -136,7 +136,7 @@ These must not be marketed as completed execution:
 
 ## Current Runtime Health Interpretation
 
-Latest read-only maintenance scan during this audit:
+Latest read-only maintenance scan during the initial integrity audit:
 
 - scan version: `maintenance-scan/1`
 - read-only: true
@@ -154,13 +154,16 @@ Latest read-only maintenance scan during this audit:
   `historical_mixed_sequence_eras_or_reset_boundaries`
 - maintenance scan observed mutations: none
 
-Interpretation:
+Updated post-quarantine interpretation:
 
 - Current operational blockers were not found by the scan.
-- Runtime health still fails because evidence audit, runtime snapshot alignment,
-  and replay diagnostics remain attention surfaces.
-- Unknown-era and replay debt must remain visible until closed through an
-  explicit operator-gated process.
+- A later manifest-only quarantine apply left raw evidence and replay
+  diagnostics visible as `fail`, but active runtime health now reports
+  `warning` when the ignored closure manifest is readable and no current
+  blockers remain.
+- Runtime snapshot alignment remains warning/attention, not full green.
+- Unknown-era and replay debt remain visible as quarantined attention; this is
+  not evidence repair, replay repair, or verifier success.
 
 ## Product And Architecture Gaps
 

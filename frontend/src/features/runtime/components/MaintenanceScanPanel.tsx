@@ -329,6 +329,8 @@ const RuntimeHealthSummary = ({ health }: { health: RuntimeHealth }) => {
   const statusTone = health.status === 'ok' ? 'text-success' : health.status === 'fail' ? 'text-danger' : 'text-warning';
   const attention = Array.isArray(health.attention) ? health.attention : [];
   const findingCount = numberish(health.finding_count);
+  const activeFailures = Array.isArray(health.active_failure_components) ? health.active_failure_components : [];
+  const projections = health.active_runtime_projections || {};
   return (
     <div className="mt-3 border-t border-white/10 pt-3">
       <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest">
@@ -340,11 +342,14 @@ const RuntimeHealthSummary = ({ health }: { health: RuntimeHealth }) => {
           <StatusMetric key={name} label={name} status={String(status)} />
         ))}
       </div>
+      {(Object.keys(projections).length > 0 || activeFailures.length > 0) && (
+        <RuntimeProjectionTruthSummary health={health} />
+      )}
       {attention.length > 0 && (
         <p className="mt-2 truncate text-[9px] font-mono text-warning/85">{attention.join(', ')}</p>
       )}
       <p className="mt-2 text-[9px] font-mono leading-relaxed text-foreground/45">
-        Backend-reported health is preserved. A fail state can be correct while historical, replay, unknown-era, or resource debt remains visible.
+        Backend-reported active health is preserved. Raw diagnostic failures remain visible and are not evidence repair, replay repair, or verifier success.
       </p>
       {findingCount !== null && findingCount > 0 && (
         <p className="mt-2 text-[9px] font-mono text-foreground/45">{findingCount} backend findings</p>
@@ -359,8 +364,48 @@ const RuntimeHealthSummary = ({ health }: { health: RuntimeHealth }) => {
   );
 };
 
+const RuntimeProjectionTruthSummary = ({ health }: { health: RuntimeHealth }) => {
+  const projections = health.active_runtime_projections || {};
+  const evidence = projections.evidence_audit;
+  const replay = projections.replay_diagnostics;
+  const snapshot = projections.runtime_snapshot;
+  const activeFailures = Array.isArray(health.active_failure_components) ? health.active_failure_components : [];
+  return (
+    <div className="mt-2 rounded-md border border-warning/20 bg-warning/[0.03] p-2">
+      <div className="flex items-center justify-between gap-2 text-[8px] font-bold uppercase tracking-widest text-warning/80">
+        <span>Active vs raw diagnostics</span>
+        <span>{activeFailures.length === 0 ? 'no active fail' : `${activeFailures.length} active fail`}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        <AuditMetric label="raw evidence" value={statusLabel(health.raw_component_statuses?.evidence_audit)} tone={statusMetricTone(health.raw_component_statuses?.evidence_audit)} />
+        <AuditMetric label="active evidence" value={statusLabel(evidence?.status)} tone={statusMetricTone(evidence?.status)} />
+        <AuditMetric label="raw replay" value={statusLabel(health.raw_component_statuses?.replay_diagnostics)} tone={statusMetricTone(health.raw_component_statuses?.replay_diagnostics)} />
+        <AuditMetric label="active replay" value={statusLabel(replay?.status)} tone={statusMetricTone(replay?.status)} />
+        <AuditMetric label="snapshot raw" value={statusLabel(snapshot?.raw_status ?? health.raw_component_statuses?.runtime_snapshot)} tone={statusMetricTone(snapshot?.raw_status ?? health.raw_component_statuses?.runtime_snapshot)} />
+        <AuditMetric label="snapshot active" value={statusLabel(snapshot?.status)} tone={statusMetricTone(snapshot?.status)} />
+        <AuditMetric label="manifest backed" value={replay?.manifest_backed === true ? 'yes' : 'no'} tone={replay?.manifest_backed === true ? 'default' : 'warning'} />
+        <AuditMetric label="baseline" value={formatOptional(snapshot?.clean_operational_baseline_status)} tone={snapshot?.clean_operational_baseline_status ? 'default' : 'warning'} />
+      </div>
+      <p className="mt-2 text-[8.5px] font-mono leading-relaxed text-foreground/45">
+        Raw fail means diagnostic debt is still visible. Active warning means the current blocker set is clear while manifest-backed quarantined debt remains attention-only.
+      </p>
+      {evidence && (
+        <p className="mt-1 text-[8.5px] font-mono leading-relaxed text-foreground/40">
+          quarantined unknown-era evidence: {countLabel(numberish(evidence.quarantined_unknown_era_evidence_issue_count))}; missing: {countLabel(numberish(evidence.quarantined_unknown_era_missing_evidence_count))}; fabricated: {evidence.missing_evidence_fabricated === true ? 'yes' : 'no'}
+        </p>
+      )}
+      {replay?.replay_boundary_classification && (
+        <p className="mt-1 text-[8.5px] font-mono leading-relaxed text-foreground/40">
+          replay boundary: {replay.replay_boundary_classification}; original replay touched: {replay.original_replay_state_touched === true ? 'yes' : 'no'}
+        </p>
+      )}
+    </div>
+  );
+};
+
 const ClosureReadinessSummary = ({ readiness }: { readiness: FoundationClosureReadiness }) => {
   const status = String(readiness.closure_readiness_status || 'unknown');
+  const closureExecution = String(readiness.closure_execution_status || 'not_executed');
   const currentBlockers = numberish(readiness.current_blocker_count);
   const currentEvidenceFailures = numberish(readiness.current_evidence_failure_count);
   const currentMissingEvidence = numberish(readiness.current_missing_evidence_count);
@@ -377,6 +422,11 @@ const ClosureReadinessSummary = ({ readiness }: { readiness: FoundationClosureRe
   const replayTone = replayStatus === 'ok' ? 'default' : replayStatus === 'fail' ? 'danger' : 'warning';
   const readOnlyLabel = readiness.read_only === true ? 'Read-only scan' : 'Read-only state unavailable';
   const mutationLabel = readiness.mutation_performed === false ? 'No mutation performed' : 'Mutation state unavailable';
+  const archivedDebt = readiness.archived_historical_debt;
+  const quarantinedDebt = readiness.quarantined_unknown_era_debt;
+  const archiveStatus = String(archivedDebt?.status || 'not_archived');
+  const quarantineStatus = String(quarantinedDebt?.status || 'not_quarantined');
+  const manifestRef = String(quarantinedDebt?.manifest_ref || archivedDebt?.manifest_ref || 'none');
 
   return (
     <div className="mt-3 border-t border-white/10 pt-3">
@@ -401,9 +451,15 @@ const ClosureReadinessSummary = ({ readiness }: { readiness: FoundationClosureRe
           <AuditMetric label="historical missing" value={countLabel(historicalMissing)} tone={(historicalMissing ?? 0) > 0 ? 'warning' : 'default'} />
           <AuditMetric label="unknown-era issues" value={countLabel(unknownEra)} tone={(unknownEra ?? 0) > 0 ? 'warning' : 'default'} />
           <AuditMetric label="unknown missing" value={countLabel(unknownMissing)} tone={(unknownMissing ?? 0) > 0 ? 'warning' : 'default'} />
-          <AuditMetric label="replay diagnostics" value={replayStatus} tone={replayTone} />
+          <AuditMetric label="raw replay diagnostics" value={replayStatus} tone={replayTone} />
           <AuditMetric label="resource warnings" value={countLabel(systemWarnings)} tone={(systemWarnings ?? 0) > 0 ? 'warning' : 'default'} />
           <AuditMetric label="app discovery" value={countLabel(appDiscoveryWarnings)} tone={(appDiscoveryWarnings ?? 0) > 0 ? 'warning' : 'default'} />
+        </MetricGroup>
+        <MetricGroup title="Archive / quarantine state">
+          <AuditMetric label="closure" value={closureExecution} tone={closureExecution === 'executed_manifest_only' ? 'default' : 'warning'} />
+          <AuditMetric label="quarantine" value={quarantineStatus} tone={quarantineStatus === 'quarantined' ? 'warning' : 'default'} />
+          <AuditMetric label="archive" value={archiveStatus} tone={archiveStatus === 'archived' ? 'warning' : 'default'} />
+          <AuditMetric label="manifest" value={manifestRef} tone={manifestRef === 'none' ? 'warning' : 'default'} />
         </MetricGroup>
         <MetricGroup title="Scan contract">
           <AuditMetric label="mode" value={readOnlyLabel} tone={readiness.read_only === true ? 'default' : 'warning'} />
@@ -414,7 +470,7 @@ const ClosureReadinessSummary = ({ readiness }: { readiness: FoundationClosureRe
         Foundation baseline is accepted with known debt when current blockers are clear and historical, unknown-era, replay, and resource debt remain visible.
       </p>
       <p className="mt-1 text-[9px] font-mono leading-relaxed text-foreground/45">
-        Runtime Health remains separate and may still be fail. Unknown-era evidence is not guessed as historical, and replay debt is not cleanup-ready.
+        Runtime Health is separate from raw diagnostics. Unknown-era evidence is quarantined, not fixed, and raw replay debt is not cleanup-ready.
       </p>
       {readiness.replay_boundary_classification && readiness.replay_boundary_classification !== 'unknown' && (
         <p className="mt-1 text-[9px] font-mono leading-relaxed text-warning/75">
@@ -901,6 +957,20 @@ const AuditMetric = ({ label, value, tone = 'default' }: { label: string; value:
     </div>
   );
 };
+
+function statusLabel(status: unknown): string {
+  return typeof status === 'string' && status.length > 0 ? status : 'unknown';
+}
+
+function statusMetricTone(status: unknown): 'default' | 'warning' | 'danger' {
+  if (status === 'fail') return 'danger';
+  if (status === 'warning') return 'warning';
+  return 'default';
+}
+
+function formatOptional(value: unknown): string {
+  return typeof value === 'string' && value.length > 0 ? value.replace(/_/g, ' ') : 'unknown';
+}
 
 const MetricGroup = ({ title, children }: { title: string; children: ReactNode }) => (
   <div className="rounded-md border border-white/10 bg-black/15 p-2">

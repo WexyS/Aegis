@@ -583,11 +583,50 @@ export interface RuntimeHealth {
   status: string;
   source_of_truth: string;
   component_statuses: Record<string, string>;
+  raw_component_statuses?: Record<string, string>;
+  active_failure_components?: string[];
+  active_runtime_projections?: Record<string, RuntimeHealthProjection>;
   attention: string[];
   finding_count?: number;
   finding_severity_counts?: Record<string, number>;
   action_proposal_count?: number;
   pending_action_proposal_count?: number;
+}
+
+export interface RuntimeHealthProjection {
+  status?: string;
+  raw_status?: string;
+  classification?: string;
+  active_evidence_failure_count?: number;
+  active_missing_evidence_count?: number;
+  quarantined_unknown_era_evidence_issue_count?: number;
+  quarantined_unknown_era_missing_evidence_count?: number;
+  active_replay_failure?: boolean;
+  manifest_backed?: boolean;
+  replay_boundary_classification?: string;
+  clean_operational_baseline_status?: string;
+  sequence_aligned?: boolean;
+  snapshot_rewritten?: boolean;
+  original_replay_state_touched?: boolean;
+  missing_evidence_fabricated?: boolean;
+  evidence_created?: boolean;
+}
+
+export interface HistoricalDebtSummary {
+  status?: string;
+  manifest_ref?: string | null;
+  historical_evidence_debt_count?: number;
+  historical_missing_evidence_count?: number;
+  archive_created?: boolean;
+}
+
+export interface UnknownEraQuarantineSummary {
+  status?: string;
+  manifest_ref?: string | null;
+  unknown_era_evidence_issue_count?: number;
+  unknown_era_missing_evidence_count?: number;
+  quarantine_created?: boolean;
+  unknown_era_reclassified?: boolean;
 }
 
 export interface FoundationClosureReadiness {
@@ -596,6 +635,7 @@ export interface FoundationClosureReadiness {
   mutation_performed: boolean;
   status: string;
   closure_readiness_status: string;
+  closure_execution_status?: string;
   current_blocker_count?: number;
   current_evidence_failure_count?: number;
   current_missing_evidence_count?: number;
@@ -609,6 +649,10 @@ export interface FoundationClosureReadiness {
   replay_historical_debt_present?: boolean;
   replay_diagnostics_status?: string;
   replay_boundary_classification?: string;
+  active_runtime_projections?: Record<string, RuntimeHealthProjection>;
+  archived_historical_debt?: HistoricalDebtSummary;
+  quarantined_unknown_era_debt?: UnknownEraQuarantineSummary;
+  unknown_era_quarantined_by_manifest?: boolean;
   system_resource_warning_count?: number;
   app_discovery_warning_count?: number;
   component_inputs?: Record<string, string | null | undefined>;
