@@ -100,6 +100,12 @@ Current approved mutation examples are limited maintenance actions:
 - `create_logging_directory`
 - `create_scratch_directory`
 
+Restored historical executable approval cleanup is not an approval-gated
+mutation capability. It is a neutral backend lifecycle action that may only
+operator-cancel non-current restored approvals without granting approval,
+executing commands, creating files, launching apps, or hiding the original
+journal records.
+
 ## Blocked Work
 
 Aegis must block:

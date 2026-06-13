@@ -1,6 +1,6 @@
 # Final System Verification Report
 
-Decision: `AEGIS_SYSTEM_VERIFICATION_ACTIVE_BLOCKER_FOUND`
+Decision: `AEGIS_SYSTEM_VERIFICATION_CURRENT_BLOCKERS_CLEARED_RAW_DEBT_VISIBLE`
 
 Date: 2026-06-13
 
@@ -14,41 +14,43 @@ state as backend truth.
 
 ## Executive Summary
 
-Aegis is in a truthful warning state, not a fully green state. Current evidence
-failures are clear and current missing evidence is clear. Raw evidence and
-replay diagnostics still report `fail` because known unknown-era and replay debt
-remains visible.
+Aegis is in a truthful non-green state. Current evidence failures are clear and
+current missing evidence is clear. Raw evidence and replay diagnostics still
+report `fail` because known unknown-era and replay debt remains visible.
 
-The active runtime health projection correctly separates this manifest-backed
-quarantined diagnostic debt from raw evidence/replay failure status. Runtime
-health is therefore `warning`, with attention still shown for evidence audit,
-runtime snapshot, and replay diagnostics.
+The active closure projection separates current operational blockers from raw
+evidence/replay failure status. Current operational blockers are now clear, but
+runtime health remains `fail` while raw evidence/replay diagnostics still fail.
 
-The live backend verification also found current operator-lifecycle attention:
-four restored unresolved approvals and two stale restored-pending timeout
-findings. They were not auto-resolved. Because the acceptance gate required zero
-pending/restored decisions, final verification is not accepted yet.
+Earlier live backend verification found restored approval lifecycle blockers.
+Those restored executable approvals were later operator-cancelled through an
+explicit neutral lifecycle action. No approval grant, auto-approval,
+auto-denial, command execution, file creation, or app launch was performed.
 
 ## Runtime Health Interpretation
 
-Current live read-only maintenance endpoint status:
+Current live read-only maintenance endpoint status after restored approval
+operator resolution:
 
-- runtime health: `warning`
-- active failure components: none
-- current operational blockers: 6
+- runtime health: `fail`
+- closure readiness: `ready_with_known_historical_debt`
+- current operational blockers: 0
 - current evidence failures: 0
 - current missing evidence: 0
-- pending decisions: 4
-- restored pending decisions: 4
-- runtime timeout findings: 2
+- pending decisions: 0
+- restored pending decisions: 0
+- stale restored-pending timeout findings: 0
+- restored executable unresolved: 0
+- restored requiring operator attention: 0
+- restored operator-cancelled records: 10
+- runtime timeout blocker findings: 0
 - websocket: `ok`
 - command lifecycle: `ok`
 - event journal: `ok`
-- pending decision hygiene: `warning`
+- pending decision hygiene: `ok`
 
-The active evidence/replay projection is acceptable, but the live system does
-not meet the final acceptance gate because restored unresolved approvals remain
-visible.
+The restored approval blocker is closed. The system is not fully green because
+raw evidence and replay diagnostics remain visible as failing diagnostic debt.
 
 ## Raw Diagnostics
 
@@ -97,20 +99,32 @@ Replay debt remains visible. This report does not claim replay repair.
 
 Snapshot attention remains visible.
 
-## Active Operator-Lifecycle Attention
+## Restored Approval Operator Resolution
 
-Live backend startup restored four unresolved approval records from the runtime
-journal. The maintenance endpoint reported:
+Live backend startup restored ten executable approval records from the runtime
+journal. They were limited to the expected historical command texts:
+`open notepad` and `create file scratch/new.txt`.
 
-- pending decision hygiene: `warning`
-- pending decision count: 4
-- restored unresolved count: 4
-- runtime timeout diagnostics: `warning`
-- runtime timeout finding count: 2
-- current blocker count: 6
+Resolution details:
 
-No grant, denial, auto-resolution, journal mutation, evidence mutation, or
-runtime cleanup was performed by this verification.
+- disposition: `operator_cancelled_restored_executable`
+- manifest id:
+  `restored-executable-approval-resolution:5ba0a59e5f0fb3c55386403b`
+- restored approvals resolved: 10
+- pending decision count after: 0
+- restored unresolved count after: 0
+- stale restored unresolved count after: 0
+- runtime timeout blocker count after: 0
+- current blocker count after: 0
+
+The cancellation was journal-backed with explicit lifecycle events plus a
+corrected runtime snapshot. One overly broad intermediate reconciliation
+snapshot was appended and then superseded by a narrower corrected snapshot; no
+journal history was rewritten or deleted.
+
+No approval grant, denial of a current live request, auto-resolution, command
+execution, file creation, app launch, evidence mutation, or verifier success was
+performed by this verification.
 
 ## Historical Debt Closure State
 

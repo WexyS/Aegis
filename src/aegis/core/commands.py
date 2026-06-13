@@ -75,6 +75,7 @@ class ApprovalManager:
         "Restored approval decisions cannot be granted through the normal approval path; "
         "leave them blocked or use an explicit deny-only hygiene flow."
     )
+    RESTORED_EXECUTABLE_OPERATOR_CANCELLED_STATUS = "operator_cancelled_restored_executable"
     NON_EXECUTED_CLARIFICATION_REASON = (
         "Clarification was recorded, but v1 does not resume execution from "
         "clarification answers."
@@ -308,6 +309,59 @@ class ApprovalManager:
             record.clarification_required = False
             record.reason = reason
             record.cancelled_at = token.cancelled_at
+            record.touch()
+            return record
+
+    def cancel_restored_executable_approval(
+        self,
+        approval_id: str,
+        *,
+        manifest_id: str,
+        reason: str,
+        resolution_metadata: dict[str, Any] | None = None,
+    ) -> CommandRecord:
+        """Neutral-cancel a restored executable approval without granting it.
+
+        This path is intentionally separate from normal approval denial. It is
+        for explicit operator lifecycle cleanup of non-current restored
+        approvals, and never resumes execution.
+        """
+        with self._lock:
+            record = self._find_pending_decision(
+                "approval_id",
+                approval_id,
+                CommandStatus.PENDING_APPROVAL,
+            )
+            if record.metadata.get("restored_from_journal") is not True:
+                raise ValueError("Only restored approval decisions can use restored operator cancellation")
+            if record.metadata.get("resume_allowed") is not True:
+                raise ValueError("Restored operator cancellation is scoped to executable approvals")
+            if not manifest_id:
+                raise ValueError("restored operator cancellation requires a manifest id")
+
+            token = self._tokens.setdefault(record.command_id, CancellationToken(command_id=record.command_id))
+            token.cancel(reason)
+            record.status = CommandStatus.CANCELLED
+            record.active = False
+            record.approval_required = False
+            record.clarification_required = False
+            record.approved = False
+            record.rejected = False
+            record.reason = reason
+            record.cancelled_at = token.cancelled_at
+            record.completed_at = record.cancelled_at
+            record.metadata["approval_id"] = approval_id
+            record.metadata["approval_resolution_status"] = self.RESTORED_EXECUTABLE_OPERATOR_CANCELLED_STATUS
+            record.metadata["operator_action"] = "cancel_restored_executable_approval"
+            record.metadata["restored_operator_resolution_manifest_id"] = manifest_id
+            record.metadata["mutation_performed"] = False
+            record.metadata["not_executed"] = True
+            record.metadata["completed_without_execution"] = True
+            record.metadata["approval_grant"] = False
+            record.metadata["auto_approval"] = False
+            record.metadata["auto_denial"] = False
+            if resolution_metadata:
+                record.metadata.update(resolution_metadata)
             record.touch()
             return record
 

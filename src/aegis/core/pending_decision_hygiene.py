@@ -31,6 +31,7 @@ def build_pending_decision_hygiene_report(
     snapshot = deepcopy(commands_snapshot) if isinstance(commands_snapshot, dict) else {}
     pending_approvals = _list_of_dicts(snapshot.get("pending_approvals"))
     pending_clarifications = _list_of_dicts(snapshot.get("pending_clarifications"))
+    records = _list_of_dicts(snapshot.get("records"))
 
     classifications = [
         _classify_pending_decision(
@@ -114,6 +115,8 @@ def build_pending_decision_hygiene_report(
     resume_distribution = Counter(item["resume_classification"] for item in classifications)
     policy_unknown_count = sum(1 for item in classifications if item["policy_known"] is False)
     risk_unknown_count = sum(1 for item in classifications if item["risk_known"] is False)
+    restored_operator_cancelled_records = _restored_operator_cancelled_records(records)
+    restored_operator_cancelled_count = len(restored_operator_cancelled_records)
 
     created_values = [
         int(item["created_at"])
@@ -151,6 +154,8 @@ def build_pending_decision_hygiene_report(
         "restored_closure_candidate_count": restored_closure_candidate_count,
         "restored_requires_operator_attention_count": restored_requires_operator_attention_count,
         "restored_closure_blocked_count": restored_closure_blocked_count,
+        "restored_operator_cancelled_count": restored_operator_cancelled_count,
+        "restored_operator_cancelled_records": restored_operator_cancelled_records[:max_records],
         "resumable_count": resume_distribution.get("resumable", 0),
         "state_only_count": resume_distribution.get("state_only", 0),
         "non_executing_count": resume_distribution.get("non_executing", 0),
@@ -183,6 +188,7 @@ def build_pending_decision_hygiene_report(
             "No local/frontend deletion was performed.",
             "No approval was granted by this hygiene diagnostic.",
             "Executable restored approvals remain blockers until explicit operator resolution.",
+            "Operator-cancelled restored executable approvals are historical lifecycle records, not active grants.",
             "Stale or orphaned restored decisions may become closure candidates only when non-executable.",
         ],
         "safety": {
@@ -201,6 +207,42 @@ def build_pending_decision_hygiene_report(
         "classifications": classifications[:max_records],
         "omitted_classification_count": max(0, len(classifications) - max_records),
     }
+
+
+def _restored_operator_cancelled_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    cancelled: list[dict[str, Any]] = []
+    for record in records:
+        metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+        if metadata.get("approval_resolution_status") != "operator_cancelled_restored_executable":
+            continue
+        cancelled.append(
+            {
+                "command_id": _string_or_none(record.get("command_id")),
+                "approval_id": _string_or_none(metadata.get("approval_id")),
+                "text": str(record.get("text") or ""),
+                "status": str(record.get("status") or ""),
+                "restored": metadata.get("restored_from_journal") is True,
+                "resolution_disposition": _string_or_none(
+                    metadata.get("resolution_disposition")
+                )
+                or "operator_cancelled_restored_executable",
+                "operator_action": _string_or_none(metadata.get("operator_action")),
+                "operator_confirmation_ref": _string_or_none(
+                    metadata.get("operator_confirmation_ref")
+                ),
+                "manifest_id": _string_or_none(
+                    metadata.get("restored_operator_resolution_manifest_id")
+                ),
+                "not_executed": metadata.get("not_executed") is True,
+                "approval_grant": metadata.get("approval_grant") is True,
+                "auto_approval": metadata.get("auto_approval") is True,
+                "auto_denial": metadata.get("auto_denial") is True,
+                "source_event_reference": metadata.get("source_event_reference")
+                if isinstance(metadata.get("source_event_reference"), dict)
+                else None,
+            }
+        )
+    return cancelled
 
 
 def _classify_pending_decision(
