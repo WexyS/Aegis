@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Deque, Iterator
 
-from aegis.core.config import get_settings
+from aegis.core.config import PROJECT_ROOT, get_settings
 from aegis.core.protocol import GENESIS_HASH, RuntimeEvent, ensure_sequence_at_least, finalize_event
 
 
@@ -38,6 +38,7 @@ class RuntimeEventJournal:
 
     def append(self, event: RuntimeEvent) -> RuntimeEvent:
         """Finalize, persist, and keep a bounded in-memory copy of an event."""
+        _guard_pytest_live_journal_write(self.path)
         with self._lock:
             with self._journal_file_lock():
                 self._sync_from_disk_locked()
@@ -304,3 +305,30 @@ def get_runtime_journal() -> RuntimeEventJournal:
         if _instance is None:
             _instance = RuntimeEventJournal()
         return _instance
+
+
+def reset_runtime_journal_for_tests() -> None:
+    """Reset the process-global journal singleton for isolated tests."""
+    global _instance
+    with _lock:
+        _instance = None
+
+
+def _guard_pytest_live_journal_write(path: Path) -> None:
+    running_under_pytest = bool(os.getenv("PYTEST_CURRENT_TEST")) or (
+        os.getenv("AEGIS_UNDER_PYTEST", "").strip().lower() in {"1", "true", "yes"}
+    )
+    if not running_under_pytest:
+        return
+    if os.getenv("AEGIS_ALLOW_LIVE_JOURNAL_IN_PYTEST", "").strip().lower() in {"1", "true", "yes"}:
+        return
+
+    resolved_path = path.resolve()
+    live_log_dir = (PROJECT_ROOT / "logs").resolve()
+    live_journal_path = live_log_dir / "runtime_events.jsonl"
+    if resolved_path == live_journal_path:
+        raise RuntimeError(
+            "Refusing to write the live Aegis runtime journal during pytest. "
+            "Tests must use an isolated AEGIS_LOG_DIR or explicitly opt in with "
+            "AEGIS_ALLOW_LIVE_JOURNAL_IN_PYTEST=true."
+        )

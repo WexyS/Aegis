@@ -132,6 +132,11 @@ sprint. Common commands:
 - `cd frontend && npm.cmd run build`
 - `git diff --check`
 
+Pytest must run against isolated temporary runtime/log directories. Tests must
+not write to the operator's live `logs/runtime_events.jsonl`; the runtime
+journal includes a process-wide pytest guard for accidental live-journal append
+attempts.
+
 ## Sprint Report Format
 
 After every task, report:

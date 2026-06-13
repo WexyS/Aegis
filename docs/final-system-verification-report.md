@@ -27,6 +27,11 @@ Those restored executable approvals were later operator-cancelled through an
 explicit neutral lifecycle action. No approval grant, auto-approval,
 auto-denial, command execution, file creation, or app launch was performed.
 
+Follow-up reliability work isolated pytest runtime state from the operator's
+live runtime journal. Tests now default to temporary log directories, reset
+process-global journal state between tests, and fail loudly if pytest attempts
+to append to the live `logs/runtime_events.jsonl` path.
+
 ## Runtime Health Interpretation
 
 Current live read-only maintenance endpoint status after restored approval
@@ -128,6 +133,24 @@ journal history was rewritten or deleted.
 No approval grant, denial of a current live request, auto-resolution, command
 execution, file creation, app launch, evidence mutation, or verifier success was
 performed by this verification.
+
+## Test Runtime Journal Isolation
+
+The test suite previously could append command and maintenance lifecycle events
+to the live runtime journal. That risk is now closed for default pytest runs:
+
+- `tests/conftest.py` sets an isolated temporary pytest runtime root before
+  Aegis imports, then uses an isolated temporary `AEGIS_LOG_DIR` per test.
+- The process-global runtime journal singleton is reset between tests.
+- The command approval manager and protocol sequence counter are reset between
+  tests.
+- `RuntimeEventJournal.append()` refuses live journal writes during the pytest
+  process unless an explicit opt-in environment variable is set.
+- Regression tests assert isolated journal writes do not change the live journal
+  fingerprint.
+
+This does not rewrite or delete the existing live journal entries that were
+created before isolation. They remain visible history.
 
 ## Historical Debt Closure State
 
