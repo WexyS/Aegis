@@ -50,12 +50,12 @@ def route_ask_intent(question: str, requested_intent: str | None = None) -> str:
         return "unsupported_or_risky"
     if _has_any(text, ("siradaki", "next step", "safe next", "guvenli adim", "ne yapmaliyim")):
         return "next_step_planning"
-    if _has_any(text, ("skill", "registry", "calistirilabilir", "yetenek")):
-        return "skill_registry_question"
-    if _has_any(text, ("tool", "arac", "tools", "registry")):
-        return "tool_registry_question"
     if _has_any(text, ("plugin", "manifest", "mcp", "connector")):
         return "plugin_question"
+    if _has_any(text, ("tool registry", "tool", "arac", "tools")):
+        return "tool_registry_question"
+    if _has_any(text, ("skill registry", "skill", "calistirilabilir", "yetenek")):
+        return "skill_registry_question"
     if _has_any(text, ("model gateway", "lm studio", "local model", "model acik", "model aktif")):
         return "model_gateway_question"
     if _has_any(text, ("memory", "hafiza", "bellek")):

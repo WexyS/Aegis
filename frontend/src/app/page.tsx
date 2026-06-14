@@ -2,44 +2,19 @@
 
 import React from 'react';
 import { AppShell } from '@/layouts/AppShell';
-import { ChatPanel } from '@/features/chat/components/ChatPanel';
-import { ScientificTimeline } from '@/features/runtime/components/ScientificTimeline';
 import { useUIStore } from '@/store/useUIStore';
-import { useRuntimeStore } from '@/store/useRuntimeStore';
-import { Eye, ShieldAlert, Activity, Gauge } from 'lucide-react';
-import { motion } from 'framer-motion';
 
-import { AgentGraphPanel } from '@/features/runtime/components/AgentGraphPanel';
-import { VisionLabPanel } from '@/features/runtime/components/VisionLabPanel';
-import { RuntimeStatsPanel } from '@/features/runtime/components/RuntimeStatsPanel';
-import { ChaosShieldPanel } from '@/features/runtime/components/ChaosShieldPanel';
-import { PendingApprovalPanel } from '@/features/runtime/components/PendingApprovalPanel';
-import { MaintenanceScanPanel } from '@/features/runtime/components/MaintenanceScanPanel';
-import { AppRegistryPanel } from '@/features/runtime/components/AppRegistryPanel';
-import { ToolRegistryPanel } from '@/features/runtime/components/ToolRegistryPanel';
-import { SystemOverview } from '@/features/dashboard/components/SystemOverview';
-import { MissionControlRCPanel } from '@/features/mission-control-rc/components/MissionControlRCPanel';
 import { AskAegisPanel } from '@/features/ask/components/AskAegisPanel';
+import { AdvancedWorkspace } from '@/features/advanced/components/AdvancedWorkspace';
+import { CapabilitiesPanel } from '@/features/capabilities/components/CapabilitiesPanel';
+import { MemoryOverviewPanel } from '@/features/memory/components/MemoryOverviewPanel';
+import { MissionHome } from '@/features/mission-home/components/MissionHome';
+import { WorkSurface } from '@/components/WorkSurface';
 
 import { connectRuntime, disconnectRuntime } from '@/lib/socket';
 
 export default function AegisDashboard() {
   const { activeTab } = useUIStore();
-  const {
-    determinismScore,
-    recoveryBudget,
-    activeApp,
-    memoryPercent,
-    wsRttMs,
-    runtimeIntegrity = 'unverified',
-    lastSequenceNum,
-    currentState,
-  } = useRuntimeStore();
-  const memoryPressureLabel = memoryPercent === undefined ? 'Unavailable' : `${memoryPercent.toFixed(1)}%`;
-  const memoryPressureWidth = memoryPercent === undefined ? 0 : Math.min(memoryPercent, 100);
-  const sequenceLabel = lastSequenceNum === undefined ? 'Unavailable' : lastSequenceNum;
-  const rttLabel = wsRttMs === undefined ? 'Unavailable' : `${wsRttMs}ms`;
-  const determinismLabel = determinismScore === undefined ? 'Unavailable' : `${(determinismScore * 100).toFixed(1)}%`;
 
   React.useEffect(() => {
     connectRuntime();
@@ -48,119 +23,14 @@ export default function AegisDashboard() {
 
   return (
     <AppShell>
-      <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden p-2 sm:p-3 lg:p-4 xl:flex-row xl:p-5 gap-3 lg:gap-4 xl:gap-5 relative z-10">
-        {/* CENTER CONTENT */}
-        <div className="flex-1 min-h-0 min-w-0 flex flex-col glass-panel rounded-lg overflow-hidden relative">
-          {activeTab === 'chat' && <ChatPanel />}
-          {activeTab === 'Ask Aegis' && <AskAegisPanel />}
-          {activeTab === 'Agent Graph' && <AgentGraphPanel />}
-          {activeTab === 'Vision Lab' && <VisionLabPanel />}
-          {activeTab === 'Runtime Stats' && <RuntimeStatsPanel />}
-          {activeTab === 'Chaos Shield' && <ChaosShieldPanel />}
-          {activeTab === 'Applications' && <AppRegistryPanel />}
-          {activeTab === 'Tools' && <ToolRegistryPanel />}
-          {activeTab === 'Aegis Control' && <MissionControlRCPanel />}
-          {!['chat', 'Ask Aegis', 'Agent Graph', 'Vision Lab', 'Runtime Stats', 'Chaos Shield', 'Applications', 'Tools', 'Aegis Control'].includes(activeTab) && (
-            <div className="flex-1 flex items-center justify-center text-[11px] font-mono uppercase tracking-[0.16em] text-foreground/30">
-              {activeTab} unavailable
-            </div>
-          )}
-        </div>
-
-        {/* SCIENTIFIC INSPECTOR (Right Panel) */}
-        <aside className="hidden xl:flex w-[22rem] 2xl:w-96 shrink-0 flex-col gap-4 overflow-y-auto custom-scrollbar pr-1 2xl:pr-2">
-          <SystemOverview />
-
-          {/* SECTION: REAL-TIME METRICS */}
-          <section className="space-y-3">
-            <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent flex items-center gap-2">
-              <Activity size={12} /> System Telemetry
-            </h3>
-            <div className="grid grid-cols-2 gap-3">
-              <MetricCard 
-                label="Determinism" 
-                value={determinismLabel}
-                context={runtimeIntegrity}
-                icon={<Gauge size={14} className="text-accent" />}
-              />
-              <MetricCard 
-                label="Recov. Budget" 
-                value={`${(recoveryBudget * 100).toFixed(0)}%`} 
-                context={currentState}
-                icon={<ShieldAlert size={14} className="text-secondary" />}
-              />
-            </div>
-            <div className="p-3.5 glass-card rounded-lg space-y-3 relative overflow-hidden group">
-              <div className="flex justify-between items-center relative z-10">
-                <span className="text-[10px] font-bold text-foreground/50 uppercase tracking-widest">Memory Pressure</span>
-                <span className="text-[11px] font-mono font-bold text-accent">{memoryPressureLabel}</span>
-              </div>
-              <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden relative z-10">
-                <motion.div 
-                  initial={{ width: 0 }}
-                  animate={{ width: `${memoryPressureWidth}%` }}
-                  transition={{ duration: 1, ease: "easeOut" }}
-                  className="h-full bg-accent"
-                />
-              </div>
-              <div className="flex justify-between text-[9px] font-mono text-foreground/35 relative z-10">
-                <span>SEQ {sequenceLabel}</span>
-                <span>{runtimeIntegrity.toUpperCase()} / RTT {rttLabel}</span>
-              </div>
-            </div>
-          </section>
-
-          <PendingApprovalPanel />
-          <MaintenanceScanPanel />
-
-          {/* SECTION: SCIENTIFIC TIMELINE */}
-          <ScientificTimeline />
-
-          {/* SECTION: VISION CONTEXT */}
-          <section className="space-y-3">
-            <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent flex items-center gap-2">
-              <Eye size={12} /> Vision Context
-            </h3>
-            <div className="aspect-video rounded-lg bg-black/30 border border-white/10 flex flex-col items-center justify-center overflow-hidden relative group">
-              <div className="fallback flex flex-col items-center justify-center z-10 px-4 text-center">
-                <Eye className="text-foreground/15" size={24} />
-                <div className="mt-3 text-[9px] font-mono text-foreground/30 uppercase tracking-widest">
-                  Vision future-gated
-                </div>
-                <div className="mt-2 text-[9px] font-mono text-foreground/25 uppercase tracking-widest">
-                  No live desktop feed by default
-                </div>
-              </div>
-            </div>
-            <div className="flex min-w-0 items-center justify-between gap-3 px-2">
-              <span className="min-w-0 truncate text-[10px] font-mono text-foreground/50"><span className="text-foreground/30">Focus:</span> {activeApp}</span>
-              <span className="shrink-0 text-[10px] font-mono text-foreground/40 font-bold">TELEMETRY</span>
-            </div>
-          </section>
-        </aside>
+      <div className="relative z-10 flex-1 min-h-0 min-w-0 overflow-hidden">
+        {activeTab === 'Mission' && <MissionHome />}
+        {activeTab === 'Ask' && <AskAegisPanel />}
+        {activeTab === 'Work' && <WorkSurface />}
+        {activeTab === 'Memory' && <MemoryOverviewPanel />}
+        {activeTab === 'Capabilities' && <CapabilitiesPanel />}
+        {activeTab === 'Advanced' && <AdvancedWorkspace />}
       </div>
     </AppShell>
   );
 }
-
-type MetricCardProps = {
-  label: string;
-  value: string;
-  context: string;
-  icon: React.ReactNode;
-};
-
-const MetricCard = React.memo(({ label, value, context, icon }: MetricCardProps) => (
-  <div className="p-3.5 glass-card rounded-lg space-y-2 hover:border-accent/30 transition-all cursor-default group relative overflow-hidden">
-    <div className="flex items-center justify-between text-foreground/45 group-hover:text-foreground/80 transition-colors">
-      {icon}
-      <span className="max-w-[110px] truncate text-[9px] font-bold uppercase tracking-widest text-foreground/45">{context}</span>
-    </div>
-    <div className="relative z-10">
-      <p className="text-[10px] font-bold text-foreground/50 uppercase tracking-widest">{label}</p>
-      <p className="truncate text-xl 2xl:text-2xl font-bold text-white mt-1">{value}</p>
-    </div>
-  </div>
-));
-
-MetricCard.displayName = 'MetricCard';

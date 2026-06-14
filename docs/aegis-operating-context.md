@@ -179,10 +179,13 @@ tools, MCP, shell, model completions, or memory writes in the current runtime.
 Aegis Ask: implemented read-only explanation and safe next-step planning over
 backend-owned status and metadata. It is not command execution, tool execution,
 plugin execution, model authority, memory write, evidence, verifier success, or
-approval/capability/lease grant.
+approval/capability/lease grant. The deterministic router distinguishes Skill
+Registry, Tool Registry, and Plugin Registry questions without model calls.
 
-Frontend / Aegis Control: implemented operator UI. It must remain presentation
-only and needs a product UX pass.
+Frontend / Mission Control Shell: implemented premium product shell with
+Mission, Ask, Work, Memory, Capabilities, and Advanced surfaces. It remains
+presentation only. Raw diagnostics are available from Advanced instead of
+dominating the first screen.
 
 Launcher: implemented baseline launcher surfaces. Launcher cleanup remains
 future work.
@@ -191,7 +194,8 @@ future work.
 
 - Runtime health is warning-level, not green.
 - Raw evidence and replay diagnostics still fail.
-- UI/product experience needs serious improvement.
+- UI/product experience has a premium Mission Control shell, but deeper
+  product polish and rendered Electron QA remain useful.
 - Aegis Ask is implemented as a narrow read-only explanation slice, not an
   execution surface.
 - Full autonomous operation is not implemented.
@@ -235,10 +239,10 @@ Implemented:
 - bounded Agent Runtime proposal sessions
 - read-only ChatGPT bridge and local launcher helpers
 - Aegis Ask read-only explanation slice
+- premium Mission Control shell and capability map
 
 Planned:
 
-- better Mission Control UI
 - capability broker
 - approval-gated safe execution slices
 - model-assisted interpretation through strict boundaries
@@ -258,6 +262,7 @@ Do not claim:
 
 ## Next Direction
 
-Continue productization after Aegis Ask by improving source-specific read-only
-summaries, capability broker design, and Mission Control UX without weakening
+Continue productization after the premium Mission Control shell by improving
+source-specific read-only summaries, capability broker design, Memory Inbox
+workflow, and controlled read-only capability execution without weakening
 runtime truth or approval/evidence/verifier boundaries.
