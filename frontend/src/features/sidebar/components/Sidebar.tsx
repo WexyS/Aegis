@@ -17,12 +17,12 @@ import { dictionaryFor } from '@/i18n';
 import { useUIStore } from '@/store/useUIStore';
 
 const NAV_ITEMS = [
-  { id: 'Mission', icon: <Radar size={19} />, labelKey: 'mission', detail: 'front door' },
-  { id: 'Ask', icon: <HelpCircle size={19} />, labelKey: 'ask', detail: 'read-only' },
-  { id: 'Work', icon: <BriefcaseBusiness size={19} />, labelKey: 'work', detail: 'gated flow' },
-  { id: 'Memory', icon: <Database size={19} />, labelKey: 'memory', detail: 'consent' },
-  { id: 'Capabilities', icon: <Box size={19} />, labelKey: 'capabilities', detail: 'truth map' },
-  { id: 'Advanced', icon: <Layers3 size={19} />, labelKey: 'advanced', detail: 'diagnostics' },
+  { id: 'Mission', icon: <Radar size={19} />, labelKey: 'mission', detailKey: 'mission' },
+  { id: 'Ask', icon: <HelpCircle size={19} />, labelKey: 'ask', detailKey: 'ask' },
+  { id: 'Work', icon: <BriefcaseBusiness size={19} />, labelKey: 'work', detailKey: 'work' },
+  { id: 'Memory', icon: <Database size={19} />, labelKey: 'memory', detailKey: 'memory' },
+  { id: 'Capabilities', icon: <Box size={19} />, labelKey: 'capabilities', detailKey: 'capabilities' },
+  { id: 'Advanced', icon: <Layers3 size={19} />, labelKey: 'advanced', detailKey: 'advanced' },
 ] as const;
 
 export const Sidebar = () => {
@@ -37,7 +37,7 @@ export const Sidebar = () => {
         <AegisMark />
         <div className="hidden min-w-0 flex-col lg:flex">
           <span className="text-lg font-semibold tracking-[0.28em] text-white">AEGIS</span>
-          <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-accent/75">AI Operator</span>
+          <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-accent/75">{t.navDetails.operatorSubtitle}</span>
         </div>
       </div>
 
@@ -47,7 +47,7 @@ export const Sidebar = () => {
             key={item.id}
             icon={item.icon}
             label={t.nav[item.labelKey]}
-            detail={item.detail}
+            detail={t.navDetails[item.detailKey]}
             active={activeTab === item.id}
             onClick={() => setActiveTab(item.id)}
           />
@@ -65,10 +65,10 @@ export const Sidebar = () => {
           }`}
           aria-label={t.nav.settings}
         >
-          <Settings size={18} />
+            <Settings size={18} />
           <span className="hidden min-w-0 flex-col lg:flex">
             <span className="text-[13px] font-semibold">{t.nav.settings}</span>
-            <span className="text-[9px] font-mono uppercase tracking-wider opacity-55">local preferences</span>
+            <span className="text-[9px] font-mono uppercase tracking-wider opacity-55">{t.navDetails.settings}</span>
           </span>
         </button>
         <div className="hidden rounded-xl border border-white/10 bg-white/[0.025] p-3 lg:block">
@@ -80,10 +80,10 @@ export const Sidebar = () => {
               <div className="truncate text-sm font-semibold text-white">Aegis</div>
               <div className="mt-0.5 text-[11px] text-foreground/45">{t.nav.localOperator}</div>
             </div>
-            <span className="ml-auto h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.75)]" />
+            <span className="ml-auto h-2 w-2 rounded-full bg-accent shadow-[0_0_10px_rgba(6,182,212,0.65)]" />
           </div>
           <p className="mt-3 text-[11px] leading-relaxed text-foreground/42">
-            Backend truth remains authoritative. This shell does not create approvals, leases, evidence, verifier success, or execution.
+            {t.navDetails.localOperatorCopy}
           </p>
         </div>
         <button

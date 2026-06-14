@@ -4,12 +4,16 @@ import React from 'react';
 import { AlertTriangle, CheckCircle2, HelpCircle, Loader2, Send, ShieldCheck } from 'lucide-react';
 
 import { StatusBadge } from '@/components/StatusBadge';
+import { dictionaryFor } from '@/i18n';
 import { askAegis } from '@/lib/api';
+import { useUIStore } from '@/store/useUIStore';
 import { AskResponse } from '@/types/ask';
 
 const DEFAULT_QUESTION = 'Aegis su an ne durumda?';
 
 export const AskAegisPanel = () => {
+  const language = useUIStore((state) => state.language);
+  const t = dictionaryFor(language).askPanel;
   const [question, setQuestion] = React.useState(DEFAULT_QUESTION);
   const [includeMemory, setIncludeMemory] = React.useState(false);
   const [includeModelPolish, setIncludeModelPolish] = React.useState(false);
@@ -35,11 +39,11 @@ export const AskAegisPanel = () => {
       });
       setResponse(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Aegis Ask request failed.');
+      setError(err instanceof Error ? err.message : t.requestFailed);
     } finally {
       setLoading(false);
     }
-  }, [includeAgentProposal, includeAutopilot, includeMemory, includeModelPolish, loading, question]);
+  }, [includeAgentProposal, includeAutopilot, includeMemory, includeModelPolish, loading, question, t.requestFailed]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -55,14 +59,14 @@ export const AskAegisPanel = () => {
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-accent">
               <HelpCircle size={14} />
-              Ask Aegis
+              {t.eyebrow}
             </div>
-            <h2 className="mt-2 text-xl font-semibold tracking-tight text-white">Read-only mission explanation</h2>
+            <h2 className="mt-2 text-xl font-semibold tracking-tight text-white">{t.title}</h2>
             <p className="mt-2 max-w-3xl text-[12px] leading-relaxed text-foreground/55">
-              Ask about status, warnings, capabilities, skills, tools, model gateway state, and safe next steps. This panel does not execute commands or create authority.
+              {t.subtitle}
             </p>
           </div>
-          <StatusBadge label="read only" tone="info" icon={<ShieldCheck size={12} />} className="shrink-0" />
+          <StatusBadge label={t.readOnlyBadge} tone="info" icon={<ShieldCheck size={12} />} className="shrink-0" />
         </div>
 
         <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3">
@@ -72,14 +76,14 @@ export const AskAegisPanel = () => {
             onKeyDown={handleKeyDown}
             rows={3}
             className="min-h-[84px] w-full resize-none rounded-md border border-white/10 bg-black/25 p-3 text-[13px] leading-relaxed text-foreground/90 placeholder:text-foreground/30 focus:border-accent/45 focus:outline-none"
-            placeholder="Ask about Aegis status, warnings, skills, tools, model gateway, or the next safe step."
+            placeholder={t.placeholder}
           />
           <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex flex-wrap gap-2">
-              <AskOption label="Memory refs" checked={includeMemory} onChange={setIncludeMemory} />
-              <AskOption label="Model polish" checked={includeModelPolish} onChange={setIncludeModelPolish} />
-              <AskOption label="AutoPilot refs" checked={includeAutopilot} onChange={setIncludeAutopilot} />
-              <AskOption label="Agent metadata" checked={includeAgentProposal} onChange={setIncludeAgentProposal} />
+              <AskOption label={t.memoryRefs} checked={includeMemory} onChange={setIncludeMemory} />
+              <AskOption label={t.modelPolish} checked={includeModelPolish} onChange={setIncludeModelPolish} />
+              <AskOption label={t.autopilotRefs} checked={includeAutopilot} onChange={setIncludeAutopilot} />
+              <AskOption label={t.agentMetadata} checked={includeAgentProposal} onChange={setIncludeAgentProposal} />
             </div>
             <button
               type="button"
@@ -88,7 +92,7 @@ export const AskAegisPanel = () => {
               className="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-[12px] font-bold uppercase tracking-wider text-background transition-colors hover:bg-accent-light disabled:cursor-not-allowed disabled:opacity-45"
             >
               {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-              Ask
+              {t.ask}
             </button>
           </div>
         </div>
@@ -103,7 +107,7 @@ export const AskAegisPanel = () => {
 
         {!response && !error && (
           <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4 text-[12px] leading-relaxed text-foreground/55">
-            Ask a read-only question to get a backend-owned explanation. Execution requests will be kept in a safe unsupported path.
+            {t.empty}
           </div>
         )}
 
@@ -134,18 +138,20 @@ const AskOption = ({
 );
 
 const AskResponseView = ({ response }: { response: AskResponse }) => {
+  const language = useUIStore((state) => state.language);
+  const t = dictionaryFor(language).askPanel;
   const status = String(response.runtime_health_summary.status ?? 'unknown');
   return (
     <div className="space-y-4">
       <section className="rounded-lg border border-accent/20 bg-accent/[0.03] p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-foreground/45">Answer</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-foreground/45">{t.answer}</div>
             <p className="mt-2 text-[14px] leading-relaxed text-foreground/90">{response.answer}</p>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
             <StatusBadge label={response.intent} tone="info" />
-            <StatusBadge label={`health ${status}`} tone={statusTone(status)} />
+            <StatusBadge label={`${t.health} ${status}`} tone={statusTone(status)} />
           </div>
         </div>
       </section>
@@ -153,16 +159,16 @@ const AskResponseView = ({ response }: { response: AskResponse }) => {
       <RuntimeHealthSummary response={response} />
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <ListSection title="Known" items={response.known} empty="No known facts returned." tone="info" />
-        <ListSection title="Unknown" items={response.unknown} empty="No unknowns returned." tone="warning" />
-        <ListSection title="Limitations" items={response.limitations} empty="No limitations returned." tone="warning" />
-        <ListSection title="Recommended next steps" items={response.recommended_next_steps} empty="No next steps returned." tone="info" />
+        <ListSection title={t.known} items={response.known} empty={t.noKnown} tone="info" />
+        <ListSection title={t.unknown} items={response.unknown} empty={t.noUnknown} tone="warning" />
+        <ListSection title={t.limitations} items={response.limitations} empty={t.noLimitations} tone="warning" />
+        <ListSection title={t.recommendedNextSteps} items={response.recommended_next_steps} empty={t.noNextSteps} tone="info" />
       </div>
 
       <section className="rounded-lg border border-white/10 bg-black/20 p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-[10px] font-bold uppercase tracking-[0.18em] text-foreground/45">Sources</h3>
-          <StatusBadge label="not evidence" tone="unknown" />
+          <h3 className="text-[10px] font-bold uppercase tracking-[0.18em] text-foreground/45">{t.sources}</h3>
+          <StatusBadge label={t.notEvidence} tone="unknown" />
         </div>
         <div className="grid gap-2 md:grid-cols-2">
           {response.source_refs.map((source) => (
@@ -174,7 +180,7 @@ const AskResponseView = ({ response }: { response: AskResponse }) => {
             </div>
           ))}
           {response.source_refs.length === 0 && (
-            <div className="text-[12px] text-foreground/45">No backend source refs returned.</div>
+            <div className="text-[12px] text-foreground/45">{t.noSources}</div>
           )}
         </div>
       </section>
@@ -185,6 +191,8 @@ const AskResponseView = ({ response }: { response: AskResponse }) => {
 };
 
 const RuntimeHealthSummary = ({ response }: { response: AskResponse }) => {
+  const language = useUIStore((state) => state.language);
+  const t = dictionaryFor(language).askPanel;
   const health = response.runtime_health_summary;
   const currentBlockers = String(health.current_blocker_count ?? 'unknown');
   const rawEvidence = String(health.raw_evidence_status ?? 'unknown');
@@ -194,21 +202,21 @@ const RuntimeHealthSummary = ({ response }: { response: AskResponse }) => {
   return (
     <section className="rounded-lg border border-warning/20 bg-warning/[0.03] p-4">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-[10px] font-bold uppercase tracking-[0.18em] text-warning">Runtime truth</h3>
-        <StatusBadge label="raw debt visible" tone="warning" icon={<AlertTriangle size={12} />} />
+        <h3 className="text-[10px] font-bold uppercase tracking-[0.18em] text-warning">{t.runtimeTruth}</h3>
+        <StatusBadge label={t.rawDebtVisible} tone="warning" icon={<AlertTriangle size={12} />} />
       </div>
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <TruthMetric label="current blockers" value={currentBlockers} />
-        <TruthMetric label="raw evidence" value={rawEvidence} tone={statusTone(rawEvidence)} />
-        <TruthMetric label="active evidence" value={activeEvidence} tone={statusTone(activeEvidence)} />
-        <TruthMetric label="raw replay" value={rawReplay} tone={statusTone(rawReplay)} />
-        <TruthMetric label="active replay" value={activeReplay} tone={statusTone(activeReplay)} />
-        <TruthMetric label="historical evidence debt" value={String(health.historical_evidence_debt_count ?? 'unknown')} />
-        <TruthMetric label="historical missing evidence" value={String(health.historical_missing_evidence_count ?? 'unknown')} />
-        <TruthMetric label="pending decisions" value={String(health.pending_decision_count ?? 'unknown')} />
+        <TruthMetric label={t.currentBlockers} value={currentBlockers} />
+        <TruthMetric label={t.rawEvidence} value={rawEvidence} tone={statusTone(rawEvidence)} />
+        <TruthMetric label={t.activeEvidence} value={activeEvidence} tone={statusTone(activeEvidence)} />
+        <TruthMetric label={t.rawReplay} value={rawReplay} tone={statusTone(rawReplay)} />
+        <TruthMetric label={t.activeReplay} value={activeReplay} tone={statusTone(activeReplay)} />
+        <TruthMetric label={t.historicalEvidenceDebt} value={String(health.historical_evidence_debt_count ?? 'unknown')} />
+        <TruthMetric label={t.historicalMissingEvidence} value={String(health.historical_missing_evidence_count ?? 'unknown')} />
+        <TruthMetric label={t.pendingDecisions} value={String(health.pending_decision_count ?? 'unknown')} />
       </div>
       <p className="mt-3 text-[11px] leading-relaxed text-foreground/50">
-        Current blockers can be clear while raw historical evidence/replay debt remains visible. This panel does not repair or suppress diagnostics.
+        {t.rawDebtCopy}
       </p>
     </section>
   );
@@ -245,22 +253,24 @@ const ListSection = ({
 );
 
 const SafetyFlags = ({ response }: { response: AskResponse }) => {
+  const language = useUIStore((state) => state.language);
+  const t = dictionaryFor(language).askPanel;
   const flags = [
-    ['execution', response.execution_performed],
-    ['memory write', response.memory_written],
-    ['evidence', response.evidence_created],
-    ['verifier success', response.verifier_success],
-    ['approval', response.approval_granted],
-    ['capability lease', response.capability_lease_granted],
-    ['tool execution', response.tool_execution_performed],
-    ['plugin execution', response.plugin_execution_performed],
-    ['agent execution', response.agent_execution_performed],
+    [t.execution, response.execution_performed],
+    [t.memoryWrite, response.memory_written],
+    [t.evidence, response.evidence_created],
+    [t.verifierSuccess, response.verifier_success],
+    [t.approval, response.approval_granted],
+    [t.capabilityLease, response.capability_lease_granted],
+    [t.toolExecution, response.tool_execution_performed],
+    [t.pluginExecution, response.plugin_execution_performed],
+    [t.agentExecution, response.agent_execution_performed],
   ];
   const nonAuthority = Object.entries(response.non_authority_flags);
   return (
     <section className="rounded-lg border border-white/10 bg-black/20 p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="text-[10px] font-bold uppercase tracking-[0.18em] text-foreground/45">Safety / non-authority flags</h3>
+        <h3 className="text-[10px] font-bold uppercase tracking-[0.18em] text-foreground/45">{t.safetyFlags}</h3>
         <StatusBadge label={response.execution_permission} tone="unknown" />
       </div>
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">

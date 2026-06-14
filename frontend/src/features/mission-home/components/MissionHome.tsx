@@ -74,7 +74,7 @@ export const MissionHome = () => {
   }, []);
 
   return (
-    <div className="relative h-full min-h-0 overflow-y-auto custom-scrollbar">
+    <div className="relative h-full min-h-0 overflow-y-auto pb-10 custom-scrollbar">
       <AmbientTrustHalo />
       <div className={`relative z-10 mx-auto grid w-full max-w-[112rem] gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:px-8 ${density === 'compact' ? 'xl:gap-5' : 'xl:gap-7'}`}>
         <section className="min-w-0">
@@ -109,6 +109,7 @@ export const MissionHome = () => {
           truth={truth}
           pendingCount={pendingCount}
           onOpenAsk={() => setActiveTab('Ask')}
+          onOpenAdvanced={() => setActiveTab('Advanced')}
           onOpenApprovalDrawer={() => setDrawerOpen(true)}
         />
       </div>
@@ -247,11 +248,13 @@ const ContextInspector = ({
   truth,
   pendingCount,
   onOpenAsk,
+  onOpenAdvanced,
   onOpenApprovalDrawer,
 }: {
   truth: RuntimeTruth;
   pendingCount: number;
   onOpenAsk: () => void;
+  onOpenAdvanced: () => void;
   onOpenApprovalDrawer: () => void;
 }) => {
   const language = useUIStore((state) => state.language);
@@ -291,12 +294,28 @@ const ContextInspector = ({
 
       <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 shadow-xl shadow-black/15">
         <h2 className="text-lg font-semibold text-white">{t.mission.runtimeTruth}</h2>
+        {!truth.loaded && (
+          <div className="mt-4 rounded-xl border border-warning/20 bg-warning/[0.055] p-3">
+            <p className="text-sm leading-6 text-foreground/68">{t.mission.maintenanceNotLoaded}</p>
+            <button
+              type="button"
+              onClick={onOpenAdvanced}
+              className="mt-3 rounded-lg border border-warning/25 bg-warning/10 px-3 py-2 text-xs font-semibold text-warning transition-colors hover:bg-warning/15"
+            >
+              {t.mission.openAdvancedDiagnostics}
+            </button>
+          </div>
+        )}
         <div className="mt-4 space-y-3">
           <RuntimeRow label={t.mission.health} value={formatTruthStatus(t, truth.status)} tone={truthTone(truth.status)} />
           <RuntimeRow label={t.mission.activeBlockers} value={truth.currentBlockers} />
-          <RuntimeRow label={t.mission.pendingApprovals} value={truth.pendingDecisions} />
+          <RuntimeRow label={t.mission.pendingDecisions} value={truth.pendingDecisions} />
           <RuntimeRow label={t.mission.rawEvidence} value={formatTruthStatus(t, truth.rawEvidence)} tone={truthTone(truth.rawEvidence)} />
+          <RuntimeRow label={t.mission.activeEvidence} value={formatTruthStatus(t, truth.activeEvidence)} tone={truthTone(truth.activeEvidence)} />
           <RuntimeRow label={t.mission.rawReplay} value={formatTruthStatus(t, truth.rawReplay)} tone={truthTone(truth.rawReplay)} />
+          <RuntimeRow label={t.mission.activeReplay} value={formatTruthStatus(t, truth.activeReplay)} tone={truthTone(truth.activeReplay)} />
+          <RuntimeRow label={t.mission.knownHistoricalDebt} value={truth.historicalDebt} tone={truth.historicalDebt === 'unknown' ? 'unknown' : 'warning'} />
+          <RuntimeRow label={t.mission.foundationReadiness} value={formatReadinessStatus(t, truth.foundationReadiness)} tone={truthTone(truth.foundationReadiness)} />
         </div>
       </section>
     </aside>
@@ -338,8 +357,8 @@ const TrustSummary = ({
               <h3 className="text-base font-semibold text-white">{item.title}</h3>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              {item.tags.map((tag) => (
-                <span key={tag} className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold ${toneChip(item.tone)}`}>
+              {item.tags.map((tag, tagIndex) => (
+                <span key={`${item.title}-${tag}-${tagIndex}`} className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold ${toneChip(item.tone)}`}>
                   {tag}
                 </span>
               ))}
@@ -457,11 +476,16 @@ const RuntimeRow = ({
 );
 
 type RuntimeTruth = {
+  loaded: boolean;
   status: string;
   currentBlockers: string;
   pendingDecisions: string;
   rawEvidence: string;
+  activeEvidence: string;
   rawReplay: string;
+  activeReplay: string;
+  historicalDebt: string;
+  foundationReadiness: string;
 };
 
 function readRuntimeTruth(report: Record<string, unknown> | null, pendingCount: number): RuntimeTruth {
@@ -470,28 +494,63 @@ function readRuntimeTruth(report: Record<string, unknown> | null, pendingCount: 
   const closure = getRecord(checks?.foundation_closure_readiness);
   const evidence = getRecord(checks?.evidence_audit);
   const replay = getRecord(checks?.replay_diagnostics);
+  const pending = getRecord(checks?.pending_decision_hygiene);
   const rawStatuses = getRecord(summary?.raw_component_statuses);
+  const summaryProjections = getRecord(summary?.active_runtime_projections);
+  const closureProjections = getRecord(closure?.active_runtime_projections);
+  const projections = summaryProjections ?? closureProjections;
+  const activeEvidence = getRecord(projections?.evidence_audit);
+  const activeReplay = getRecord(projections?.replay_diagnostics);
+  const archivedDebt = getRecord(closure?.archived_historical_debt);
+  const historicalDebt = firstNumber(
+    closure?.historical_evidence_debt_count,
+    evidence?.historical_evidence_debt_count,
+    archivedDebt?.historical_evidence_debt_count,
+  );
+  const historicalMissing = firstNumber(
+    closure?.historical_missing_evidence_count,
+    evidence?.historical_missing_evidence_count,
+    archivedDebt?.historical_missing_evidence_count,
+  );
   return {
+    loaded: Boolean(report),
     status: stringValue(summary?.status) ?? stringValue(closure?.status) ?? 'unknown',
     currentBlockers: countValue(closure?.current_blocker_count),
-    pendingDecisions: String(pendingCount),
-    rawEvidence: stringValue(evidence?.status) ?? stringValue(rawStatuses?.evidence_audit) ?? 'unknown',
-    rawReplay: stringValue(replay?.status) ?? stringValue(rawStatuses?.replay_diagnostics) ?? 'unknown',
+    pendingDecisions: countValue(firstNumber(
+      pending?.current_pending_decision_count,
+      pending?.pending_decision_count,
+      closure?.pending_decision_blocker_count,
+      closure?.current_session_pending_count,
+      pendingCount,
+    )),
+    rawEvidence: stringValue(rawStatuses?.evidence_audit) ?? stringValue(evidence?.status) ?? 'unknown',
+    activeEvidence: stringValue(activeEvidence?.status) ?? stringValue(evidence?.active_evidence_status) ?? 'unknown',
+    rawReplay: stringValue(rawStatuses?.replay_diagnostics) ?? stringValue(replay?.status) ?? 'unknown',
+    activeReplay: stringValue(activeReplay?.status) ?? stringValue(replay?.active_replay_status) ?? 'unknown',
+    historicalDebt: historicalDebtLabel(historicalDebt, historicalMissing),
+    foundationReadiness: stringValue(closure?.closure_readiness_status) ?? stringValue(closure?.status) ?? 'unknown',
   };
 }
 
 function runtimeNoteCopy(t: ReturnType<typeof dictionaryFor>, truth: RuntimeTruth): string {
+  if (!truth.loaded) return t.mission.maintenanceNotLoaded;
   const status = formatTruthStatus(t, truth.status);
-  return `${status} - ${t.mission.rawEvidence}: ${formatTruthStatus(t, truth.rawEvidence)} / ${t.mission.rawReplay}: ${formatTruthStatus(t, truth.rawReplay)}`;
+  return `${status} - ${t.mission.rawEvidence}: ${formatTruthStatus(t, truth.rawEvidence)} / ${t.mission.activeEvidence}: ${formatTruthStatus(t, truth.activeEvidence)} / ${t.mission.rawReplay}: ${formatTruthStatus(t, truth.rawReplay)} / ${t.mission.activeReplay}: ${formatTruthStatus(t, truth.activeReplay)}`;
 }
 
 function formatTruthStatus(t: ReturnType<typeof dictionaryFor>, value: string): string {
   const normalized = value.toLowerCase();
   if (normalized === 'unknown' || normalized === 'unavailable') return t.truth.unknown;
   if (normalized === 'warning' || normalized === 'unverified' || normalized === 'resyncing') return t.truth.warning;
-  if (normalized === 'fail' || normalized === 'failed') return 'Fail';
-  if (normalized === 'ok' || normalized === 'ready' || normalized === 'clear') return 'OK';
+  if (normalized === 'fail' || normalized === 'failed') return t.truth.fail;
+  if (normalized === 'ok' || normalized === 'clear') return t.truth.ok;
   return value;
+}
+
+function formatReadinessStatus(t: ReturnType<typeof dictionaryFor>, value: string): string {
+  const normalized = value.toLowerCase();
+  if (normalized.includes('ready') && normalized.includes('historical')) return t.mission.readyWithKnownHistoricalDebt;
+  return formatTruthStatus(t, value);
 }
 
 function getRecord(value: unknown): Record<string, unknown> | null {
@@ -506,12 +565,25 @@ function countValue(value: unknown): string {
   return typeof value === 'number' && Number.isFinite(value) ? String(value) : 'unknown';
 }
 
+function firstNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function historicalDebtLabel(debt: number | null, missing: number | null): string {
+  if (debt === null && missing === null) return 'unknown';
+  return `${debt ?? 'unknown'} / ${missing ?? 'unknown'}`;
+}
+
 function truthTone(value: string): 'success' | 'info' | 'warning' | 'danger' | 'unknown' {
   const normalized = value.toLowerCase();
-  if (normalized === 'ok' || normalized === 'clear' || normalized === 'ready') return 'success';
+  if (normalized === 'ok' || normalized === 'clear') return 'success';
   if (normalized === 'warning' || normalized === 'unverified' || normalized === 'resyncing') return 'warning';
   if (normalized === 'fail' || normalized === 'failed' || normalized === 'blocked') return 'danger';
   if (normalized === 'unknown' || normalized === 'unavailable') return 'unknown';
+  if (normalized.includes('ready') && normalized.includes('historical')) return 'warning';
   return 'info';
 }
 

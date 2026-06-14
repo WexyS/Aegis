@@ -26,7 +26,7 @@ export const StatusBadge = ({
   className = '',
 }: StatusBadgeProps) => (
   <span
-    className={`inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${TONE_STYLES[tone]} ${className}`}
+    className={`inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] font-bold tracking-wide ${TONE_STYLES[tone]} ${className}`}
   >
     {icon}
     <span className="truncate">{label ?? 'unknown'}</span>

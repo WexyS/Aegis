@@ -17,7 +17,7 @@ export const SettingsPanel = () => {
 
   return (
     <div className="h-full min-h-0 overflow-y-auto custom-scrollbar">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 p-5 lg:p-8">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 p-5 pb-10 lg:p-8 lg:pb-12">
         <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-black/25">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -88,9 +88,7 @@ export const SettingsPanel = () => {
           <div className="flex items-start gap-3">
             <Database size={18} className="mt-1 shrink-0 text-warning" />
             <p className="text-sm leading-7 text-foreground/62">
-              {language === 'tr'
-                ? 'Bu ayarlar yalnızca arayüz davranışını etkiler. Hafızaya yazma, model çağırma, harici API kullanma veya onay verme yetkisi oluşturmaz.'
-                : 'These settings only affect the interface. They do not write memory, call models, use external APIs, or grant approval authority.'}
+              {t.settings.interfaceBoundaryCopy}
             </p>
           </div>
         </section>

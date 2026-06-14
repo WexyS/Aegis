@@ -23,6 +23,8 @@ import { RuntimeStatsPanel } from '@/features/runtime/components/RuntimeStatsPan
 import { ScientificTimeline } from '@/features/runtime/components/ScientificTimeline';
 import { ToolRegistryPanel } from '@/features/runtime/components/ToolRegistryPanel';
 import { VisionLabPanel } from '@/features/runtime/components/VisionLabPanel';
+import { dictionaryFor } from '@/i18n';
+import { useUIStore } from '@/store/useUIStore';
 
 type AdvancedView =
   | 'maintenance'
@@ -35,20 +37,21 @@ type AdvancedView =
   | 'timeline'
   | 'console';
 
-const VIEWS: Array<{ id: AdvancedView; label: string; detail: string; icon: React.ReactNode }> = [
-  { id: 'maintenance', label: 'Maintenance Scan', detail: 'raw diagnostic projection', icon: <Wrench size={15} /> },
-  { id: 'runtime', label: 'Runtime Stats', detail: 'telemetry and throughput', icon: <Activity size={15} /> },
-  { id: 'tools', label: 'Tool Registry', detail: 'metadata, no execution', icon: <Database size={15} /> },
-  { id: 'apps', label: 'Applications', detail: 'registry and aliases', icon: <MonitorUp size={15} /> },
-  { id: 'agent', label: 'Agent Graph', detail: 'proposal surface', icon: <GitBranch size={15} /> },
-  { id: 'vision', label: 'Vision Lab', detail: 'future-gated surface', icon: <Eye size={15} /> },
-  { id: 'chaos', label: 'Chaos Shield', detail: 'defensive framing', icon: <ShieldAlert size={15} /> },
-  { id: 'timeline', label: 'Scientific Timeline', detail: 'backend projection', icon: <FlaskConical size={15} /> },
-  { id: 'console', label: 'Runtime Console', detail: 'collapsed from default shell', icon: <Terminal size={15} /> },
-];
-
 export const AdvancedWorkspace = () => {
   const [view, setView] = React.useState<AdvancedView>('maintenance');
+  const language = useUIStore((state) => state.language);
+  const t = dictionaryFor(language);
+  const views: Array<{ id: AdvancedView; label: string; detail: string; icon: React.ReactNode }> = [
+    { id: 'maintenance', label: t.advanced.views.maintenance.label, detail: t.advanced.views.maintenance.detail, icon: <Wrench size={15} /> },
+    { id: 'runtime', label: t.advanced.views.runtime.label, detail: t.advanced.views.runtime.detail, icon: <Activity size={15} /> },
+    { id: 'tools', label: t.advanced.views.tools.label, detail: t.advanced.views.tools.detail, icon: <Database size={15} /> },
+    { id: 'apps', label: t.advanced.views.apps.label, detail: t.advanced.views.apps.detail, icon: <MonitorUp size={15} /> },
+    { id: 'agent', label: t.advanced.views.agent.label, detail: t.advanced.views.agent.detail, icon: <GitBranch size={15} /> },
+    { id: 'vision', label: t.advanced.views.vision.label, detail: t.advanced.views.vision.detail, icon: <Eye size={15} /> },
+    { id: 'chaos', label: t.advanced.views.chaos.label, detail: t.advanced.views.chaos.detail, icon: <ShieldAlert size={15} /> },
+    { id: 'timeline', label: t.advanced.views.timeline.label, detail: t.advanced.views.timeline.detail, icon: <FlaskConical size={15} /> },
+    { id: 'console', label: t.advanced.views.console.label, detail: t.advanced.views.console.detail, icon: <Terminal size={15} /> },
+  ];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -57,15 +60,15 @@ export const AdvancedWorkspace = () => {
           <div className="min-w-0 max-w-4xl">
             <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-accent">
               <LayoutDashboard size={15} />
-              Advanced
+              {t.advanced.eyebrow}
             </div>
-            <h1 className="mt-2 text-xl font-semibold tracking-tight text-white">Inspector and raw diagnostics</h1>
+            <h1 className="mt-2 text-xl font-semibold tracking-tight text-white">{t.advanced.title}</h1>
             <p className="mt-1 text-sm leading-relaxed text-foreground/52">
-              Debug-heavy panels remain available here. They are still backend/projection views and do not normalize warnings or create authority.
+              {t.advanced.subtitle}
             </p>
           </div>
           <div className="flex max-w-full gap-2 overflow-x-auto pb-1 custom-scrollbar">
-            {VIEWS.map((item) => (
+            {views.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -103,7 +106,7 @@ export const AdvancedWorkspace = () => {
 };
 
 const AdvancedScroll = ({ children }: { children: React.ReactNode }) => (
-  <div className="h-full overflow-y-auto p-4 sm:p-5 lg:p-6 custom-scrollbar">
+  <div className="h-full min-h-0 overflow-y-auto p-4 pb-10 sm:p-5 sm:pb-10 lg:p-6 lg:pb-12 custom-scrollbar">
     <div className="mx-auto max-w-5xl">{children}</div>
   </div>
 );

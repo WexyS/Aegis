@@ -6,6 +6,14 @@ import { eventSourcing } from '@/features/runtime/services/EventSourcing';
 import { getConnectionState } from '@/lib/socket';
 
 export const DevOverlay = () => {
+  if (process.env.NODE_ENV !== 'development' || process.env.NEXT_PUBLIC_AEGIS_SHOW_DEV_OVERLAY !== '1') {
+    return null;
+  }
+
+  return <DevOverlayInner />;
+};
+
+const DevOverlayInner = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [metrics, setMetrics] = useState({
     fps: 0,
@@ -62,10 +70,6 @@ export const DevOverlay = () => {
     loop();
     return () => cancelAnimationFrame(animationFrameId);
   }, []);
-
-  if (process.env.NODE_ENV !== 'development') {
-    return null;
-  }
 
   return (
     <div className="fixed top-4 right-4 z-[9999] font-mono text-[10px]">
