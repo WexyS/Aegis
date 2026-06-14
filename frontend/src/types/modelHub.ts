@@ -1,0 +1,213 @@
+export interface ModelHubIntegrationRecord {
+  integration_id: string;
+  aegis_name: string;
+  family: string;
+  aegis_surface: string;
+  source_strategy: string;
+  default_execution_status: string;
+  current_status: string;
+  risk_level: string;
+  requires_network: boolean;
+  requires_secret: boolean;
+  requires_process_spawn: boolean;
+  requires_model_gateway: boolean;
+  requires_external_api: boolean;
+  allowed_modes: string[];
+  notes: string[];
+  authority: boolean;
+  runtime_dispatch_allowed: boolean;
+  execution_permission: string;
+  execution_enabled_now: boolean;
+  model_call_performed: boolean;
+  external_api_called: boolean;
+}
+
+export interface ModelHubModePolicySummary {
+  mode: string;
+  display_name: string;
+  model_gateway_allowed: boolean;
+  external_api_allowed: boolean;
+  tool_execution_allowed: boolean;
+  agent_execution_allowed: boolean;
+  workflow_execution_allowed: boolean;
+  computer_control_allowed: boolean;
+  mode_allows_execution_now: boolean;
+  current_execution_grant: boolean;
+}
+
+export interface ModelGatewayStatus {
+  status: string;
+  provider: string;
+  base_url: string;
+  host: string;
+  model: string | null;
+  model_configured: boolean;
+  enabled: boolean;
+  timeout_seconds: number;
+  max_input_chars: number;
+  max_output_tokens: number;
+  health_result: unknown;
+  failure_reasons: string[];
+  warnings: string[];
+  limitations: string[];
+  unknowns: string[];
+  duration_ms: number;
+  provider_probe_performed: boolean;
+  http_request_performed: boolean;
+  model_call_performed: boolean;
+  generation_performed: boolean;
+  prompt_payload_sent: boolean;
+  context_payload_sent: boolean;
+  memory_write_performed: boolean;
+  tool_call_performed: boolean;
+  mcp_call_performed: boolean;
+  shell_command_performed: boolean;
+  file_mutation_performed: boolean;
+  data_sent_external: boolean;
+  authority: boolean;
+  runtime_dispatch_allowed: boolean;
+  execution_permission: string;
+  evidence: boolean;
+  evidence_provided_by_model: boolean;
+  verifier_success: boolean;
+  approval_granted: boolean;
+  permission_granted: boolean;
+  capability_lease_granted: boolean;
+  model_output_is_truth: boolean;
+  model_output_is_evidence: boolean;
+  model_output_is_verifier_success: boolean;
+}
+
+export interface ModelGatewayCompletionResponse {
+  request_id: string;
+  status: string;
+  provider: string;
+  base_url: string;
+  model: string | null;
+  purpose: string;
+  output_text: string;
+  usage: Record<string, unknown>;
+  started_at: number;
+  completed_at: number;
+  duration_ms: number;
+  warnings: string[];
+  limitations: string[];
+  failure_reasons: string[];
+  raw_error: string | null;
+  schema_validation: string;
+  safety_validation: string;
+  http_request_performed: boolean;
+  model_call_performed: boolean;
+  generation_performed: boolean;
+  prompt_payload_sent: boolean;
+  context_payload_sent: boolean;
+  memory_write_performed: boolean;
+  tool_call_performed: boolean;
+  mcp_call_performed: boolean;
+  shell_command_performed: boolean;
+  file_mutation_performed: boolean;
+  data_sent_external: boolean;
+  transcript_persisted: boolean;
+  journal_mutated: boolean;
+  evidence_mutated: boolean;
+  runtime_state_mutated: boolean;
+  authority: boolean;
+  runtime_dispatch_allowed: boolean;
+  execution_permission: string;
+  evidence: boolean;
+  evidence_provided_by_model: boolean;
+  verifier_success: boolean;
+  approval_granted: boolean;
+  permission_granted: boolean;
+  capability_lease_granted: boolean;
+  model_output_is_truth: boolean;
+  model_output_is_evidence: boolean;
+  model_output_is_verifier_success: boolean;
+}
+
+export interface ModelGatewayCompleteRequest {
+  request_id?: string;
+  purpose: 'explanation' | 'proposal_draft';
+  prompt: string;
+  max_output_tokens?: number;
+  temperature?: number;
+}
+
+export interface ModelHubStatus {
+  contract: string;
+  status: string;
+  model_gateway: ModelGatewayStatus;
+  orchestrator_readiness: {
+    integration_landscape_count?: number;
+    family_counts?: Record<string, number>;
+    families_represented?: string[];
+    mode_execution_allowed_now?: Record<string, boolean>;
+    provider_probe_performed: boolean;
+    http_request_performed: boolean;
+    model_call_performed: boolean;
+    lm_studio_called: boolean;
+  };
+  model_hub_integrations: ModelHubIntegrationRecord[];
+  mode_policy_summary: {
+    modes: ModelHubModePolicySummary[];
+    mode_count: number;
+    execution_allowed_now: boolean;
+    external_api_allowed_now: boolean;
+    cloud_routing_allowed: boolean;
+  };
+  lm_studio: {
+    provider: string;
+    base_url: string;
+    host: string;
+    enabled: boolean;
+    model: string | null;
+    model_configured: boolean;
+    status: string;
+    failure_reasons: string[];
+    warnings: string[];
+    probe_required_for_live_health: boolean;
+    local_only_boundary: boolean;
+    openai_compatible_local_endpoint: boolean;
+    config_mutation_allowed: boolean;
+    env_file_written: boolean;
+    cloud_fallback_available: boolean;
+    status_source: string;
+  };
+  non_authority_flags: Record<string, boolean>;
+  authority: boolean;
+  runtime_dispatch_allowed: boolean;
+  execution_permission: string;
+  approval_grant: boolean;
+  approval_granted: boolean;
+  capability_grant: boolean;
+  capability_lease_granted: boolean;
+  lease_grant: boolean;
+  evidence_created: boolean;
+  evidence_provided_by_model_hub: boolean;
+  verifier_success: boolean;
+  mutation_performed: boolean;
+  frontend_authority: boolean;
+  provider_probe_performed: boolean;
+  http_request_performed: boolean;
+  model_call_performed: boolean;
+  generation_performed: boolean;
+  prompt_payload_sent: boolean;
+  context_payload_sent: boolean;
+  memory_write_performed: boolean;
+  tool_call_performed: boolean;
+  mcp_call_performed: boolean;
+  plugin_execution_performed: boolean;
+  agent_execution_performed: boolean;
+  workflow_execution_performed: boolean;
+  computer_control_performed: boolean;
+  shell_command_performed: boolean;
+  file_mutation_performed: boolean;
+  external_api_called: boolean;
+  cloud_routing_allowed: boolean;
+  data_sent_external: boolean;
+  config_mutation_allowed: boolean;
+  env_file_written: boolean;
+  requires_backend_validation: boolean;
+  requires_policy_check: boolean;
+  limitations: string[];
+}

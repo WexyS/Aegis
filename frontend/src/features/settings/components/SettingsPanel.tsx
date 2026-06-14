@@ -6,6 +6,7 @@ import { Database, Eye, Globe2, Moon, Radio, Settings2, ShieldCheck } from 'luci
 import { dictionaryFor } from '@/i18n';
 import type { Language } from '@/i18n';
 import { StatusBadge } from '@/components/StatusBadge';
+import { ModelHubPanel } from '@/features/model-hub/components/ModelHubPanel';
 import { useUIStore } from '@/store/useUIStore';
 
 export const SettingsPanel = () => {
@@ -83,6 +84,8 @@ export const SettingsPanel = () => {
             />
           </SettingsCard>
         </div>
+
+        <ModelHubPanel language={language} />
 
         <section className="rounded-2xl border border-warning/20 bg-warning/[0.04] p-5">
           <div className="flex items-start gap-3">

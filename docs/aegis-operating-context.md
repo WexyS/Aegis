@@ -170,6 +170,10 @@ execution.
 Model Gateway: implemented optional local LM Studio/OpenAI-compatible boundary.
 Model output is proposal-only.
 
+Aegis Model Hub: implemented local LM Studio status, explicit probe, and
+proposal-only local text surface. Status is configuration-only until the
+operator explicitly probes or sends a proposal request.
+
 Skill Registry: implemented static metadata catalog and proposal surfaces. It
 does not execute skills.
 
@@ -239,6 +243,7 @@ Implemented:
 - AutoPilot read-only scanner
 - deterministic Society proposal surface
 - local Model Gateway boundary
+- Aegis Model Hub local status/probe/proposal surface
 - static Skill Registry
 - bounded Agent Runtime proposal sessions
 - read-only ChatGPT bridge and local launcher helpers

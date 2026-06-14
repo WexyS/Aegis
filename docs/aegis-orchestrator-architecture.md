@@ -61,9 +61,10 @@ Current status: policy metadata only; no mode grants execution.
 
 ### Aegis Model Hub
 
-The future product surface for local and optional provider planning. Current
-real model calls, when explicitly enabled and requested, must go through the
-existing Model Gateway boundary. Model output is proposal-only.
+The product surface for local provider status, explicit LM Studio probe, and
+explicit proposal-only local model text. Current real model calls, when
+explicitly enabled and requested, must go through the existing Model Gateway
+boundary. Model output is proposal-only.
 
 ### Aegis Memory OS
 
@@ -103,8 +104,9 @@ Gateway boundary.
 Rules:
 
 - local model calls may only happen through Model Gateway
-- this architecture sprint does not call `/model-gateway/probe`
-- this architecture sprint does not call `/model-gateway/complete`
+- status projection does not call `/model-gateway/probe`
+- status projection does not call `/model-gateway/complete`
+- Model Hub UI may call probe or complete only after explicit operator clicks
 - LM Studio does not need to be running for readiness
 - local model output remains proposal-only
 - local model output cannot grant truth, evidence, verifier success, approval,

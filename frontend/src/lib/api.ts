@@ -7,6 +7,12 @@ import {
 } from '@/types/rc';
 import { AskRequest, AskResponse } from '@/types/ask';
 import {
+  ModelGatewayCompleteRequest,
+  ModelGatewayCompletionResponse,
+  ModelGatewayStatus,
+  ModelHubStatus,
+} from '@/types/modelHub';
+import {
   AppRegistrySnapshot,
   ApprovalHygieneDenyResponse,
   ApprovalHygienePreviewResponse,
@@ -38,6 +44,65 @@ export async function askAegis(payload: AskRequest): Promise<AskResponse> {
     throw new Error('Aegis Ask returned no answer.');
   }
   return body as AskResponse;
+}
+
+export async function fetchModelHubStatus(): Promise<ModelHubStatus> {
+  const url = new URL('/model-hub/status', API_URL);
+  const response = await fetch(url.toString(), { cache: 'no-store' });
+  const body = await parseJsonBody<ModelHubStatus | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Model Hub status request failed: ${response.status}`));
+  }
+  if (!body || !('lm_studio' in body)) {
+    throw new Error('Model Hub status returned no LM Studio summary.');
+  }
+  return body as ModelHubStatus;
+}
+
+export async function fetchModelGatewayStatus(): Promise<ModelGatewayStatus> {
+  const url = new URL('/model-gateway/status', API_URL);
+  const response = await fetch(url.toString(), { cache: 'no-store' });
+  const body = await parseJsonBody<ModelGatewayStatus | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Model Gateway status request failed: ${response.status}`));
+  }
+  if (!body || !('status' in body)) {
+    throw new Error('Model Gateway status returned no status.');
+  }
+  return body as ModelGatewayStatus;
+}
+
+export async function probeModelGateway(): Promise<ModelGatewayStatus> {
+  const url = new URL('/model-gateway/probe', API_URL);
+  const response = await fetch(url.toString(), { method: 'POST', cache: 'no-store' });
+  const body = await parseJsonBody<ModelGatewayStatus | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Model Gateway probe failed: ${response.status}`));
+  }
+  if (!body || !('status' in body)) {
+    throw new Error('Model Gateway probe returned no status.');
+  }
+  return body as ModelGatewayStatus;
+}
+
+export async function completeModelGateway(
+  payload: ModelGatewayCompleteRequest,
+): Promise<ModelGatewayCompletionResponse> {
+  const url = new URL('/model-gateway/complete', API_URL);
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify(payload),
+  });
+  const body = await parseJsonBody<ModelGatewayCompletionResponse | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Model Gateway completion failed: ${response.status}`));
+  }
+  if (!body || !('status' in body)) {
+    throw new Error('Model Gateway completion returned no status.');
+  }
+  return body as ModelGatewayCompletionResponse;
 }
 
 export async function fetchAppRegistry(refresh = false): Promise<AppRegistrySnapshot> {

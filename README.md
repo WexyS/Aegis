@@ -23,6 +23,7 @@ Aegis is currently a local Mission Control workspace with:
 - a real read-only AutoPilot repository structure audit
 - deterministic Society Session proposals
 - a bounded local Model Gateway for LM Studio/OpenAI-compatible local endpoints
+- Aegis Model Hub for local LM Studio status, explicit probe, and proposal-only local text
 - a static Skill Registry metadata catalog
 - a proposal-only Bounded Agent Runtime
 - Aegis Ask for read-only status explanation and safe next-step planning
@@ -93,6 +94,7 @@ Aegis should work without paid services as the default product posture.
 | AutoPilot | Implemented read-only local scan | Repository structure audit only; report is not evidence. |
 | Society Session | Implemented deterministic proposal surface | Role output is proposal-only. |
 | Model Gateway | Implemented local provider boundary | Optional LM Studio/local OpenAI-compatible calls; output is proposal-only. |
+| Aegis Model Hub | Implemented explicit local model surface | Status is config-only; probe and proposal require user clicks and do not grant authority. |
 | Skill Registry | Implemented static metadata catalog | No skill execution endpoint. |
 | Bounded Agent Runtime | Implemented proposal-only sessions | No tool, MCP, shell, model completion, or memory write from agents. |
 | Aegis Ask | Implemented read-only explanation slice | Answers status/capability/safety questions without execution, memory writes, evidence, verifier success, or grants. |
@@ -190,6 +192,7 @@ scoped by the same proposal contract.
 - [Memory consent policy](docs/memory-consent-policy.md)
 - [Architecture realignment](docs/aegis-architecture-realignment.md)
 - [Model Gateway](docs/model-gateway.md)
+- [Aegis Model Hub](docs/model-hub.md)
 - [Skill Registry](docs/skill-registry.md)
 - [Bounded Agent Runtime](docs/bounded-agent-runtime.md)
 - [Aegis Ask](docs/aegis-ask-product-slice.md)

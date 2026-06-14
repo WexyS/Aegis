@@ -11,11 +11,12 @@ retained for traceability; public product wording should use Model Gateway.
 Model Gateway adds a bounded local model-call boundary for Aegis. It supports
 LM Studio through the local OpenAI-compatible HTTP API only.
 
-This is a backend/API capability. It does not add frontend UI, model-assisted Society,
-AutoPilot integration, Memory integration, Agent Runtime integration, Skill
-Registry integration, cloud routing, hidden fallback, evidence creation,
-verifier success, approval, lease, capability grants, tool execution, MCP
-execution, shell execution, or file mutation.
+This is a backend/API capability. The user-facing Model Hub panel may call this
+boundary through explicit operator actions, but the gateway itself does not add
+model-assisted Society, AutoPilot integration, Memory integration, Agent
+Runtime integration, Skill Registry integration, cloud routing, hidden fallback,
+evidence creation, verifier success, approval, lease, capability grants, tool
+execution, MCP execution, shell execution, or file mutation.
 
 ## Why It Exists
 
@@ -205,7 +206,7 @@ The test suite covers:
 
 ## Intentionally Not Done
 
-- No frontend Model Gateway UI
+- No hidden or automatic frontend Model Gateway call
 - No model-assisted Society model-assisted commentary
 - No AutoPilot model-assisted interpretation
 - No Memory candidate refinement integration
@@ -215,12 +216,14 @@ The test suite covers:
 - No transcript persistence
 - No context package integration
 - No live LM Studio smoke requirement
+- No UI-driven `.env` or provider configuration mutation
 
 ## Remaining Risks
 
 - LM Studio availability, model names, local resource pressure, and model
   quality are environment-specific.
 - Prompt privacy still depends on future context-policy integration.
-- The API is intentionally narrow and not yet connected to product UI.
+- The API remains intentionally narrow; the Model Hub UI must keep prompts small
+  and safe.
 - Future integrations must preserve the same non-authority envelope and must
   not bypass Model Gateway through older direct provider paths.
