@@ -1,76 +1,118 @@
 "use client";
 
 import React from 'react';
-import { Activity, Cpu, Radio, ShieldCheck } from 'lucide-react';
-import { StatusBadge } from '@/components/StatusBadge';
-import { useUIStore } from '@/store/useUIStore';
+import {
+  Box,
+  Maximize2,
+  Minimize2,
+  Monitor,
+  ShieldCheck,
+  Square,
+  X,
+} from 'lucide-react';
+
+import { dictionaryFor } from '@/i18n';
 import { useRuntimeStore } from '@/store/useRuntimeStore';
+import { useUIStore } from '@/store/useUIStore';
 
 export const Header = () => {
-  const activeTab = useUIStore((state) => state.activeTab);
-  const {
-    activeModel,
-    connectionState = 'disconnected',
-    currentState,
-    lastSequenceNum,
-    runtimeIntegrity = 'unverified',
-  } = useRuntimeStore();
-  const isConnected = connectionState === 'connected';
-  const sequenceLabel = lastSequenceNum === undefined ? 'Unavailable' : lastSequenceNum;
+  const language = useUIStore((state) => state.language);
+  const t = dictionaryFor(language);
+  const pendingApprovals = useRuntimeStore((state) => state.pendingApprovals);
+  const pendingClarifications = useRuntimeStore((state) => state.pendingClarifications);
+  const [isElectron, setIsElectron] = React.useState(false);
+  const pendingCount = pendingApprovals.length + pendingClarifications.length;
+
+  React.useEffect(() => {
+    setIsElectron(Boolean(window.aegis?.isElectron && window.aegis.windowAction));
+  }, []);
+
+  const sendWindowAction = React.useCallback((action: 'minimize' | 'toggle-maximize' | 'toggle-fullscreen' | 'close') => {
+    window.aegis?.windowAction?.(action);
+  }, []);
 
   return (
-    <header className="h-16 shrink-0 border-b border-white/10 flex items-center justify-between gap-3 px-3 sm:px-4 lg:px-6 bg-background/72 backdrop-blur-xl z-40">
-      <div className="flex items-center gap-4 min-w-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-md border border-accent/25 bg-accent/10 text-accent sm:flex">
-            <ShieldCheck size={15} />
-          </div>
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-white">{activeTab}</div>
-            <div className="hidden text-[10px] font-mono uppercase tracking-wider text-foreground/35 sm:block">
-              backend-owned truth, presentation-only UI
-            </div>
-          </div>
-          <StatusBadge label={compactIntegrityLabel(runtimeIntegrity)} tone={integrityTone(runtimeIntegrity)} className="sm:hidden" />
-        </div>
-        <div className="hidden md:flex items-center gap-2 text-[10px] font-mono text-foreground/45">
-          <Activity size={12} className="text-accent" />
-          <span>FSM {currentState}</span>
-          <span className="text-foreground/20">/</span>
-          <span>SEQ {sequenceLabel}</span>
-          <span className="text-foreground/20">/</span>
-          <span>{runtimeIntegrity}</span>
-        </div>
+    <header className="electron-drag-region relative z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-[#09090d]/[0.82] px-3 pl-4 backdrop-blur-2xl sm:px-4 lg:px-6">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent" />
+
+      <div className="flex min-w-0 flex-1 items-center justify-center gap-2 lg:justify-start">
+        <ControlChip icon={<ShieldCheck size={15} />} label={t.header.localMode} active />
+        <ControlChip icon={<Monitor size={15} />} label={t.header.externalApisOff} />
+        <ControlChip icon={<Box size={15} />} label={t.header.modelBoundary} />
+        <ControlChip
+          icon={<ShieldCheck size={15} />}
+          label={`${t.header.approvalGate}: ${pendingCount} ${t.header.pending}`}
+          warning={pendingCount > 0}
+        />
       </div>
-      
-      <div className="flex min-w-0 items-center justify-end gap-2 lg:gap-3">
-        <div className="hidden md:flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10px] font-mono">
-          <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-success' : 'bg-warning'}`} />
-          <span className="text-foreground/45">SOCKET</span>
-          <span className="font-bold text-foreground/80">{connectionState.toUpperCase()}</span>
+
+      {isElectron && (
+        <div className="electron-no-drag flex shrink-0 items-center gap-1">
+          <WindowButton label={t.header.minimize} onClick={() => sendWindowAction('minimize')}>
+            <Minimize2 size={15} />
+          </WindowButton>
+          <WindowButton label={t.header.maximize} onClick={() => sendWindowAction('toggle-maximize')}>
+            <Square size={13} />
+          </WindowButton>
+          <WindowButton label={t.header.fullscreen} onClick={() => sendWindowAction('toggle-fullscreen')}>
+            <Maximize2 size={15} />
+          </WindowButton>
+          <WindowButton label={t.header.close} danger onClick={() => sendWindowAction('close')}>
+            <X size={16} />
+          </WindowButton>
         </div>
-        <StatusBadge label={runtimeIntegrity} tone={integrityTone(runtimeIntegrity)} className="hidden sm:inline-flex" />
-        <div className="hidden min-w-0 items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[10px] font-mono sm:flex lg:px-3">
-          <Cpu size={13} className="text-accent" />
-          <span className="hidden lg:inline text-foreground/45">MODEL CONFIG</span>
-          <span className="max-w-[120px] truncate font-bold text-foreground/80 xl:max-w-[180px]">{activeModel || 'Unavailable'}</span>
-        </div>
-        <div className="hidden lg:flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10px] font-mono text-foreground/60">
-          <Radio size={13} className="text-foreground/40" />
-          backend authority
-        </div>
-      </div>
+      )}
     </header>
   );
 };
 
-function integrityTone(integrity: string): 'info' | 'warning' | 'unknown' {
-  if (integrity === 'unverified' || integrity === 'resyncing') return 'warning';
-  if (integrity === 'session-reset') return 'unknown';
-  return 'info';
-}
+const ControlChip = ({
+  icon,
+  label,
+  active = false,
+  warning = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active?: boolean;
+  warning?: boolean;
+}) => (
+  <div
+    className={`electron-no-drag hidden items-center gap-2 rounded-xl border px-3 py-1.5 text-[11px] font-semibold tracking-wide shadow-lg shadow-black/10 sm:inline-flex ${
+      warning
+        ? 'border-warning/25 bg-warning/10 text-warning'
+        : active
+          ? 'border-accent/25 bg-accent/10 text-accent'
+          : 'border-white/10 bg-white/[0.035] text-foreground/55'
+    }`}
+  >
+    <span className={active ? 'text-accent' : warning ? 'text-warning' : 'text-foreground/45'}>{icon}</span>
+    <span className="truncate">{label}</span>
+  </div>
+);
 
-function compactIntegrityLabel(integrity: string): string {
-  if (integrity === 'unverified') return 'unver.';
-  return integrity;
-}
+const WindowButton = ({
+  children,
+  label,
+  danger = false,
+  onClick,
+}: {
+  children: React.ReactNode;
+  label: string;
+  danger?: boolean;
+  onClick: () => void;
+}) => (
+  <button
+    type="button"
+    aria-label={label}
+    title={label}
+    onClick={onClick}
+    className={`flex h-8 w-9 items-center justify-center rounded-md border transition-colors ${
+      danger
+        ? 'border-transparent text-foreground/55 hover:bg-danger/20 hover:text-danger'
+        : 'border-transparent text-foreground/45 hover:border-white/10 hover:bg-white/[0.06] hover:text-white'
+    }`}
+  >
+    {children}
+  </button>
+);

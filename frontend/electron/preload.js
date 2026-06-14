@@ -1,82 +1,63 @@
-/**
- * ══════════════════════════════════════════════════════════════════════
- * AEGIS ELECTRON PRELOAD — Secure IPC Bridge
- * ══════════════════════════════════════════════════════════════════════
- *
- * This runs in an isolated context between renderer and main process.
- * ONLY explicitly whitelisted APIs are exposed to the renderer.
- *
- * Security rules:
- *   - No direct Node.js access from renderer
- *   - No arbitrary IPC channel access
- *   - All payloads validated before crossing the bridge
- *   - Channel names are typed and enumerated
- *
- * ══════════════════════════════════════════════════════════════════════
- */
-
 const { contextBridge, ipcRenderer } = require('electron');
 
-// ─── ALLOWED IPC CHANNELS ──────────────────────────────────────────
-const ALLOWED_SEND_CHANNELS = [
+const ALLOWED_SEND_CHANNELS = new Set([
   'aegis:command',
   'aegis:telemetry-request',
   'aegis:window-action',
   'aegis:log',
-];
+]);
 
-const ALLOWED_RECEIVE_CHANNELS = [
+const ALLOWED_RECEIVE_CHANNELS = new Set([
   'aegis:runtime-event',
   'aegis:telemetry-update',
   'aegis:health-status',
   'aegis:error',
-];
+]);
 
-// ─── EXPOSED API ───────────────────────────────────────────────────
+const ALLOWED_WINDOW_ACTIONS = new Set([
+  'minimize',
+  'toggle-maximize',
+  'toggle-fullscreen',
+  'close',
+]);
+
+function sendAllowed(channel, data) {
+  if (!ALLOWED_SEND_CHANNELS.has(channel)) {
+    console.error(`[PRELOAD] Blocked send to unauthorized channel: ${channel}`);
+    return;
+  }
+  ipcRenderer.send(channel, data);
+}
+
 contextBridge.exposeInMainWorld('aegis', {
-  /**
-   * Send a message to the main process.
-   * Only allowed channels are accepted.
-   */
-  send: (channel, data) => {
-    if (ALLOWED_SEND_CHANNELS.includes(channel)) {
-      ipcRenderer.send(channel, data);
-    } else {
-      console.error(`[PRELOAD] Blocked send to unauthorized channel: ${channel}`);
-    }
-  },
+  send: sendAllowed,
 
-  /**
-   * Listen for messages from the main process.
-   * Only allowed channels are accepted.
-   */
   on: (channel, callback) => {
-    if (ALLOWED_RECEIVE_CHANNELS.includes(channel)) {
-      // Wrap callback to strip the event object (security)
-      const wrappedCallback = (_event, ...args) => callback(...args);
-      ipcRenderer.on(channel, wrappedCallback);
-
-      // Return cleanup function
-      return () => ipcRenderer.removeListener(channel, wrappedCallback);
-    } else {
+    if (!ALLOWED_RECEIVE_CHANNELS.has(channel)) {
       console.error(`[PRELOAD] Blocked listen on unauthorized channel: ${channel}`);
       return () => {};
     }
+
+    const wrappedCallback = (_event, ...args) => callback(...args);
+    ipcRenderer.on(channel, wrappedCallback);
+    return () => ipcRenderer.removeListener(channel, wrappedCallback);
   },
 
-  /**
-   * Invoke an async IPC call (request/response pattern).
-   */
   invoke: async (channel, data) => {
-    if (ALLOWED_SEND_CHANNELS.includes(channel)) {
-      return ipcRenderer.invoke(channel, data);
+    if (!ALLOWED_SEND_CHANNELS.has(channel)) {
+      throw new Error(`[PRELOAD] Blocked invoke to unauthorized channel: ${channel}`);
     }
-    throw new Error(`[PRELOAD] Blocked invoke to unauthorized channel: ${channel}`);
+    return ipcRenderer.invoke(channel, data);
   },
 
-  /**
-   * Platform info (safe to expose).
-   */
+  windowAction: (action) => {
+    if (!ALLOWED_WINDOW_ACTIONS.has(action)) {
+      console.error(`[PRELOAD] Blocked unauthorized window action: ${action}`);
+      return;
+    }
+    sendAllowed('aegis:window-action', action);
+  },
+
   platform: process.platform,
   isElectron: true,
 });

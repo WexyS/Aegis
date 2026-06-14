@@ -9,6 +9,7 @@ import { AdvancedWorkspace } from '@/features/advanced/components/AdvancedWorksp
 import { CapabilitiesPanel } from '@/features/capabilities/components/CapabilitiesPanel';
 import { MemoryOverviewPanel } from '@/features/memory/components/MemoryOverviewPanel';
 import { MissionHome } from '@/features/mission-home/components/MissionHome';
+import { SettingsPanel } from '@/features/settings/components/SettingsPanel';
 import { WorkSurface } from '@/components/WorkSurface';
 
 import { connectRuntime, disconnectRuntime } from '@/lib/socket';
@@ -30,6 +31,7 @@ export default function AegisDashboard() {
         {activeTab === 'Memory' && <MemoryOverviewPanel />}
         {activeTab === 'Capabilities' && <CapabilitiesPanel />}
         {activeTab === 'Advanced' && <AdvancedWorkspace />}
+        {activeTab === 'Settings' && <SettingsPanel />}
       </div>
     </AppShell>
   );

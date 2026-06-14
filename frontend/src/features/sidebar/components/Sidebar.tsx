@@ -1,65 +1,147 @@
 "use client";
 
 import React from 'react';
-import { 
-  BrainCircuit,
+import {
+  Box,
   BriefcaseBusiness,
-  Boxes,
   Database,
   HelpCircle,
   Layers3,
   Radar,
-  Zap 
+  Settings,
+  Shield,
+  SlidersHorizontal,
 } from 'lucide-react';
+
+import { dictionaryFor } from '@/i18n';
 import { useUIStore } from '@/store/useUIStore';
 
+const NAV_ITEMS = [
+  { id: 'Mission', icon: <Radar size={19} />, labelKey: 'mission', detail: 'front door' },
+  { id: 'Ask', icon: <HelpCircle size={19} />, labelKey: 'ask', detail: 'read-only' },
+  { id: 'Work', icon: <BriefcaseBusiness size={19} />, labelKey: 'work', detail: 'gated flow' },
+  { id: 'Memory', icon: <Database size={19} />, labelKey: 'memory', detail: 'consent' },
+  { id: 'Capabilities', icon: <Box size={19} />, labelKey: 'capabilities', detail: 'truth map' },
+  { id: 'Advanced', icon: <Layers3 size={19} />, labelKey: 'advanced', detail: 'diagnostics' },
+] as const;
+
 export const Sidebar = () => {
-  const { activeTab, setActiveTab } = useUIStore();
+  const activeTab = useUIStore((state) => state.activeTab);
+  const setActiveTab = useUIStore((state) => state.setActiveTab);
+  const language = useUIStore((state) => state.language);
+  const t = dictionaryFor(language);
 
   return (
-    <aside className="w-14 sm:w-16 lg:w-64 shrink-0 flex flex-col border-r border-white/10 bg-background/90 backdrop-blur-xl z-50">
-      <div className="h-16 px-3 sm:px-4 flex items-center justify-center lg:justify-start gap-3 border-b border-white/10">
-        <div className="w-8 h-8 rounded-md bg-accent flex items-center justify-center shadow-lg shadow-cyan-950/30">
-          <Zap className="text-background w-6 h-6 fill-current" />
-        </div>
-        <div className="hidden lg:flex flex-col">
-          <span className="text-base font-bold tracking-tight text-white">Aegis</span>
-          <span className="text-[9px] font-mono text-accent uppercase tracking-widest">Mission Control</span>
+    <aside className="electron-drag-region relative z-50 flex w-16 shrink-0 flex-col border-r border-white/10 bg-[#08080d]/[0.88] backdrop-blur-2xl lg:w-72">
+      <div className="flex h-20 items-center justify-center gap-3 border-b border-white/10 px-3 lg:justify-start lg:px-5">
+        <AegisMark />
+        <div className="hidden min-w-0 flex-col lg:flex">
+          <span className="text-lg font-semibold tracking-[0.28em] text-white">AEGIS</span>
+          <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-accent/75">AI Operator</span>
         </div>
       </div>
 
-      <nav className="flex-1 px-2 sm:px-3 py-4 space-y-1 overflow-y-auto custom-scrollbar">
-        <NavItem icon={<Radar size={18}/>} label="Mission" detail="Home" active={activeTab === 'Mission'} onClick={() => setActiveTab('Mission')} />
-        <NavItem icon={<HelpCircle size={18}/>} label="Ask" detail="Read-only" active={activeTab === 'Ask'} onClick={() => setActiveTab('Ask')} />
-        <NavItem icon={<BriefcaseBusiness size={18}/>} label="Work" detail="Plan & review" active={activeTab === 'Work'} onClick={() => setActiveTab('Work')} />
-        <NavItem icon={<Database size={18}/>} label="Memory" detail="Consent" active={activeTab === 'Memory'} onClick={() => setActiveTab('Memory')} />
-        <NavItem icon={<Boxes size={18}/>} label="Capabilities" detail="What exists" active={activeTab === 'Capabilities'} onClick={() => setActiveTab('Capabilities')} />
-        <NavItem icon={<Layers3 size={18}/>} label="Advanced" detail="Diagnostics" active={activeTab === 'Advanced'} onClick={() => setActiveTab('Advanced')} />
+      <nav className="electron-no-drag flex-1 space-y-2 overflow-y-auto px-2 py-5 custom-scrollbar lg:px-4">
+        {NAV_ITEMS.map((item) => (
+          <NavItem
+            key={item.id}
+            icon={item.icon}
+            label={t.nav[item.labelKey]}
+            detail={item.detail}
+            active={activeTab === item.id}
+            onClick={() => setActiveTab(item.id)}
+          />
+        ))}
       </nav>
 
-      <div className="p-2 sm:p-3 border-t border-white/10">
-        <div className="hidden rounded-lg border border-white/10 bg-white/[0.025] p-3 text-[10px] leading-relaxed text-foreground/45 lg:block">
-          Backend truth remains authoritative. This shell does not create evidence, approvals, leases, or execution.
+      <div className="electron-no-drag space-y-3 border-t border-white/10 p-2 lg:p-4">
+        <button
+          type="button"
+          onClick={() => setActiveTab('Settings')}
+          className={`group flex w-full items-center justify-center gap-3 rounded-xl border p-2.5 text-left transition-colors lg:justify-start lg:p-3 ${
+            activeTab === 'Settings'
+              ? 'border-secondary/35 bg-secondary/[0.12] text-secondary-light shadow-[0_0_28px_rgba(139,92,246,0.18)]'
+              : 'border-white/10 bg-white/[0.035] text-foreground/55 hover:border-white/20 hover:text-white'
+          }`}
+          aria-label={t.nav.settings}
+        >
+          <Settings size={18} />
+          <span className="hidden min-w-0 flex-col lg:flex">
+            <span className="text-[13px] font-semibold">{t.nav.settings}</span>
+            <span className="text-[9px] font-mono uppercase tracking-wider opacity-55">local preferences</span>
+          </span>
+        </button>
+        <div className="hidden rounded-xl border border-white/10 bg-white/[0.025] p-3 lg:block">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-accent/20 bg-accent/10 text-accent">
+              <Shield size={16} />
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-white">Aegis</div>
+              <div className="mt-0.5 text-[11px] text-foreground/45">{t.nav.localOperator}</div>
+            </div>
+            <span className="ml-auto h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.75)]" />
+          </div>
+          <p className="mt-3 text-[11px] leading-relaxed text-foreground/42">
+            Backend truth remains authoritative. This shell does not create approvals, leases, evidence, verifier success, or execution.
+          </p>
         </div>
-        <NavItem icon={<BrainCircuit size={18}/>} label="Runtime truth" detail="No fake green" active={false} onClick={() => setActiveTab('Advanced')} className="lg:hidden" />
+        <button
+          type="button"
+          onClick={() => setActiveTab('Advanced')}
+          className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-2.5 text-foreground/45 transition-colors hover:text-white lg:hidden"
+          aria-label={t.nav.advanced}
+        >
+          <SlidersHorizontal size={18} />
+        </button>
       </div>
     </aside>
   );
 };
 
-const NavItem = ({ icon, label, detail, active, onClick, className = '' }: any) => (
+const AegisMark = () => (
+  <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-secondary/25 bg-secondary/[0.12] shadow-[0_0_24px_rgba(139,92,246,0.24)]">
+    <div className="absolute inset-1 rounded-lg bg-gradient-to-br from-secondary-light/40 via-secondary/20 to-accent/20 blur-[2px]" />
+    <div className="relative h-6 w-6">
+      <div className="absolute left-1 top-0 h-6 w-2.5 -rotate-[28deg] rounded-full bg-gradient-to-b from-secondary-light to-secondary" />
+      <div className="absolute right-1 top-0 h-6 w-2.5 rotate-[28deg] rounded-full bg-gradient-to-b from-accent-light to-secondary" />
+      <div className="absolute bottom-0 left-[7px] h-2.5 w-3 rounded-full bg-[#09090d]" />
+    </div>
+  </div>
+);
+
+const NavItem = ({
+  icon,
+  label,
+  detail,
+  active,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  detail: string;
+  active: boolean;
+  onClick: () => void;
+}) => (
   <button
     type="button"
     aria-label={label}
     onClick={onClick}
-    className={`w-full flex items-center justify-center lg:justify-start gap-3 p-2.5 rounded-md cursor-pointer transition-colors duration-150 group relative overflow-hidden ${active ? 'bg-accent/10 text-accent border border-accent/25 shadow-lg shadow-cyan-950/10' : 'text-foreground/45 hover:bg-white/[0.04] hover:text-white border border-transparent'} ${className}`}
+    className={`group relative flex w-full items-center justify-center gap-3 overflow-hidden rounded-xl border p-2.5 text-left transition-all lg:justify-start lg:p-3 ${
+      active
+        ? 'border-secondary/35 bg-white/[0.07] text-white shadow-[0_0_34px_rgba(139,92,246,0.18)]'
+        : 'border-transparent text-foreground/48 hover:border-white/10 hover:bg-white/[0.035] hover:text-white'
+    }`}
   >
-    <div className={`relative z-10 ${active ? 'text-accent' : 'text-foreground/50 group-hover:text-white'} transition-colors`}>
+    {active && <span className="absolute left-0 top-2 h-[calc(100%-1rem)] w-0.5 rounded-r-full bg-secondary-light shadow-[0_0_12px_rgba(167,139,250,0.9)]" />}
+    <span className={`relative z-10 ${active ? 'text-secondary-light' : 'text-foreground/50 group-hover:text-white'}`}>
       {icon}
-    </div>
-    <span className="hidden lg:flex min-w-0 flex-col items-start relative z-10">
-      <span className="text-[13px] font-medium tracking-wide">{label}</span>
-      {detail && <span className="mt-0.5 max-w-full truncate text-[9px] font-mono uppercase tracking-wider text-foreground/30 group-hover:text-foreground/45">{detail}</span>}
+    </span>
+    <span className="relative z-10 hidden min-w-0 flex-col lg:flex">
+      <span className="text-[14px] font-semibold tracking-wide">{label}</span>
+      <span className="mt-0.5 max-w-full truncate text-[9px] font-mono uppercase tracking-wider text-foreground/34 group-hover:text-foreground/50">
+        {detail}
+      </span>
     </span>
   </button>
 );

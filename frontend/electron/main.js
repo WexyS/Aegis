@@ -1,6 +1,8 @@
 const { app, BrowserWindow, ipcMain, session } = require('electron');
 const path = require('path');
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+const WINDOW_ACTION_CHANNEL = 'aegis:window-action';
+const WINDOW_ACTIONS = new Set(['minimize', 'toggle-maximize', 'toggle-fullscreen', 'close']);
 
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -28,7 +30,14 @@ if (!gotTheLock) {
     const win = new BrowserWindow({
       width: 1400,
       height: 900,
-      titleBarStyle: 'hidden',
+      minWidth: 1180,
+      minHeight: 760,
+      frame: false,
+      fullscreenable: true,
+      maximizable: true,
+      minimizable: true,
+      autoHideMenuBar: true,
+      show: false,
       backgroundColor: '#030712',
       webPreferences: {
         nodeIntegration: false,
@@ -38,9 +47,22 @@ if (!gotTheLock) {
       },
     });
 
+    win.once('ready-to-show', () => {
+      win.maximize();
+      win.show();
+      win.focus();
+    });
+
     win.webContents.on('crashed', (e) => {
       console.error('Renderer process crashed! Restarting...');
       win.reload();
+    });
+
+    win.webContents.on('before-input-event', (event, input) => {
+      if (input.type === 'keyDown' && input.key === 'F11') {
+        win.setFullScreen(!win.isFullScreen());
+        event.preventDefault();
+      }
     });
 
     const url = isDev 
@@ -49,10 +71,39 @@ if (!gotTheLock) {
 
     win.loadURL(url);
 
-    if (isDev) {
-      win.webContents.openDevTools();
+    if (isDev && process.env.AEGIS_OPEN_DEVTOOLS === '1') {
+      win.webContents.openDevTools({ mode: 'detach' });
     }
   }
+
+  ipcMain.on(WINDOW_ACTION_CHANNEL, (event, action) => {
+    if (!WINDOW_ACTIONS.has(action)) return;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+
+    if (action === 'minimize') {
+      win.minimize();
+      return;
+    }
+
+    if (action === 'toggle-maximize') {
+      if (win.isMaximized()) {
+        win.unmaximize();
+      } else {
+        win.maximize();
+      }
+      return;
+    }
+
+    if (action === 'toggle-fullscreen') {
+      win.setFullScreen(!win.isFullScreen());
+      return;
+    }
+
+    if (action === 'close') {
+      win.close();
+    }
+  });
 
   app.whenReady().then(createWindow);
 

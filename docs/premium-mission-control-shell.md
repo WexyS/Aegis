@@ -8,6 +8,11 @@ The premium Mission Control shell is a user-facing information architecture and
 frontend product pass. It makes Aegis easier to understand without changing
 runtime authority.
 
+The current shell adapts the supplied Stitch Mission Workspace direction as a
+native Aegis React/Next interface. Stitch exports, screenshots, and image
+references were used as design input only; no generated HTML, CDN dependencies,
+or external design assets are committed into Aegis.
+
 This shell is not:
 
 - command execution
@@ -26,7 +31,8 @@ This shell is not:
 The default product navigation is:
 
 - Mission: calm first screen with Ask entry, runtime truth, trust stack,
-  capability preview, and next safe step.
+  capability preview, Context Inspector, Approval Gate pattern, and next safe
+  step.
 - Ask: read-only Aegis Ask panel.
 - Work: Aegis Control, governed command runtime, approvals, and timeline
   surfaces.
@@ -35,6 +41,9 @@ The default product navigation is:
   proposal-only, metadata-only, approval-gated, and future-gated labels.
 - Advanced: raw diagnostics, registries, graph, vision/future-gated surfaces,
   timeline, and runtime console.
+- Settings: local UI preferences, including the English/Turkish language
+  selector. Settings are presentation preferences and do not call models,
+  tools, APIs, memory, or runtime execution.
 
 ## Runtime Truth
 
@@ -51,6 +60,29 @@ Mission Home may summarize:
 
 It must not claim full health when status is warning or unknown. Current
 blockers can be zero while raw evidence/replay debt remains visible.
+
+The Mission Composer includes a presentation-only reasoning mode selector:
+
+- Deterministic
+- Local model
+- External disabled
+
+These controls do not select a provider, call a model, route context, or grant
+execution permission. They are UI framing for future policy-backed routing.
+
+The Mission screen also includes safety chips for read-only behavior, no tool
+execution, no memory write, and approval-gated action boundaries.
+
+## Electron Shell
+
+The Electron shell uses Aegis-owned window chrome so the app can be maximized,
+minimized, closed, and toggled into fullscreen from the interface. The renderer
+only receives a narrow whitelisted `windowAction` bridge. This bridge is for
+desktop window control only and does not expose shell, filesystem, runtime,
+approval, evidence, model, tool, plugin, MCP, or execution authority.
+
+DevTools no longer opens automatically in the development shell. It can still
+be enabled explicitly with `AEGIS_OPEN_DEVTOOLS=1` when debugging is needed.
 
 ## Ask Router Hardening
 
@@ -117,6 +149,8 @@ These panels remain presentation surfaces over backend data and projections.
 - No evidence or verifier success creation.
 - No broad frontend rewrite.
 - No ECC or G0DM0D3 code copied into Aegis.
+- No Stitch HTML pasted into Aegis.
+- No generated screenshots or external reference assets committed.
 
 ## Remaining Risks
 

@@ -4,45 +4,54 @@ import React from 'react';
 import {
   AlertTriangle,
   Brain,
-  ChevronRight,
   CircleDot,
+  Compass,
   Database,
+  FileText,
   HelpCircle,
-  Layers3,
   Loader2,
   LockKeyhole,
-  Radio,
   Send,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Wrench,
-  Zap,
 } from 'lucide-react';
 
+import { ApprovalDrawer } from '@/components/ApprovalDrawer';
 import { StatusBadge } from '@/components/StatusBadge';
+import { dictionaryFor } from '@/i18n';
 import { askAegis } from '@/lib/api';
 import { useRuntimeStore } from '@/store/useRuntimeStore';
 import { useUIStore } from '@/store/useUIStore';
-import { AskResponse } from '@/types/ask';
+import type { AskResponse } from '@/types/ask';
 
-const DEFAULT_MISSION_QUESTION = 'Aegis su an ne durumda?';
+type ReasoningMode = 'deterministic' | 'local_model' | 'external_disabled';
+
+const DEFAULT_MISSION_QUESTION = 'Aegis şu an ne durumda?';
 
 export const MissionHome = () => {
+  const language = useUIStore((state) => state.language);
+  const density = useUIStore((state) => state.density);
   const setActiveTab = useUIStore((state) => state.setActiveTab);
+  const t = dictionaryFor(language);
   const lastMaintenanceScan = useRuntimeStore((state) => state.lastMaintenanceScan);
   const pendingApprovals = useRuntimeStore((state) => state.pendingApprovals);
   const pendingClarifications = useRuntimeStore((state) => state.pendingClarifications);
   const connectionState = useRuntimeStore((state) => state.connectionState ?? 'disconnected');
   const runtimeIntegrity = useRuntimeStore((state) => state.runtimeIntegrity ?? 'unverified');
   const activeModel = useRuntimeStore((state) => state.activeModel ?? 'Unavailable');
+  const pendingCount = pendingApprovals.length + pendingClarifications.length;
   const [question, setQuestion] = React.useState(DEFAULT_MISSION_QUESTION);
+  const [reasoningMode, setReasoningMode] = React.useState<ReasoningMode>('deterministic');
   const [response, setResponse] = React.useState<AskResponse | null>(null);
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
 
   const truth = React.useMemo(
-    () => readRuntimeTruth(lastMaintenanceScan, pendingApprovals.length + pendingClarifications.length),
-    [lastMaintenanceScan, pendingApprovals.length, pendingClarifications.length],
+    () => readRuntimeTruth(lastMaintenanceScan, pendingCount),
+    [lastMaintenanceScan, pendingCount],
   );
 
   const submit = React.useCallback(async () => {
@@ -54,186 +63,247 @@ export const MissionHome = () => {
       const result = await askAegis({ question: trimmed, max_sources: 6 });
       setResponse(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Aegis Ask request failed.');
+      setError(err instanceof Error ? err.message : t.mission.askRequestFailed);
     } finally {
       setLoading(false);
     }
-  }, [loading, question]);
+  }, [loading, question, t.mission.askRequestFailed]);
+
+  const setSafePrompt = React.useCallback((prompt: string) => {
+    setQuestion(prompt);
+  }, []);
 
   return (
-    <div className="min-h-full overflow-y-auto custom-scrollbar">
-      <div className="mx-auto flex w-full max-w-[94rem] flex-col gap-6 p-4 sm:p-5 lg:p-7 2xl:p-8">
-        <section className="relative overflow-hidden rounded-lg border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/20 lg:p-7">
-          <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-accent/70 to-transparent" />
-          <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-accent/10 blur-3xl" />
-          <div className="pointer-events-none absolute bottom-0 left-1/3 h-48 w-72 rounded-full bg-secondary/10 blur-3xl" />
+    <div className="relative h-full min-h-0 overflow-y-auto custom-scrollbar">
+      <AmbientTrustHalo />
+      <div className={`relative z-10 mx-auto grid w-full max-w-[112rem] gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:px-8 ${density === 'compact' ? 'xl:gap-5' : 'xl:gap-7'}`}>
+        <section className="min-w-0">
+          <div className="mb-6 max-w-5xl">
+            <h1 className="max-w-5xl text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl xl:text-6xl">
+              {t.mission.heroTitle}
+            </h1>
+            <p className="mt-4 max-w-4xl text-base leading-8 text-foreground/58 sm:text-lg">
+              {t.mission.heroSubtitle}
+            </p>
+          </div>
 
-          <div className="relative z-10 grid gap-6 xl:grid-cols-[1.08fr_0.92fr] xl:items-stretch">
-            <div className="flex min-w-0 flex-col justify-between gap-8">
-              <div className="max-w-4xl">
-                <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl lg:text-5xl">
-                  Local-first Mission Control without fake green lights.
-                </h1>
-                <p className="mt-4 max-w-3xl text-sm leading-7 text-foreground/62 sm:text-[15px]">
-                  Aegis explains current runtime truth, safe next steps, and capability boundaries while keeping execution, evidence, approvals, memory, plugins, tools, and agents behind backend-owned gates.
-                </p>
-              </div>
+          <MissionComposer
+            question={question}
+            setQuestion={setQuestion}
+            loading={loading}
+            error={error}
+            response={response}
+            reasoningMode={reasoningMode}
+            setReasoningMode={setReasoningMode}
+            submit={submit}
+            setSafePrompt={setSafePrompt}
+          />
 
-              <div className="rounded-lg border border-white/10 bg-black/25 p-3.5 shadow-xl shadow-black/15">
-                <label htmlFor="mission-ask" className="mb-2 block text-[11px] font-semibold text-foreground/70">
-                  Ask or plan with Aegis
-                </label>
-                <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
-                  <textarea
-                    id="mission-ask"
-                    value={question}
-                    onChange={(event) => setQuestion(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' && !event.shiftKey) {
-                        event.preventDefault();
-                        void submit();
-                      }
-                    }}
-                    rows={2}
-                    className="min-h-[72px] resize-none rounded-md border border-white/10 bg-white/[0.035] px-3 py-3 text-sm leading-relaxed text-foreground/90 outline-none transition-colors placeholder:text-foreground/30 focus:border-accent/50"
-                    placeholder="Ask about status, blockers, capabilities, or the next safe step."
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void submit()}
-                    disabled={!question.trim() || loading}
-                    className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-[12px] font-bold uppercase tracking-wider text-background transition-colors hover:bg-accent-light disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                    Ask
-                  </button>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <BoundaryPill label="read-only answer" />
-                  <BoundaryPill label="no tool execution" />
-                  <BoundaryPill label="no memory write" />
-                  <BoundaryPill label="no verifier claim" />
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-3">
-              <RuntimeTruthCard truth={truth} runtimeIntegrity={runtimeIntegrity} connectionState={connectionState} />
-              <NextStepCard response={response} error={error} onOpenAsk={() => setActiveTab('Ask')} />
-            </div>
+          <div className="mt-5 grid gap-5 xl:grid-cols-[0.82fr_1.18fr]">
+            <TrustSummary truth={truth} runtimeIntegrity={runtimeIntegrity} activeModel={activeModel} connectionState={connectionState} />
+            <CapabilityNexus />
           </div>
         </section>
 
-        <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-          <TrustStack
-            truth={truth}
-            runtimeIntegrity={runtimeIntegrity}
-            activeModel={activeModel}
-            connectionState={connectionState}
-          />
-          <CapabilityPreview onOpenCapabilities={() => setActiveTab('Capabilities')} onOpenAdvanced={() => setActiveTab('Advanced')} />
-        </section>
-
-        <section className="grid gap-4 lg:grid-cols-3">
-          <MissionTile
-            icon={<Brain size={17} />}
-            title="Memory preview"
-            status="consent-aware"
-            detail="Memory is local and lifecycle-based. This home does not write memory or treat retrieval as authority."
-            action="Open Memory"
-            onClick={() => setActiveTab('Memory')}
-          />
-          <MissionTile
-            icon={<Wrench size={17} />}
-            title="Advanced diagnostics"
-            status="visible on demand"
-            detail="Raw evidence and replay debt stay inspectable, but no longer dominate the first screen."
-            action="Open Advanced"
-            onClick={() => setActiveTab('Advanced')}
-          />
-          <MissionTile
-            icon={<Zap size={17} />}
-            title="Work surface"
-            status="governed"
-            detail="Aegis Control, command review, approvals, and timelines stay accessible without becoming default clutter."
-            action="Open Work"
-            onClick={() => setActiveTab('Work')}
-          />
-        </section>
+        <ContextInspector
+          truth={truth}
+          pendingCount={pendingCount}
+          onOpenAsk={() => setActiveTab('Ask')}
+          onOpenApprovalDrawer={() => setDrawerOpen(true)}
+        />
       </div>
+
+      <ApprovalDrawer
+        open={drawerOpen}
+        pendingCount={pendingCount}
+        onClose={() => setDrawerOpen(false)}
+        onReviewDetails={() => {
+          setDrawerOpen(false);
+          setActiveTab('Work');
+        }}
+      />
     </div>
   );
 };
 
-const RuntimeTruthCard = ({
-  truth,
-  runtimeIntegrity,
-  connectionState,
-}: {
-  truth: RuntimeTruth;
-  runtimeIntegrity: string;
-  connectionState: string;
-}) => (
-  <section className="rounded-lg border border-warning/20 bg-warning/[0.045] p-4 shadow-xl shadow-black/15">
-    <div className="flex items-start justify-between gap-3">
-      <div>
-        <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-warning">
-          <AlertTriangle size={14} />
-          Runtime truth
-        </div>
-        <p className="mt-2 text-sm leading-relaxed text-foreground/72">
-          Current blockers can be clear while raw evidence/replay debt remains visible.
-        </p>
-      </div>
-      <StatusBadge label={truth.status} tone={truthTone(truth.status)} />
-    </div>
-    <div className="mt-4 grid grid-cols-2 gap-2">
-      <TruthMetric label="current blockers" value={truth.currentBlockers} />
-      <TruthMetric label="pending approvals" value={truth.pendingDecisions} />
-      <TruthMetric label="raw evidence" value={truth.rawEvidence} tone={truthTone(truth.rawEvidence)} />
-      <TruthMetric label="raw replay" value={truth.rawReplay} tone={truthTone(truth.rawReplay)} />
-      <TruthMetric label="socket" value={connectionState} tone={connectionState === 'connected' ? 'info' : 'warning'} />
-      <TruthMetric label="integrity" value={runtimeIntegrity} tone={truthTone(runtimeIntegrity)} />
-    </div>
-  </section>
-);
-
-const NextStepCard = ({
-  response,
+const MissionComposer = ({
+  question,
+  setQuestion,
+  loading,
   error,
-  onOpenAsk,
+  response,
+  reasoningMode,
+  setReasoningMode,
+  submit,
+  setSafePrompt,
 }: {
-  response: AskResponse | null;
+  question: string;
+  setQuestion: (question: string) => void;
+  loading: boolean;
   error: string | null;
-  onOpenAsk: () => void;
+  response: AskResponse | null;
+  reasoningMode: ReasoningMode;
+  setReasoningMode: (mode: ReasoningMode) => void;
+  submit: () => Promise<void>;
+  setSafePrompt: (prompt: string) => void;
 }) => {
-  const nextStep = response?.recommended_next_steps?.[0]
-    ?? 'Ask for a read-only explanation, then move only through explicit capability and approval gates.';
+  const language = useUIStore((state) => state.language);
+  const t = dictionaryFor(language);
+  const prompt = t.mission;
+  const modes: Array<{ value: ReasoningMode; label: string; detail: string }> = [
+    { value: 'deterministic', label: prompt.deterministic, detail: prompt.modeNoModelCall },
+    { value: 'local_model', label: prompt.localModel, detail: prompt.modeProposalOnly },
+    { value: 'external_disabled', label: prompt.externalDisabled, detail: prompt.modeNoCloud },
+  ];
+
   return (
-    <section className="rounded-lg border border-accent/20 bg-accent/[0.035] p-4 shadow-xl shadow-black/15">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-accent">
-            <Sparkles size={14} />
-            Next safe step
+    <section className="relative overflow-hidden rounded-2xl border border-white/[0.12] bg-white/[0.055] p-1 shadow-[0_30px_100px_rgba(0,0,0,0.45),0_0_72px_rgba(139,92,246,0.14)] backdrop-blur-2xl">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(139,92,246,0.17),transparent_32%),radial-gradient(circle_at_92%_26%,rgba(6,182,212,0.12),transparent_34%)]" />
+      <div className="relative rounded-[0.9rem] border border-white/10 bg-[#121217]/[0.88]">
+        <div className="flex flex-col gap-3 border-b border-white/10 px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-[12px] font-semibold text-white">
+              <Sparkles size={16} className="text-secondary-light" />
+              {prompt.composerTitle}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <SafetyChip label={prompt.readOnly} tone="cyan" />
+              <SafetyChip label={prompt.noToolExecution} tone="neutral" />
+              <SafetyChip label={prompt.noMemoryWrite} tone="neutral" />
+              <SafetyChip label={prompt.approvalGated} tone="amber" />
+            </div>
           </div>
-          <p className="mt-3 text-sm leading-7 text-foreground/78">{error ?? nextStep}</p>
+
+          <div className="min-w-0 rounded-xl border border-white/10 bg-black/20 p-1">
+            <div className="mb-1 px-2 text-[9px] font-bold uppercase tracking-[0.18em] text-foreground/35">{prompt.reasoningMode}</div>
+            <div className="flex flex-wrap gap-1">
+              {modes.map((mode) => (
+                <button
+                  key={mode.value}
+                  type="button"
+                  onClick={() => setReasoningMode(mode.value)}
+                  className={`rounded-lg border px-2.5 py-1.5 text-left transition-colors ${
+                    reasoningMode === mode.value
+                      ? 'border-secondary/35 bg-secondary/[0.16] text-white'
+                      : 'border-transparent text-foreground/45 hover:bg-white/[0.045] hover:text-white'
+                  }`}
+                >
+                  <span className="block text-[11px] font-semibold">{mode.label}</span>
+                  <span className="block text-[8px] font-mono uppercase tracking-wider opacity-55">{mode.detail}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-        <StatusBadge label={response?.intent ?? 'proposal'} tone={error ? 'warning' : 'info'} />
+
+        <div className="p-5">
+          <textarea
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                void submit();
+              }
+            }}
+            rows={5}
+            className="min-h-[11rem] w-full resize-none rounded-xl border border-white/[0.12] bg-black/[0.24] px-5 py-4 text-base leading-8 text-foreground/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] outline-none transition-colors placeholder:text-foreground/[0.32] focus:border-secondary/50 focus:shadow-[0_0_0_1px_rgba(139,92,246,0.18),0_0_42px_rgba(139,92,246,0.14)]"
+            placeholder={prompt.composerPlaceholder}
+          />
+
+          <div className="mt-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-wrap gap-2">
+              <ComposerAction label={prompt.draftPlan} icon={<FileText size={15} />} onClick={() => setSafePrompt(prompt.draftPlanQuestion)} />
+              <ComposerAction label={prompt.explainStatus} icon={<HelpCircle size={15} />} onClick={() => setSafePrompt(prompt.explainStatusQuestion)} />
+              <ComposerAction label={prompt.exploreOptions} icon={<Compass size={15} />} onClick={() => setSafePrompt(prompt.exploreOptionsQuestion)} />
+            </div>
+            <button
+              type="button"
+              onClick={() => void submit()}
+              disabled={!question.trim() || loading}
+              className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-secondary/40 bg-secondary px-6 py-2.5 text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_0_34px_rgba(139,92,246,0.28)] transition-colors hover:bg-secondary-light disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+              {prompt.ask}
+            </button>
+          </div>
+
+          {(response || error) && (
+            <div className={`mt-4 rounded-xl border p-4 ${error ? 'border-danger/25 bg-danger/10' : 'border-accent/20 bg-accent/[0.045]'}`}>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-foreground/42">{prompt.latestReadOnlyAnswer}</div>
+                {response && <StatusBadge label={response.intent} tone="info" />}
+              </div>
+              <p className={`text-sm leading-7 ${error ? 'text-danger' : 'text-foreground/70'}`}>{error ?? response?.answer}</p>
+            </div>
+          )}
+        </div>
       </div>
-      <button
-        type="button"
-        onClick={onOpenAsk}
-        className="mt-4 inline-flex items-center gap-2 rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-accent transition-colors hover:border-accent/55 hover:bg-accent/15"
-      >
-        Open Ask
-        <ChevronRight size={14} />
-      </button>
     </section>
   );
 };
 
-const TrustStack = ({
+const ContextInspector = ({
+  truth,
+  pendingCount,
+  onOpenAsk,
+  onOpenApprovalDrawer,
+}: {
+  truth: RuntimeTruth;
+  pendingCount: number;
+  onOpenAsk: () => void;
+  onOpenApprovalDrawer: () => void;
+}) => {
+  const language = useUIStore((state) => state.language);
+  const t = dictionaryFor(language);
+
+  return (
+    <aside className="min-w-0 space-y-4 lg:sticky lg:top-5 lg:self-start">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-2xl shadow-black/25 backdrop-blur-2xl">
+        <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-3">
+          <h2 className="text-[11px] font-bold uppercase tracking-[0.2em] text-foreground/45">{t.mission.contextInspector}</h2>
+          <SlidersHorizontal size={15} className="text-foreground/35" />
+        </div>
+        <InspectorNote title={t.mission.nextSafeStep} copy={t.mission.nextSafeStepCopy} tone="cyan" icon={<ShieldCheck size={15} />} />
+        <InspectorNote title={t.mission.runtimeNote} copy={runtimeNoteCopy(t, truth)} tone="amber" icon={<AlertTriangle size={15} />} />
+        <InspectorNote title={t.mission.truthNote} copy={t.mission.truthNoteCopy} tone="neutral" icon={<HelpCircle size={15} />} />
+        <div className="mt-4 grid gap-2">
+          <button
+            type="button"
+            onClick={onOpenAsk}
+            className="rounded-xl border border-white/10 bg-white/[0.045] px-4 py-3 text-sm font-semibold text-foreground/[0.78] transition-colors hover:border-accent/30 hover:text-accent"
+          >
+            {t.mission.openAsk}
+          </button>
+          <button
+            type="button"
+            onClick={onOpenApprovalDrawer}
+            className={`rounded-xl border px-4 py-3 text-sm font-semibold transition-colors ${
+              pendingCount > 0
+                ? 'border-warning/30 bg-warning/10 text-warning hover:bg-warning/15'
+                : 'border-white/10 bg-white/[0.035] text-foreground/52 hover:border-white/20 hover:text-white'
+            }`}
+          >
+            {t.mission.openApprovalDrawer}
+          </button>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 shadow-xl shadow-black/15">
+        <h2 className="text-lg font-semibold text-white">{t.mission.runtimeTruth}</h2>
+        <div className="mt-4 space-y-3">
+          <RuntimeRow label={t.mission.health} value={formatTruthStatus(t, truth.status)} tone={truthTone(truth.status)} />
+          <RuntimeRow label={t.mission.activeBlockers} value={truth.currentBlockers} />
+          <RuntimeRow label={t.mission.pendingApprovals} value={truth.pendingDecisions} />
+          <RuntimeRow label={t.mission.rawEvidence} value={formatTruthStatus(t, truth.rawEvidence)} tone={truthTone(truth.rawEvidence)} />
+          <RuntimeRow label={t.mission.rawReplay} value={formatTruthStatus(t, truth.rawReplay)} tone={truthTone(truth.rawReplay)} />
+        </div>
+      </section>
+    </aside>
+  );
+};
+
+const TrustSummary = ({
   truth,
   runtimeIntegrity,
   activeModel,
@@ -244,141 +314,134 @@ const TrustStack = ({
   activeModel: string;
   connectionState: string;
 }) => {
+  const language = useUIStore((state) => state.language);
+  const t = dictionaryFor(language);
   const items = [
-    { title: 'Runtime Health', state: truth.status, detail: 'Backend projection only', tone: truthTone(truth.status), icon: <Radio size={15} /> },
-    { title: 'Approval', state: truth.pendingDecisions === '0' ? 'clear' : truth.pendingDecisions, detail: 'No auto-grant from UI', tone: truth.pendingDecisions === '0' ? 'success' as const : 'warning' as const, icon: <LockKeyhole size={15} /> },
-    { title: 'Evidence', state: truth.rawEvidence, detail: 'Raw debt remains visible', tone: truthTone(truth.rawEvidence), icon: <ShieldCheck size={15} /> },
-    { title: 'Memory', state: 'local lifecycle', detail: 'Consent and search, not authority', tone: 'info' as const, icon: <Database size={15} /> },
-    { title: 'Model Gateway', state: activeModel || 'unavailable', detail: 'Proposal-only boundary', tone: activeModel && activeModel !== 'Unavailable' ? 'info' as const : 'unknown' as const, icon: <Brain size={15} /> },
-    { title: 'Tools / Skills', state: 'metadata-only', detail: 'Catalog is not permission', tone: 'unknown' as const, icon: <Wrench size={15} /> },
-    { title: 'Agents / Plugins', state: 'proposal-only', detail: 'No runtime execution from metadata', tone: 'unknown' as const, icon: <Layers3 size={15} /> },
-    { title: 'Socket', state: connectionState, detail: 'Live UI transport only', tone: connectionState === 'connected' ? 'info' as const : 'warning' as const, icon: <CircleDot size={15} /> },
+    { title: t.mission.runtimeAndEvidence, tags: [formatTruthStatus(t, truth.status), t.truth.readOnly, t.truth.metadataOnly], icon: <ShieldCheck size={16} />, tone: 'amber' },
+    { title: t.mission.approvalGates, tags: [truth.pendingDecisions === '0' ? t.mission.zeroPending : truth.pendingDecisions, t.truth.approvalRequired], icon: <LockKeyhole size={16} />, tone: 'violet' },
+    { title: t.nav.memory, tags: [t.truth.localLifecycle, t.truth.readOnly], icon: <Database size={16} />, tone: 'cyan' },
+    { title: t.mission.models, tags: [activeModel === 'Unavailable' ? t.truth.notWired : t.truth.proposalOnly, t.truth.proposalOnly], icon: <Brain size={16} />, tone: 'amber' },
+    { title: t.mission.toolsAgents, tags: [t.truth.metadataOnly, t.truth.proposalOnly], icon: <Wrench size={16} />, tone: 'cyan' },
+    { title: t.mission.socket, tags: [connectionState, runtimeIntegrity], icon: <CircleDot size={16} />, tone: 'neutral' },
   ];
 
   return (
-    <section className="rounded-lg border border-white/10 bg-white/[0.035] p-4 shadow-xl shadow-black/15">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-white">Trust stack</h2>
-          <p className="mt-1 text-sm leading-relaxed text-foreground/52">Compact state cards. Unknown stays unknown; warning stays warning.</p>
-        </div>
-        <StatusBadge label={runtimeIntegrity} tone={truthTone(runtimeIntegrity)} />
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+    <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-xl shadow-black/20">
+      <h2 className="text-lg font-semibold text-white">{t.mission.trustStack}</h2>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {items.map((item) => (
-          <div key={item.title} className="rounded-lg border border-white/10 bg-black/20 p-3.5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex min-w-0 items-start gap-3">
-                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.035] text-accent">
-                  {item.icon}
-                </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-white">{item.title}</div>
-                  <p className="mt-1 text-[11px] leading-relaxed text-foreground/45">{item.detail}</p>
-                </div>
-              </div>
-              <StatusBadge label={item.state} tone={item.tone} className="max-w-[8rem] shrink-0" />
+          <div key={item.title} className="rounded-xl border border-white/10 bg-black/[0.18] p-4">
+            <div className="flex items-center gap-3">
+              <span className={`flex h-9 w-9 items-center justify-center rounded-lg border ${toneBorder(item.tone)} ${toneText(item.tone)}`}>
+                {item.icon}
+              </span>
+              <h3 className="text-base font-semibold text-white">{item.title}</h3>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {item.tags.map((tag) => (
+                <span key={tag} className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold ${toneChip(item.tone)}`}>
+                  {tag}
+                </span>
+              ))}
             </div>
           </div>
         ))}
       </div>
+      <p className="mt-4 text-sm leading-7 text-foreground/45">{t.mission.memoryConsentCopy}</p>
     </section>
   );
 };
 
-const CapabilityPreview = ({
-  onOpenCapabilities,
-  onOpenAdvanced,
-}: {
-  onOpenCapabilities: () => void;
-  onOpenAdvanced: () => void;
-}) => {
-  const preview = [
-    ['Aegis Ask', 'implemented read-only explanation'],
-    ['Maintenance', 'implemented read-only diagnostics'],
-    ['Memory OS', 'explicit lifecycle and search'],
-    ['AutoPilot', 'read-only repo structure audit'],
-    ['Model Gateway', 'local proposal-only boundary'],
-    ['Skill Registry', 'metadata only, no execution'],
-    ['Agent Runtime', 'proposal-only sessions'],
-    ['Plugin/Manifest', 'readiness metadata only'],
-    ['Computer Operator', 'governed partial runtime foundation'],
-    ['Codex Supervisor', 'external/manual bridge review'],
+const CapabilityNexus = () => {
+  const language = useUIStore((state) => state.language);
+  const t = dictionaryFor(language);
+  const nodes = [
+    [t.mission.askNode, t.mission.askNodeState],
+    [t.mission.maintenanceNode, t.mission.maintenanceNodeState],
+    [t.nav.memory, t.mission.memoryNodeState],
+    [t.mission.modelGatewayNode, t.truth.proposalOnly],
+    [t.mission.skillRegistryNode, t.truth.metadataOnly],
+    [t.mission.agentRuntimeNode, t.truth.proposalOnly],
+    [t.mission.pluginManifestNode, t.mission.pluginManifestNodeState],
+    [t.mission.modelCouncilNode, t.truth.future],
   ];
+
   return (
-    <section className="rounded-lg border border-white/10 bg-white/[0.035] p-4 shadow-xl shadow-black/15">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-        <div>
-          <h2 className="text-lg font-semibold text-white">Capability preview</h2>
-          <p className="mt-1 text-sm leading-relaxed text-foreground/52">What Aegis can discuss today, without pretending future capabilities are active.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={onOpenCapabilities} className="rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-accent hover:border-accent/55">
-            Capabilities
-          </button>
-          <button type="button" onClick={onOpenAdvanced} className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-foreground/60 hover:border-white/20 hover:text-white">
-            Advanced
-          </button>
-        </div>
-      </div>
-      <div className="mt-4 grid gap-2 md:grid-cols-2">
-        {preview.map(([name, state]) => (
-          <div key={name} className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-white/10 bg-black/20 px-3 py-2.5">
-            <span className="truncate text-sm font-medium text-foreground/82">{name}</span>
-            <span className="shrink-0 text-right text-[10px] font-mono text-foreground/42">{state}</span>
+    <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035] p-4 shadow-xl shadow-black/20">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_62%_42%,rgba(6,182,212,0.12),transparent_24%),radial-gradient(circle_at_72%_70%,rgba(139,92,246,0.16),transparent_30%)]" />
+      <div className="relative z-10 flex flex-col gap-5 xl:flex-row xl:items-center">
+        <div className="relative mx-auto flex h-56 w-56 shrink-0 items-center justify-center">
+          <div className="absolute inset-0 rounded-full border border-secondary/20" />
+          <div className="absolute inset-6 rounded-full border border-accent/20" />
+          <div className="absolute inset-12 rounded-full border border-white/10 bg-black/[0.18]" />
+          <div className="absolute h-24 w-24 rounded-full bg-secondary/22 blur-2xl" />
+          <div className="relative rounded-2xl border border-secondary/30 bg-secondary/[0.14] px-4 py-3 text-center text-sm font-semibold text-white shadow-[0_0_44px_rgba(139,92,246,0.28)]">
+            {t.mission.capabilityNexus}
           </div>
-        ))}
+        </div>
+        <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
+          {nodes.map(([name, state], index) => (
+            <div key={name} className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/[0.18] px-3 py-2.5">
+              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${index < 3 ? 'bg-accent shadow-[0_0_10px_rgba(6,182,212,0.8)]' : index < 7 ? 'bg-secondary-light shadow-[0_0_10px_rgba(167,139,250,0.75)]' : 'bg-foreground/35'}`} />
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-white">{name}</div>
+                <div className="truncate text-[10px] font-mono text-foreground/42">{state}</div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );
 };
 
-const MissionTile = ({
-  icon,
-  title,
-  status,
-  detail,
-  action,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  status: string;
-  detail: string;
-  action: string;
-  onClick: () => void;
-}) => (
-  <section className="rounded-lg border border-white/10 bg-white/[0.03] p-4 shadow-xl shadow-black/10">
-    <div className="flex items-start justify-between gap-3">
-      <div className="flex min-w-0 items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-accent/20 bg-accent/10 text-accent">
-          {icon}
-        </div>
-        <div className="min-w-0">
-          <h3 className="text-base font-semibold text-white">{title}</h3>
-          <p className="mt-1 text-[11px] font-mono text-accent/80">{status}</p>
-        </div>
-      </div>
-    </div>
-    <p className="mt-4 text-sm leading-6 text-foreground/55">{detail}</p>
-    <button
-      type="button"
-      onClick={onClick}
-      className="mt-4 inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-accent transition-colors hover:text-accent-light"
-    >
-      {action}
-      <ChevronRight size={14} />
-    </button>
-  </section>
+const AmbientTrustHalo = () => (
+  <div className="pointer-events-none absolute inset-0 overflow-hidden">
+    <div className="absolute left-[12%] top-[28%] h-px w-[74%] bg-gradient-to-r from-transparent via-accent/[0.32] to-transparent" />
+    <div className="absolute right-[8%] top-[42%] h-64 w-[62rem] -rotate-6 rounded-full border border-accent/10 opacity-70" />
+    <div className="absolute right-[-7%] top-[34%] h-72 w-[58rem] -rotate-6 rounded-full border border-secondary/[0.12] opacity-80" />
+    <div className="absolute bottom-[-10rem] right-[12%] h-72 w-72 rounded-full bg-accent/10 blur-3xl" />
+  </div>
 );
 
-const BoundaryPill = ({ label }: { label: string }) => (
-  <span className="rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-foreground/45">
+const ComposerAction = ({ label, icon, onClick }: { label: string; icon: React.ReactNode; onClick: () => void }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-foreground/70 transition-colors hover:border-white/20 hover:text-white"
+  >
+    {icon}
+    {label}
+  </button>
+);
+
+const SafetyChip = ({ label, tone }: { label: string; tone: 'cyan' | 'amber' | 'neutral' }) => (
+  <span className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold ${toneChip(tone)}`}>
     {label}
   </span>
 );
 
-const TruthMetric = ({
+const InspectorNote = ({
+  title,
+  copy,
+  tone,
+  icon,
+}: {
+  title: string;
+  copy: string;
+  tone: 'cyan' | 'amber' | 'neutral';
+  icon: React.ReactNode;
+}) => (
+  <div className={`mt-4 rounded-xl border p-4 ${toneBorder(tone)} bg-black/20`}>
+    <div className={`flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.16em] ${toneText(tone)}`}>
+      {icon}
+      {title}
+    </div>
+    <p className="mt-3 text-sm leading-7 text-foreground/66">{copy}</p>
+  </div>
+);
+
+const RuntimeRow = ({
   label,
   value,
   tone = 'unknown',
@@ -387,9 +450,9 @@ const TruthMetric = ({
   value: string;
   tone?: 'success' | 'info' | 'warning' | 'danger' | 'unknown';
 }) => (
-  <div className="rounded-md border border-white/10 bg-black/20 p-2.5">
-    <div className="truncate text-[9px] font-bold uppercase tracking-wider text-foreground/35">{label}</div>
-    <div className={`mt-1 truncate text-[12px] font-mono ${metricToneClass(tone)}`}>{value}</div>
+  <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/[0.18] px-3 py-2.5">
+    <span className="text-sm text-foreground/55">{label}</span>
+    <span className={`text-sm font-semibold ${metricToneClass(tone)}`}>{value}</span>
   </div>
 );
 
@@ -417,6 +480,20 @@ function readRuntimeTruth(report: Record<string, unknown> | null, pendingCount: 
   };
 }
 
+function runtimeNoteCopy(t: ReturnType<typeof dictionaryFor>, truth: RuntimeTruth): string {
+  const status = formatTruthStatus(t, truth.status);
+  return `${status} - ${t.mission.rawEvidence}: ${formatTruthStatus(t, truth.rawEvidence)} / ${t.mission.rawReplay}: ${formatTruthStatus(t, truth.rawReplay)}`;
+}
+
+function formatTruthStatus(t: ReturnType<typeof dictionaryFor>, value: string): string {
+  const normalized = value.toLowerCase();
+  if (normalized === 'unknown' || normalized === 'unavailable') return t.truth.unknown;
+  if (normalized === 'warning' || normalized === 'unverified' || normalized === 'resyncing') return t.truth.warning;
+  if (normalized === 'fail' || normalized === 'failed') return 'Fail';
+  if (normalized === 'ok' || normalized === 'ready' || normalized === 'clear') return 'OK';
+  return value;
+}
+
 function getRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
@@ -430,10 +507,11 @@ function countValue(value: unknown): string {
 }
 
 function truthTone(value: string): 'success' | 'info' | 'warning' | 'danger' | 'unknown' {
-  if (value === 'ok' || value === 'clear' || value === 'ready') return 'success';
-  if (value === 'warning' || value === 'unverified' || value === 'resyncing') return 'warning';
-  if (value === 'fail' || value === 'failed' || value === 'blocked') return 'danger';
-  if (value === 'unknown' || value === 'Unavailable') return 'unknown';
+  const normalized = value.toLowerCase();
+  if (normalized === 'ok' || normalized === 'clear' || normalized === 'ready') return 'success';
+  if (normalized === 'warning' || normalized === 'unverified' || normalized === 'resyncing') return 'warning';
+  if (normalized === 'fail' || normalized === 'failed' || normalized === 'blocked') return 'danger';
+  if (normalized === 'unknown' || normalized === 'unavailable') return 'unknown';
   return 'info';
 }
 
@@ -443,4 +521,25 @@ function metricToneClass(tone: 'success' | 'info' | 'warning' | 'danger' | 'unkn
   if (tone === 'warning') return 'text-warning';
   if (tone === 'danger') return 'text-danger';
   return 'text-foreground/60';
+}
+
+function toneText(tone: string): string {
+  if (tone === 'cyan') return 'text-accent';
+  if (tone === 'amber') return 'text-warning';
+  if (tone === 'violet') return 'text-secondary-light';
+  return 'text-foreground/48';
+}
+
+function toneBorder(tone: string): string {
+  if (tone === 'cyan') return 'border-accent/25';
+  if (tone === 'amber') return 'border-warning/25';
+  if (tone === 'violet') return 'border-secondary/25';
+  return 'border-white/10';
+}
+
+function toneChip(tone: string): string {
+  if (tone === 'cyan') return 'border-accent/25 bg-accent/10 text-accent';
+  if (tone === 'amber') return 'border-warning/25 bg-warning/10 text-warning';
+  if (tone === 'violet') return 'border-secondary/25 bg-secondary/[0.12] text-secondary-light';
+  return 'border-white/10 bg-white/[0.04] text-foreground/55';
 }

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Aegis | Autonomous AI Mission Control",
-  description: "Enterprise-grade autonomous execution runtime interface.",
+  title: "Aegis | Local AI Mission Control",
+  description: "Local-first Mission Control for runtime truth, safe planning, and governed execution.",
 };
 
 import { DevOverlay } from "@/components/DevOverlay";

@@ -183,9 +183,12 @@ approval/capability/lease grant. The deterministic router distinguishes Skill
 Registry, Tool Registry, and Plugin Registry questions without model calls.
 
 Frontend / Mission Control Shell: implemented premium product shell with
-Mission, Ask, Work, Memory, Capabilities, and Advanced surfaces. It remains
-presentation only. Raw diagnostics are available from Advanced instead of
-dominating the first screen.
+Mission, Ask, Work, Memory, Capabilities, Advanced, and Settings surfaces. It
+remains presentation only. The current shell adapts the Stitch Mission
+Workspace design direction into native Aegis components, adds English/Turkish
+UI language selection in Settings, keeps runtime truth visible, and includes
+Electron-owned window controls. Raw diagnostics are available from Advanced
+instead of dominating the first screen.
 
 Launcher: implemented baseline launcher surfaces. Launcher cleanup remains
 future work.
@@ -194,8 +197,9 @@ future work.
 
 - Runtime health is warning-level, not green.
 - Raw evidence and replay diagnostics still fail.
-- UI/product experience has a premium Mission Control shell, but deeper
-  product polish and rendered Electron QA remain useful.
+- UI/product experience has a premium Mission Control shell with localized
+  Mission/Settings surfaces and Electron window controls, but deeper product
+  polish and more rendered Electron QA remain useful.
 - Aegis Ask is implemented as a narrow read-only explanation slice, not an
   execution surface.
 - Full autonomous operation is not implemented.
@@ -239,7 +243,8 @@ Implemented:
 - bounded Agent Runtime proposal sessions
 - read-only ChatGPT bridge and local launcher helpers
 - Aegis Ask read-only explanation slice
-- premium Mission Control shell and capability map
+- premium Mission Control shell, Settings language selector, Electron window
+  controls, and capability map
 
 Planned:
 

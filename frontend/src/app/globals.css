@@ -16,6 +16,19 @@ body {
   overflow-x: hidden;
 }
 
+.electron-drag-region {
+  -webkit-app-region: drag;
+}
+
+.electron-no-drag,
+button,
+input,
+textarea,
+select,
+a {
+  -webkit-app-region: no-drag;
+}
+
 /* Runtime Background Pattern */
 .bg-grid {
   background-image: 
