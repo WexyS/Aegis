@@ -84,6 +84,10 @@ approval, evidence, model, tool, plugin, MCP, or execution authority.
 DevTools no longer opens automatically in the development shell. It can still
 be enabled explicitly with `AEGIS_OPEN_DEVTOOLS=1` when debugging is needed.
 
+The Windows development launcher clears `ELECTRON_RUN_AS_NODE` before starting
+Electron so a parent shell configured for Node-mode Electron does not prevent
+the app shell from receiving the real Electron `app` module.
+
 ## Ask Router Hardening
 
 Ask remains deterministic and local-only. The router now distinguishes:
