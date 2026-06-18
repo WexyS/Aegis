@@ -175,7 +175,7 @@ export const tr = {
     safeContextCopy: 'Yalnızca küçük ve güvenli metadata özeti gönderilir; log, journal, kanıt, sır veya repo içeriği gönderilmez.',
     sendProposal: 'Öneri gönder',
     lastProposal: 'Son yalnızca-öneri çıktısı',
-    boundaryCopy: 'Model Hub durumu canlı sağlayıcı kanıtı değildir. Model çıktısı gerçeklik, kanıt, onay, doğrulayıcı başarısı, izin, hafıza veya çalıştırma değildir. Yapılandırma şimdilik bu UI dışında yönetilir.',
+    boundaryCopy: 'Model Hub durumu canlı sağlayıcı kanıtı değildir. Yerel profil yönlendirmesi yalnızca öneridir. Key yetki değildir; gelecekteki harici sağlayıcı yolu maliyet uyarısı, gizlilik uyarısı ve açık operatör onayı gerektirir. Model çıktısı gerçeklik, kanıt, onay, doğrulayıcı başarısı, izin, hafıza veya çalıştırma değildir. Yapılandırma şimdilik bu UI dışında yönetilir.',
     proposalBoundary: 'Öneri sınırı',
     outputNotAuthority: 'Çıktı otoritesi',
     noVerifierSuccess: 'Doğrulayıcı başarısı',

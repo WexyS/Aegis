@@ -184,7 +184,7 @@ export const en = {
     noFileOrShell: 'File / shell mutation',
     flagFalse: 'false',
     needsReview: 'review',
-    boundaryCopy: 'Model Hub status is not live provider proof. Model output is not truth, evidence, approval, verifier success, permission, memory, or execution. Configuration is controlled outside this UI for now.',
+    boundaryCopy: 'Model Hub status is not live provider proof. Local profile guidance is recommendations only. Key presence is not authorization, and any future external provider path requires cost warning, privacy warning, and explicit operator opt-in. Model output is not truth, evidence, approval, verifier success, permission, memory, or execution. Configuration is controlled outside this UI for now.',
     status: 'status',
     reason: 'reason',
     httpRequest: 'HTTP request',
