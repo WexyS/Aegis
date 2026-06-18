@@ -173,6 +173,9 @@ Model output is proposal-only.
 Aegis Model Hub: implemented local LM Studio status, explicit probe, and
 proposal-only local text surface. Status is configuration-only until the
 operator explicitly probes or sends a proposal request.
+Operator setup and explicit local smoke guidance lives in
+`docs/model-hub-operator-setup.md`; the helper script is diagnostics-only and
+does not edit `.env`, start providers, create evidence, or add cloud fallback.
 
 Skill Registry: implemented static metadata catalog and proposal surfaces. It
 does not execute skills.
@@ -231,6 +234,9 @@ Local LM Studio/OpenAI-compatible providers are optional. Aegis prefers local
 and free-first operation, but provider availability is not execution permission.
 Model Gateway output remains proposal-only and cannot create evidence, verifier
 success, approval, lease, capability, or runtime truth.
+Live LM Studio success is operator-environment specific; disabled,
+misconfigured, unavailable, and timeout states are valid fail-closed outcomes
+that must remain visible.
 
 ## Implemented Versus Planned
 

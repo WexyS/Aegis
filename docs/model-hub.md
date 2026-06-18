@@ -88,6 +88,13 @@ operator has already configured and started a local LM Studio/OpenAI-compatible
 endpoint. If LM Studio is disabled, missing, or misconfigured, the correct
 product behavior is a clear fail-closed state rather than a hidden fallback.
 
+Operator setup and smoke commands are documented in
+`docs/model-hub-operator-setup.md`. The optional helper script
+`scripts/model_hub_live_smoke.py` calls only the local Aegis API, defaults to a
+status-only check, and requires explicit `--live --complete
+--confirm-local-lm-studio` flags before it asks the backend to perform a local
+proposal-only completion.
+
 ## Configuration
 
 The UI reads backend-reported configuration. It does not write `.env`, modify
