@@ -248,6 +248,170 @@ export interface CloudFallbackPolicy {
   limitations: string[];
 }
 
+export interface ExternalProviderSetupGuidance {
+  provider_id: string;
+  label: string;
+  status: string;
+  api_key_env_var: string;
+  model_env_var: string;
+  api_key_placeholder: string;
+  model_placeholder: string;
+  api_key_present: boolean;
+  api_key_value_exposed: boolean;
+  operator_managed_env_only: boolean;
+  ui_key_input_allowed: boolean;
+  ui_env_write_allowed: boolean;
+  cloud_call_enabled: boolean;
+  automatic_fallback_allowed: boolean;
+  future_requirements: string[];
+}
+
+export interface ExternalProviderBrokerBoundary {
+  contract: string;
+  status: string;
+  execution_permission: string;
+  provider_setup_guidance: ExternalProviderSetupGuidance[];
+  allowed_preview_purposes: string[];
+  required_operator_acknowledgements: string[];
+  max_prompt_chars: number;
+  max_prompt_preview_chars: number;
+  cloud_calls_enabled_now: boolean;
+  external_provider_calls_performed: boolean;
+  automatic_fallback_allowed: boolean;
+  local_failure_triggers_cloud: boolean;
+  provider_key_presence_is_authorization: boolean;
+  manual_operator_opt_in_required: boolean;
+  provider_selection_required: boolean;
+  exact_model_selection_required: boolean;
+  operator_managed_env_only: boolean;
+  ui_key_input_allowed: boolean;
+  ui_env_write_allowed: boolean;
+  prompt_preview_required: boolean;
+  prompt_redaction_preview_required: boolean;
+  cost_warning_required: boolean;
+  privacy_warning_required: boolean;
+  redaction_review_required: boolean;
+  secrets_allowed_in_prompt: boolean;
+  raw_logs_allowed_in_prompt: boolean;
+  raw_journals_allowed_in_prompt: boolean;
+  raw_evidence_allowed_in_prompt: boolean;
+  repo_dump_allowed_in_prompt: boolean;
+  proposal_only_output_required: boolean;
+  output_authority: boolean;
+  output_is_evidence: boolean;
+  output_is_verifier_success: boolean;
+  memory_write_allowed: boolean;
+  tool_execution_allowed: boolean;
+  authority: boolean;
+  runtime_dispatch_allowed: boolean;
+  approval_grant: boolean;
+  approval_granted: boolean;
+  permission_granted: boolean;
+  capability_grant: boolean;
+  capability_lease_granted: boolean;
+  lease_grant: boolean;
+  evidence_created: boolean;
+  evidence: boolean;
+  verifier_success: boolean;
+  mutation_performed: boolean;
+  frontend_authority: boolean;
+  cloud_call_performed: boolean;
+  external_api_called: boolean;
+  http_request_performed: boolean;
+  model_call_performed: boolean;
+  provider_authenticated: boolean;
+  provider_key_value_exposed: boolean;
+  prompt_payload_sent: boolean;
+  data_sent_external: boolean;
+  transcript_persisted: boolean;
+  memory_write_performed: boolean;
+  tool_call_performed: boolean;
+  mcp_call_performed: boolean;
+  plugin_execution_performed: boolean;
+  agent_execution_performed: boolean;
+  workflow_execution_performed: boolean;
+  computer_control_performed: boolean;
+  shell_command_performed: boolean;
+  file_mutation_performed: boolean;
+  requires_backend_validation: boolean;
+  requires_policy_check: boolean;
+  limitations: string[];
+}
+
+export interface ExternalProviderPromptPreviewRequest {
+  provider_id: string;
+  model_id?: string;
+  purpose: string;
+  prompt: string;
+  operator_acknowledgements?: string[];
+}
+
+export interface ExternalProviderPromptPreviewResponse {
+  contract: string;
+  status: string;
+  provider_id: string | null;
+  provider_label: string | null;
+  provider_status: string;
+  model_id: string | null;
+  purpose: string;
+  prompt_chars: number;
+  prompt_preview: string;
+  prompt_preview_truncated: boolean;
+  heuristic_prompt_risk_markers: string[];
+  operator_acknowledgements_required: string[];
+  operator_acknowledgements_received: string[];
+  missing_acknowledgements: string[];
+  blocked_reasons: string[];
+  future_requirements: string[];
+  would_call_provider: boolean;
+  prompt_preview_only: boolean;
+  cloud_calls_enabled_now: boolean;
+  external_provider_calls_performed: boolean;
+  provider_key_presence_is_authorization: boolean;
+  manual_operator_opt_in_required: boolean;
+  provider_selection_required: boolean;
+  exact_model_selection_required: boolean;
+  automatic_fallback_allowed: boolean;
+  local_failure_triggers_cloud: boolean;
+  authority: boolean;
+  runtime_dispatch_allowed: boolean;
+  execution_permission: string;
+  approval_grant: boolean;
+  approval_granted: boolean;
+  permission_granted: boolean;
+  capability_grant: boolean;
+  capability_lease_granted: boolean;
+  lease_grant: boolean;
+  evidence_created: boolean;
+  evidence: boolean;
+  verifier_success: boolean;
+  mutation_performed: boolean;
+  frontend_authority: boolean;
+  cloud_call_performed: boolean;
+  external_api_called: boolean;
+  http_request_performed: boolean;
+  model_call_performed: boolean;
+  provider_authenticated: boolean;
+  provider_key_value_exposed: boolean;
+  prompt_payload_sent: boolean;
+  data_sent_external: boolean;
+  memory_write_performed: boolean;
+  tool_call_performed: boolean;
+  mcp_call_performed: boolean;
+  plugin_execution_performed: boolean;
+  agent_execution_performed: boolean;
+  workflow_execution_performed: boolean;
+  computer_control_performed: boolean;
+  shell_command_performed: boolean;
+  file_mutation_performed: boolean;
+  transcript_persisted: boolean;
+  output_authority: boolean;
+  output_is_evidence: boolean;
+  output_is_verifier_success: boolean;
+  requires_backend_validation: boolean;
+  requires_policy_check: boolean;
+}
+
 export interface ModelHubStatus {
   contract: string;
   status: string;
@@ -293,6 +457,7 @@ export interface ModelHubStatus {
   recommended_default_profile_id: string;
   active_model_profile_match: ActiveModelProfileMatch;
   external_provider_readiness: ExternalProviderReadiness[];
+  external_provider_broker_boundary: ExternalProviderBrokerBoundary;
   cloud_fallback_policy: CloudFallbackPolicy;
   non_authority_flags: Record<string, boolean>;
   authority: boolean;

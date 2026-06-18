@@ -90,7 +90,13 @@ $env:AEGIS_GEMINI_MODEL="<future-model-id>"
 ```
 
 These variables are not used to call providers yet in this sprint. They are
-readiness metadata only until External Provider Broker is implemented.
+readiness metadata only until a future live External Provider Broker is
+implemented.
+
+The current External Provider Broker Boundary can preview provider setup and a
+redacted prompt envelope through `POST /model-hub/external-provider-preview`.
+The preview remains blocked and must keep `would_call_provider=false`,
+`external_api_called=false`, and `data_sent_external=false`.
 
 Future cloud use requires explicit provider enablement, exact provider/model
 selection, prompt preview, cost warning, privacy warning, no secrets, no raw

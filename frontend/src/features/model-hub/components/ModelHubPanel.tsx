@@ -18,6 +18,7 @@ import { completeModelGateway, fetchModelHubStatus, probeModelGateway } from '@/
 import { ModelGatewayCompletionResponse, ModelGatewayStatus, ModelHubStatus } from '@/types/modelHub';
 
 import { ExternalProviderReadinessSection } from './ExternalProviderReadinessSection';
+import { ExternalProviderBrokerBoundarySection } from './ExternalProviderBrokerBoundarySection';
 import { LocalModelProfilesSection } from './LocalModelProfilesSection';
 import { ModelHubFactRow as FactRow } from './ModelHubFactRow';
 
@@ -358,6 +359,10 @@ export const ModelHubPanel = ({ language }: { language: Language }) => {
       <div className="mt-4 grid gap-4 xl:grid-cols-[1.25fr_1fr]">
         <LocalModelProfilesSection status={status} t={t} modelName={modelName} />
         <ExternalProviderReadinessSection status={status} t={t} />
+      </div>
+
+      <div className="mt-4">
+        <ExternalProviderBrokerBoundarySection status={status} t={t} />
       </div>
     </section>
   );

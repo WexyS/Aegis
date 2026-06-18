@@ -21,7 +21,9 @@ This readiness layer represents:
 - prompt preview, cost warning, and privacy warning requirements
 - proposal-only output boundaries
 
-It is not External Provider Broker implementation and it is not cloud routing.
+It is not cloud routing. The separate External Provider Broker Boundary now
+adds a dry-run prompt preview and setup guidance surface, but it still does not
+call providers or grant permission.
 
 ## Provider Records
 
@@ -63,7 +65,17 @@ $env:AEGIS_GEMINI_MODEL="<future-model-id>"
 ```
 
 These variables are not used to call providers yet in this sprint. They are
-readiness metadata only until External Provider Broker is implemented.
+readiness metadata only until a future live External Provider Broker is
+implemented.
+
+## Relationship To External Provider Broker Boundary
+
+`docs/external-provider-broker-boundary.md` defines the current dry-run broker
+boundary. It can show provider setup placeholders and preview a future prompt
+envelope, but the result remains blocked. It keeps provider calls, prompt
+payload sending, data externalization, evidence, verifier success, approval,
+lease, memory writes, tool execution, plugin execution, and agent execution
+disabled.
 
 ## Cloud Escalation Policy
 
@@ -108,6 +120,7 @@ The UI may display:
 - cloud disabled badge
 - automatic fallback disabled badge
 - manual opt-in and prompt preview requirements
+- broker-boundary dry-run preview results
 
 The UI must not render key values or claim provider usability from key presence.
 

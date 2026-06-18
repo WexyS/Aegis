@@ -7,6 +7,7 @@ from aegis.core.external_provider_readiness import (
     build_cloud_fallback_policy,
     list_external_provider_readiness,
 )
+from aegis.core.external_provider_broker_boundary import build_external_provider_broker_boundary
 from aegis.core.integration_registry import list_integrations_by_family
 from aegis.core.local_model_profiles import (
     build_resource_guardrails,
@@ -50,6 +51,9 @@ def build_model_hub_status(
         "recommended_default_profile_id": recommended_default_profile_id(),
         "active_model_profile_match": active_profile_match,
         "external_provider_readiness": external_provider_readiness,
+        "external_provider_broker_boundary": build_external_provider_broker_boundary(
+            provider_readiness=external_provider_readiness,
+        ),
         "cloud_fallback_policy": build_cloud_fallback_policy(),
         "non_authority_flags": _non_authority_flags(),
         "authority": False,
@@ -96,6 +100,7 @@ def build_model_hub_status(
             "no_cloud_fallback",
             "provider_key_presence_is_readiness_metadata_only",
             "local_model_profile_match_is_config_metadata_only",
+            "external_provider_broker_boundary_is_preview_only",
         ],
     }
 

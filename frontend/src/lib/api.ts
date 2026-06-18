@@ -10,6 +10,8 @@ import {
   ModelGatewayCompleteRequest,
   ModelGatewayCompletionResponse,
   ModelGatewayStatus,
+  ExternalProviderPromptPreviewRequest,
+  ExternalProviderPromptPreviewResponse,
   ModelHubStatus,
 } from '@/types/modelHub';
 import {
@@ -57,6 +59,26 @@ export async function fetchModelHubStatus(): Promise<ModelHubStatus> {
     throw new Error('Model Hub status returned no LM Studio summary.');
   }
   return body as ModelHubStatus;
+}
+
+export async function previewExternalProviderBroker(
+  payload: ExternalProviderPromptPreviewRequest,
+): Promise<ExternalProviderPromptPreviewResponse> {
+  const url = new URL('/model-hub/external-provider-preview', API_URL);
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify(payload),
+  });
+  const body = await parseJsonBody<ExternalProviderPromptPreviewResponse | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `External provider preview failed: ${response.status}`));
+  }
+  if (!body || !('status' in body)) {
+    throw new Error('External provider preview returned no status.');
+  }
+  return body as ExternalProviderPromptPreviewResponse;
 }
 
 export async function fetchModelGatewayStatus(): Promise<ModelGatewayStatus> {

@@ -94,6 +94,12 @@ async def test_model_hub_status_is_config_only_when_gateway_disabled() -> None:
     assert data["cloud_fallback_policy"]["automatic_cloud_fallback_allowed"] is False
     assert data["cloud_fallback_policy"]["cloud_calls_enabled_now"] is False
     assert data["cloud_fallback_policy"]["external_provider_broker_required"] is True
+    assert data["external_provider_broker_boundary"]["status"] == "designed_disabled"
+    assert data["external_provider_broker_boundary"]["external_api_called"] is False
+    assert data["external_provider_broker_boundary"]["provider_key_value_exposed"] is False
+    assert data["external_provider_broker_boundary"]["ui_key_input_allowed"] is False
+    assert data["external_provider_broker_boundary"]["ui_env_write_allowed"] is False
+    assert data["external_provider_broker_boundary"]["provider_setup_guidance"]
     assert data["local_model_profiles"]
     assert data["external_provider_readiness"]
     assert all(record["cloud_completion_enabled"] is False for record in data["external_provider_readiness"])
@@ -210,6 +216,14 @@ async def test_model_hub_status_reports_provider_key_presence_without_value(
     assert openrouter["cloud_completion_enabled"] is False
     assert openrouter["automatic_fallback_allowed"] is False
     assert secret not in repr(data)
+    broker_guidance = next(
+        record for record in data["external_provider_broker_boundary"]["provider_setup_guidance"]
+        if record["provider_id"] == "openrouter"
+    )
+    assert broker_guidance["api_key_present"] is True
+    assert broker_guidance["api_key_value_exposed"] is False
+    assert broker_guidance["cloud_call_enabled"] is False
+    assert secret not in repr(data["external_provider_broker_boundary"])
     assert data["external_api_called"] is False
     assert data["data_sent_external"] is False
     _assert_model_hub_false_invariants(data)

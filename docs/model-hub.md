@@ -107,8 +107,11 @@ Future external use requires External Provider Broker with explicit provider
 enablement, exact provider/model selection, prompt preview, privacy warning,
 cost warning, no secrets, and proposal-only output.
 
-See `docs/external-provider-readiness.md` for operator environment placeholders
-and cloud escalation rules.
+The current External Provider Broker Boundary adds only a dry-run provider setup
+and prompt preview envelope. It does not call providers, expose key values,
+send prompt payloads, enable cloud fallback, or grant approval/capability
+leases. See `docs/external-provider-readiness.md` for readiness metadata and
+`docs/external-provider-broker-boundary.md` for the broker preview boundary.
 
 ## Rendered Flow QA Notes
 
@@ -119,6 +122,11 @@ states visible, including backend failure reasons and warnings.
 The probe and local proposal actions are explicit operator actions. A rendered
 status refresh must not call `POST /model-gateway/probe` or
 `POST /model-gateway/complete`.
+
+Broker preview actions must call only
+`POST /model-hub/external-provider-preview`; that endpoint must keep
+`would_call_provider=false`, `external_api_called=false`, and
+`data_sent_external=false`.
 
 The local proposal output is displayed with non-authority flags near the model
 text so the UI does not imply truth, approval, verifier success, tool/MCP use,

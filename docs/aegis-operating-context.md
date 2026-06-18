@@ -178,7 +178,10 @@ Operator setup and explicit local smoke guidance lives in
 does not edit `.env`, start providers, create evidence, or add cloud fallback.
 Model Hub also projects static local model profiles/resource guardrails and
 external provider readiness metadata. External provider key presence is boolean
-metadata only; cloud calls and automatic fallback remain disabled.
+metadata only; cloud calls and automatic fallback remain disabled. The current
+External Provider Broker Boundary adds only provider setup guidance and a
+dry-run prompt preview envelope. It does not call external providers, expose
+key values, send prompt payloads, or grant cloud routing.
 
 Skill Registry: implemented static metadata catalog and proposal surfaces. It
 does not execute skills.
@@ -243,7 +246,8 @@ that must remain visible.
 External provider readiness does not call OpenRouter, DeepSeek, OpenAI,
 Anthropic, Gemini, or any other cloud provider. Future cloud use requires an
 External Provider Broker with explicit opt-in, prompt preview, cost and privacy
-warnings, and proposal-only output.
+warnings, and proposal-only output. The current broker boundary is preview-only
+and remains blocked.
 
 ## Implemented Versus Planned
 
