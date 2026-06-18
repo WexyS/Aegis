@@ -176,6 +176,9 @@ operator explicitly probes or sends a proposal request.
 Operator setup and explicit local smoke guidance lives in
 `docs/model-hub-operator-setup.md`; the helper script is diagnostics-only and
 does not edit `.env`, start providers, create evidence, or add cloud fallback.
+Model Hub also projects static local model profiles/resource guardrails and
+external provider readiness metadata. External provider key presence is boolean
+metadata only; cloud calls and automatic fallback remain disabled.
 
 Skill Registry: implemented static metadata catalog and proposal surfaces. It
 does not execute skills.
@@ -237,6 +240,10 @@ success, approval, lease, capability, or runtime truth.
 Live LM Studio success is operator-environment specific; disabled,
 misconfigured, unavailable, and timeout states are valid fail-closed outcomes
 that must remain visible.
+External provider readiness does not call OpenRouter, DeepSeek, OpenAI,
+Anthropic, Gemini, or any other cloud provider. Future cloud use requires an
+External Provider Broker with explicit opt-in, prompt preview, cost and privacy
+warnings, and proposal-only output.
 
 ## Implemented Versus Planned
 

@@ -69,6 +69,47 @@ keys, repo content, or full upstream registry URLs.
 Model output remains proposal-only. It is not truth, evidence, verifier
 success, approval, permission, memory, or execution.
 
+## Local Model Profiles And Resource Guardrails
+
+Model Hub status includes static local profile recommendations for the current
+operator hardware target: NVIDIA RTX 4080 with 12 GB VRAM and 32 GB RAM.
+
+The current local-first recommendation order is:
+
+- `fast_summary`: `qwen/qwen3.5-9b`, low memory pressure, short summaries
+- `default_proposal`: `google/gemma-4-12b`, balanced default proposal profile
+- `coding_review`: `qwen2.5-coder-14b-instruct`, manual coding review profile
+- `reasoning_review`: `deepseek-r1-distill-qwen-14b`, manual reasoning review
+- `heavy_experiment`: `gpt-oss-20b`, manual high-memory-pressure experiment
+- `rerank_only`: `qwen3-reranker-0.6b`, rerank/search only, not completion safe
+
+These profiles are recommendations only. They do not prove a model is installed,
+loaded, live, fast, safe, or correct. Exact local model ids must still be
+verified from LM Studio `/v1/models`, and the UI never switches models or edits
+environment variables automatically.
+
+The active profile match is based only on the configured
+`AEGIS_LM_STUDIO_MODEL` metadata from Model Gateway status. A reranker-like
+configured model is shown with a completion-safety warning.
+
+## External Provider Readiness
+
+Model Hub status also includes external provider readiness metadata for
+OpenRouter, DeepSeek API, OpenAI, Anthropic, and Gemini.
+
+Readiness checks only whether expected API key environment variables are
+present. Key values are never exposed. Key presence is not authorization, not
+approval, not privacy acceptance, not cost acceptance, and not execution
+permission.
+
+Cloud completion remains disabled. Automatic cloud fallback remains disabled.
+Future external use requires External Provider Broker with explicit provider
+enablement, exact provider/model selection, prompt preview, privacy warning,
+cost warning, no secrets, and proposal-only output.
+
+See `docs/external-provider-readiness.md` for operator environment placeholders
+and cloud escalation rules.
+
 ## Rendered Flow QA Notes
 
 The Settings surface is expected to load Model Hub status automatically without
@@ -170,6 +211,8 @@ Coverage includes:
 - No automatic provider probing
 - No automatic model completion
 - No cloud provider routing
+- No external provider completion calls
+- No automatic cloud fallback
 - No model provider key management
 - No `.env` or settings mutation from the UI
 - No transcript persistence

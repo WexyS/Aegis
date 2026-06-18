@@ -50,6 +50,52 @@ variables:
 Do not put API keys, tokens, secrets, raw journals, raw evidence, or private
 repo content into Model Hub smoke prompts.
 
+## Local Profile Recommendations
+
+For the current operator hardware target, NVIDIA RTX 4080 with 12 GB VRAM and
+32 GB RAM, Model Hub exposes static profile recommendations:
+
+- `qwen/qwen3.5-9b`: fast summaries and low-resource explanations
+- `google/gemma-4-12b`: default balanced proposal profile
+- `qwen2.5-coder-14b-instruct`: manual coding review profile
+- `deepseek-r1-distill-qwen-14b`: manual reasoning review profile
+- `gpt-oss-20b`: heavy manual experiment; may spill to RAM/CPU on 12 GB VRAM
+- `qwen3-reranker-0.6b`: rerank/search only, not proposal/completion safe
+
+The configured model is not live proof. Use LM Studio `/v1/models` or the
+explicit probe path to verify the exact loaded model id.
+
+## External Provider Readiness
+
+Aegis can display planned external provider readiness metadata, but it does not
+call external providers yet.
+
+API keys are operator-managed environment variables. Aegis does not store keys,
+print keys, edit `.env`, or expose key values. It only reports key presence as
+boolean readiness metadata.
+
+Placeholder examples:
+
+```powershell
+$env:AEGIS_OPENROUTER_API_KEY="<paste-key-in-your-own-shell>"
+$env:AEGIS_OPENROUTER_MODEL="<future-model-id>"
+$env:AEGIS_DEEPSEEK_API_KEY="<paste-key-in-your-own-shell>"
+$env:AEGIS_DEEPSEEK_MODEL="<future-model-id>"
+$env:AEGIS_OPENAI_API_KEY="<paste-key-in-your-own-shell>"
+$env:AEGIS_OPENAI_MODEL="<future-model-id>"
+$env:AEGIS_ANTHROPIC_API_KEY="<paste-key-in-your-own-shell>"
+$env:AEGIS_ANTHROPIC_MODEL="<future-model-id>"
+$env:AEGIS_GEMINI_API_KEY="<paste-key-in-your-own-shell>"
+$env:AEGIS_GEMINI_MODEL="<future-model-id>"
+```
+
+These variables are not used to call providers yet in this sprint. They are
+readiness metadata only until External Provider Broker is implemented.
+
+Future cloud use requires explicit provider enablement, exact provider/model
+selection, prompt preview, cost warning, privacy warning, no secrets, no raw
+logs/journals/evidence/repo dumps by default, and proposal-only output.
+
 ## Disabled Smoke
 
 With the gateway disabled, Model Hub should still load and explain the fail
@@ -183,6 +229,8 @@ make the smoke pass.
 - No automatic provider probe
 - No automatic model call
 - No cloud fallback
+- No external provider calls
+- No provider key storage or `.env` writer
 - No memory write
 - No tool, plugin, MCP, shell, browser, file, or agent execution
 - No evidence creation

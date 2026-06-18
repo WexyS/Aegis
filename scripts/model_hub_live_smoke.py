@@ -119,6 +119,18 @@ def summarize_smoke_payloads(
     failures.extend(completion.get("failure_reasons") or ())
     if request_error:
         failures.append(request_error)
+    provider_readiness = list(hub.get("external_provider_readiness") or [])
+    provider_readiness_statuses = {
+        str(record.get("provider_id")): {
+            "status": record.get("status"),
+            "api_key_present": bool(record.get("api_key_present")),
+            "api_key_value_exposed": bool(record.get("api_key_value_exposed")),
+            "cloud_completion_enabled": bool(record.get("cloud_completion_enabled")),
+            "automatic_fallback_allowed": bool(record.get("automatic_fallback_allowed")),
+        }
+        for record in provider_readiness
+        if isinstance(record, Mapping)
+    }
 
     return {
         "decision": "AEGIS_MODEL_HUB_LM_STUDIO_SMOKE_OPERATOR_RESULT",
@@ -136,6 +148,11 @@ def summarize_smoke_payloads(
         "completion_allowed_by_operator_flags": bool(plan.get("completion_allowed_by_operator_flags")),
         "completion_status": completion.get("status") if completion else "not_requested",
         "completion_blocked_reasons": tuple(plan.get("completion_blocked_reasons") or ()),
+        "recommended_default_profile_id": hub.get("recommended_default_profile_id"),
+        "local_model_profile_count": len(list(hub.get("local_model_profiles") or [])),
+        "active_model_profile_match": hub.get("active_model_profile_match") or {},
+        "provider_readiness_statuses": provider_readiness_statuses,
+        "cloud_fallback_policy": hub.get("cloud_fallback_policy") or {},
         "failure_reasons": tuple(dict.fromkeys(str(reason) for reason in failures if reason)),
         "model_output_proposal_only": _proposal_only(completion),
         "non_authority_flags_preserved": _non_authority_flags_preserved(gateway, probe, completion),

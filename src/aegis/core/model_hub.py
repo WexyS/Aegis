@@ -3,7 +3,17 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from aegis.core.external_provider_readiness import (
+    build_cloud_fallback_policy,
+    list_external_provider_readiness,
+)
 from aegis.core.integration_registry import list_integrations_by_family
+from aegis.core.local_model_profiles import (
+    build_resource_guardrails,
+    list_local_model_profiles,
+    match_configured_model_profile,
+    recommended_default_profile_id,
+)
 from aegis.core.mode_policy import list_mode_policies, mode_allows_execution_now
 from aegis.core.model_gateway import build_model_gateway_status
 from aegis.core.orchestrator_readiness import build_orchestrator_readiness
@@ -16,12 +26,16 @@ MODEL_HUB_EXECUTION_PERMISSION = "not_granted_by_model_hub"
 def build_model_hub_status(
     *,
     model_gateway_status: Mapping[str, Any] | None = None,
+    external_provider_env: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     gateway_status = dict(model_gateway_status or build_model_gateway_status())
     readiness = build_orchestrator_readiness(model_gateway_status=gateway_status)
     model_hub_integrations = _model_hub_integrations()
     mode_policy_summary = _mode_policy_summary()
     lm_studio = _lm_studio_summary(gateway_status)
+    local_model_profiles = list_local_model_profiles()
+    active_profile_match = match_configured_model_profile(gateway_status.get("model"))
+    external_provider_readiness = list_external_provider_readiness(external_provider_env)
 
     return {
         "contract": MODEL_HUB_CONTRACT,
@@ -31,6 +45,12 @@ def build_model_hub_status(
         "model_hub_integrations": model_hub_integrations,
         "mode_policy_summary": mode_policy_summary,
         "lm_studio": lm_studio,
+        "local_model_profiles": local_model_profiles,
+        "resource_guardrails": build_resource_guardrails(),
+        "recommended_default_profile_id": recommended_default_profile_id(),
+        "active_model_profile_match": active_profile_match,
+        "external_provider_readiness": external_provider_readiness,
+        "cloud_fallback_policy": build_cloud_fallback_policy(),
         "non_authority_flags": _non_authority_flags(),
         "authority": False,
         "runtime_dispatch_allowed": False,
@@ -74,6 +94,8 @@ def build_model_hub_status(
             "frontend_state_is_not_authority",
             "local_model_output_is_proposal_only",
             "no_cloud_fallback",
+            "provider_key_presence_is_readiness_metadata_only",
+            "local_model_profile_match_is_config_metadata_only",
         ],
     }
 

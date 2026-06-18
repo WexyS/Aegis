@@ -133,6 +133,121 @@ export interface ModelGatewayCompleteRequest {
   temperature?: number;
 }
 
+export interface LocalModelProfile {
+  profile_id: string;
+  label: string;
+  purpose: string;
+  preferred_model_id_hint: string;
+  model_id_matchers: string[];
+  eligible_for_completion: boolean;
+  eligible_for_probe: boolean;
+  eligible_for_rerank: boolean;
+  default_profile: boolean;
+  manual_selection_required: boolean;
+  hardware_target: string;
+  vram_gb_target: number;
+  system_ram_gb_target: number;
+  memory_pressure: string;
+  recommended_max_input_chars: number;
+  recommended_max_output_tokens: number;
+  recommended_timeout_seconds: number;
+  warnings: string[];
+  limitations: string[];
+  operator_steps: string[];
+  cloud_fallback_allowed: boolean;
+  execution_permission: string;
+  authority: boolean;
+  model_output_is_truth: boolean;
+  evidence: boolean;
+  verifier_success: boolean;
+  approval_granted: boolean;
+  capability_lease_granted: boolean;
+}
+
+export interface ResourceGuardrails {
+  hardware_target: string;
+  gpu: string;
+  vram_gb_target: number;
+  system_ram_gb_target: number;
+  local_model_manager: string;
+  expected_local_server: string;
+  default_profile_id: string;
+  recommended_order: string[];
+  automatic_model_switching_allowed: boolean;
+  ui_env_write_allowed: boolean;
+  live_probe_required_for_installation_claim: boolean;
+  configured_model_is_not_live_proof: boolean;
+  warnings: string[];
+  limitations: string[];
+}
+
+export interface ActiveModelProfileMatch {
+  status: string;
+  configured_model: string | null;
+  matched_profile_id: string | null;
+  matched_profile_label: string | null;
+  match_type: string;
+  completion_safe: boolean;
+  rerank_only: boolean;
+  automatic_model_switch_performed: boolean;
+  live_installation_claimed: boolean;
+  warnings: string[];
+  limitations: string[];
+  authority: boolean;
+  evidence: boolean;
+  verifier_success: boolean;
+}
+
+export interface ExternalProviderReadiness {
+  provider_id: string;
+  label: string;
+  provider_family: string;
+  status: string;
+  intended_use: string;
+  expected_env_vars: string[];
+  api_key_present: boolean;
+  api_key_value_exposed: boolean;
+  cloud_completion_enabled: boolean;
+  automatic_fallback_allowed: boolean;
+  manual_operator_opt_in_required: boolean;
+  prompt_preview_required: boolean;
+  cost_warning_required: boolean;
+  privacy_warning_required: boolean;
+  secrets_allowed_in_prompt: boolean;
+  raw_logs_allowed_in_prompt: boolean;
+  raw_journals_allowed_in_prompt: boolean;
+  raw_evidence_allowed_in_prompt: boolean;
+  repo_dump_allowed_in_prompt: boolean;
+  output_authority: boolean;
+  output_is_evidence: boolean;
+  output_is_verifier_success: boolean;
+  approval_granted: boolean;
+  capability_lease_granted: boolean;
+  memory_write_allowed: boolean;
+  tool_execution_allowed: boolean;
+  execution_permission: string;
+  warnings: string[];
+  limitations: string[];
+  future_requirements: string[];
+}
+
+export interface CloudFallbackPolicy {
+  automatic_cloud_fallback_allowed: boolean;
+  cloud_calls_enabled_now: boolean;
+  external_provider_broker_required: boolean;
+  operator_opt_in_required: boolean;
+  prompt_preview_required: boolean;
+  cost_warning_required: boolean;
+  privacy_warning_required: boolean;
+  secrets_redaction_required: boolean;
+  proposal_only_output_required: boolean;
+  provider_key_presence_is_authorization: boolean;
+  local_failure_triggers_cloud: boolean;
+  provider_routing_added: boolean;
+  warnings: string[];
+  limitations: string[];
+}
+
 export interface ModelHubStatus {
   contract: string;
   status: string;
@@ -173,6 +288,12 @@ export interface ModelHubStatus {
     cloud_fallback_available: boolean;
     status_source: string;
   };
+  local_model_profiles: LocalModelProfile[];
+  resource_guardrails: ResourceGuardrails;
+  recommended_default_profile_id: string;
+  active_model_profile_match: ActiveModelProfileMatch;
+  external_provider_readiness: ExternalProviderReadiness[];
+  cloud_fallback_policy: CloudFallbackPolicy;
   non_authority_flags: Record<string, boolean>;
   authority: boolean;
   runtime_dispatch_allowed: boolean;

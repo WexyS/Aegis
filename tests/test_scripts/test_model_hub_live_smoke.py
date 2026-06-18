@@ -110,7 +110,24 @@ def test_summary_keeps_disabled_gateway_fail_closed() -> None:
     plan = model_hub_live_smoke.build_smoke_plan(model_hub_live_smoke.SmokeOptions())
     summary = model_hub_live_smoke.summarize_smoke_payloads(
         plan=plan,
-        model_hub_status={"status": "configured", "failure_reasons": ()},
+        model_hub_status={
+            "status": "configured",
+            "failure_reasons": (),
+            "recommended_default_profile_id": "default_proposal",
+            "local_model_profiles": [{"profile_id": "default_proposal"}],
+            "active_model_profile_match": {"matched_profile_id": "default_proposal"},
+            "external_provider_readiness": [
+                {
+                    "provider_id": "openrouter",
+                    "status": "missing_key_disabled",
+                    "api_key_present": False,
+                    "api_key_value_exposed": False,
+                    "cloud_completion_enabled": False,
+                    "automatic_fallback_allowed": False,
+                }
+            ],
+            "cloud_fallback_policy": {"automatic_cloud_fallback_allowed": False},
+        },
         model_gateway_status={
             "status": "disabled",
             "enabled": False,
@@ -129,6 +146,12 @@ def test_summary_keeps_disabled_gateway_fail_closed() -> None:
     assert summary["gateway_enabled"] is False
     assert summary["model_configured"] is False
     assert summary["failure_reasons"] == ("gateway_disabled",)
+    assert summary["recommended_default_profile_id"] == "default_proposal"
+    assert summary["local_model_profile_count"] == 1
+    assert summary["active_model_profile_match"] == {"matched_profile_id": "default_proposal"}
+    assert summary["provider_readiness_statuses"]["openrouter"]["api_key_value_exposed"] is False
+    assert summary["provider_readiness_statuses"]["openrouter"]["cloud_completion_enabled"] is False
+    assert summary["cloud_fallback_policy"] == {"automatic_cloud_fallback_allowed": False}
     assert summary["model_output_proposal_only"] is True
     assert summary["non_authority_flags_preserved"] is True
     assert summary["execution_performed"] is False
