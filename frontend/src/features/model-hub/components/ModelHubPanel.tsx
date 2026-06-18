@@ -192,6 +192,7 @@ export const ModelHubPanel = ({ language }: { language: Language }) => {
   const lmStudio = status?.lm_studio;
   const integrationCount = status?.model_hub_integrations.length ?? 0;
   const modelName = lmStudio?.model || t.notConfigured;
+  const configReasons = [...(lmStudio?.failure_reasons ?? []), ...(lmStudio?.warnings ?? [])];
 
   return (
     <section className="rounded-2xl border border-accent/20 bg-accent/[0.035] p-5 shadow-2xl shadow-black/20">
@@ -238,6 +239,18 @@ export const ModelHubPanel = ({ language }: { language: Language }) => {
             <FactRow label={t.modelHubRecords} value={String(integrationCount)} />
             <FactRow label={t.liveHealth} value={t.probeRequired} />
           </div>
+          {configReasons.length > 0 && (
+            <div className="mt-3 rounded-lg border border-warning/20 bg-warning/[0.045] p-3">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-warning">{t.reasonsAndWarnings}</p>
+              <ul className="mt-2 space-y-1">
+                {configReasons.map((reason, index) => (
+                  <li key={`${reason}-${index}`} className="break-words text-xs leading-5 text-foreground/62">
+                    {reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="mt-4 flex flex-wrap gap-2">
             <StatusBadge label={t.noMemoryWrite} tone="unknown" />
             <StatusBadge label={t.noExecution} tone="unknown" />
@@ -300,18 +313,33 @@ export const ModelHubPanel = ({ language }: { language: Language }) => {
           </div>
 
           {proposal && (
-            <ResultBox
-              title={t.lastProposal}
-              status={proposal.status}
-              lines={[
-                `${t.status}: ${statusLabel(proposal.status, t)}`,
-                `${t.modelCall}: ${String(proposal.model_call_performed)}`,
-                `${t.memoryWrite}: ${String(proposal.memory_write_performed)}`,
-                `${t.evidence}: ${String(proposal.evidence)}`,
-                ...proposal.failure_reasons.map((reason) => `${t.reason}: ${reason}`),
-              ]}
-              body={proposal.output_text}
-            />
+            <>
+              <ResultBox
+                title={t.lastProposal}
+                status={proposal.status}
+                lines={[
+                  `${t.status}: ${statusLabel(proposal.status, t)}`,
+                  `${t.modelCall}: ${String(proposal.model_call_performed)}`,
+                  `${t.memoryWrite}: ${String(proposal.memory_write_performed)}`,
+                  `${t.evidence}: ${String(proposal.evidence)}`,
+                  ...proposal.failure_reasons.map((reason) => `${t.reason}: ${reason}`),
+                ]}
+                body={proposal.output_text}
+              />
+              <SafetyGrid
+                title={t.proposalBoundary}
+                safeLabel={t.flagFalse}
+                riskLabel={t.needsReview}
+                items={[
+                  [t.outputNotAuthority, !proposal.authority && !proposal.model_output_is_truth],
+                  [t.noVerifierSuccess, !proposal.verifier_success && !proposal.model_output_is_verifier_success],
+                  [t.noApprovalGrant, !proposal.approval_granted && !proposal.permission_granted],
+                  [t.noCapabilityLease, !proposal.capability_lease_granted],
+                  [t.noToolOrMcp, !proposal.tool_call_performed && !proposal.mcp_call_performed],
+                  [t.noFileOrShell, !proposal.file_mutation_performed && !proposal.shell_command_performed],
+                ]}
+              />
+            </>
           )}
         </div>
       </div>
@@ -329,7 +357,9 @@ export const ModelHubPanel = ({ language }: { language: Language }) => {
 const FactRow = ({ label, value }: { label: string; value: string }) => (
   <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.025] px-3 py-2">
     <span className="text-xs text-foreground/52">{label}</span>
-    <span className="min-w-0 truncate text-right text-xs font-semibold text-foreground/82">{value}</span>
+    <span className="min-w-0 break-all text-right text-xs font-semibold leading-5 text-foreground/82" title={value}>
+      {value}
+    </span>
   </div>
 );
 
@@ -350,10 +380,10 @@ const ResultBox = ({
       <StatusBadge label={status} tone={statusTone(status)} />
     </div>
     <div className="grid gap-1">
-      {lines.map((line) => (
-        <div key={line} className="flex items-center gap-2 text-[11px] text-foreground/50">
+      {lines.map((line, index) => (
+        <div key={`${line}-${index}`} className="flex items-center gap-2 text-[11px] text-foreground/50">
           <CheckCircle2 size={11} className="shrink-0 text-accent" />
-          <span className="break-all">{line}</span>
+          <span className="break-words">{line}</span>
         </div>
       ))}
     </div>
@@ -362,6 +392,33 @@ const ResultBox = ({
         {body}
       </p>
     )}
+  </div>
+);
+
+const SafetyGrid = ({
+  title,
+  safeLabel,
+  riskLabel,
+  items,
+}: {
+  title: string;
+  safeLabel: string;
+  riskLabel: string;
+  items: Array<[string, boolean]>;
+}) => (
+  <div className="mt-3 rounded-lg border border-accent/15 bg-accent/[0.03] p-3">
+    <p className="text-[11px] font-bold uppercase tracking-wider text-accent">{title}</p>
+    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+      {items.map(([label, safe]) => (
+        <div
+          key={label}
+          className="flex items-center justify-between gap-3 rounded-md border border-white/10 bg-black/20 px-2.5 py-1.5"
+        >
+          <span className="min-w-0 break-words text-[11px] text-foreground/58">{label}</span>
+          <StatusBadge label={safe ? safeLabel : riskLabel} tone={safe ? 'unknown' : 'danger'} />
+        </div>
+      ))}
+    </div>
   </div>
 );
 

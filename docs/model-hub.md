@@ -69,6 +69,25 @@ keys, repo content, or full upstream registry URLs.
 Model output remains proposal-only. It is not truth, evidence, verifier
 success, approval, permission, memory, or execution.
 
+## Rendered Flow QA Notes
+
+The Settings surface is expected to load Model Hub status automatically without
+probing or completing. The rendered panel must keep disabled and misconfigured
+states visible, including backend failure reasons and warnings.
+
+The probe and local proposal actions are explicit operator actions. A rendered
+status refresh must not call `POST /model-gateway/probe` or
+`POST /model-gateway/complete`.
+
+The local proposal output is displayed with non-authority flags near the model
+text so the UI does not imply truth, approval, verifier success, tool/MCP use,
+shell/file mutation, or capability grants.
+
+Live LM Studio smoke is environment-dependent. It should be run only when the
+operator has already configured and started a local LM Studio/OpenAI-compatible
+endpoint. If LM Studio is disabled, missing, or misconfigured, the correct
+product behavior is a clear fail-closed state rather than a hidden fallback.
+
 ## Configuration
 
 The UI reads backend-reported configuration. It does not write `.env`, modify

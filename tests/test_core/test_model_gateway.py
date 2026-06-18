@@ -141,6 +141,9 @@ def test_valid_local_lm_studio_urls_are_accepted(base_url: str) -> None:
         ("http://localhost.evil.test:1234/v1", "spoofed_localhost_blocked"),
         ("http://127.0.0.1.evil.test:1234/v1", "spoofed_localhost_blocked"),
         ("http://127.0.0.1:1234/other", "unsupported_base_path"),
+        ("http://user:pass@127.0.0.1:1234/v1", "credentials_in_url_denied"),
+        ("http://127.0.0.1:1234/v1?token=secret", "query_or_fragment_denied"),
+        ("http://127.0.0.1:1234/v1#fragment", "query_or_fragment_denied"),
     ],
 )
 def test_remote_and_malformed_urls_are_rejected(base_url: str, reason: str) -> None:
