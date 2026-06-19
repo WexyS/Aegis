@@ -5,9 +5,11 @@ interface UIState {
   activeTab: string;
   language: Language;
   density: 'comfortable' | 'compact';
+  preferencesHydrated: boolean;
   isSidebarOpen: boolean;
   isInspectorOpen: boolean;
   setActiveTab: (tab: string) => void;
+  hydratePreferencesFromStorage: () => void;
   setLanguage: (language: Language) => void;
   setDensity: (density: 'comfortable' | 'compact') => void;
   toggleSidebar: () => void;
@@ -17,32 +19,52 @@ interface UIState {
 const UI_LANGUAGE_KEY = 'aegis.ui.language';
 const UI_DENSITY_KEY = 'aegis.ui.density';
 
-function readLanguage(): Language {
-  if (typeof window === 'undefined') return 'en';
-  return window.localStorage.getItem(UI_LANGUAGE_KEY) === 'tr' ? 'tr' : 'en';
+function normalizeLanguage(value: string | null): Language {
+  return value === 'tr' ? 'tr' : 'en';
 }
 
-function readDensity(): 'comfortable' | 'compact' {
-  if (typeof window === 'undefined') return 'comfortable';
-  return window.localStorage.getItem(UI_DENSITY_KEY) === 'compact' ? 'compact' : 'comfortable';
+function normalizeDensity(value: string | null): 'comfortable' | 'compact' {
+  return value === 'compact' ? 'compact' : 'comfortable';
 }
 
 export const useUIStore = create<UIState>((set) => ({
   activeTab: 'Mission',
-  language: readLanguage(),
-  density: readDensity(),
+  language: 'en',
+  density: 'comfortable',
+  preferencesHydrated: false,
   isSidebarOpen: true,
   isInspectorOpen: true,
   setActiveTab: (tab) => set({ activeTab: tab }),
+  hydratePreferencesFromStorage: () => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      set({
+        language: normalizeLanguage(window.localStorage.getItem(UI_LANGUAGE_KEY)),
+        density: normalizeDensity(window.localStorage.getItem(UI_DENSITY_KEY)),
+        preferencesHydrated: true,
+      });
+    } catch {
+      set({ preferencesHydrated: true });
+    }
+  },
   setLanguage: (language) => {
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(UI_LANGUAGE_KEY, language);
+      try {
+        window.localStorage.setItem(UI_LANGUAGE_KEY, language);
+      } catch {
+        // Preference changes should still update UI if browser storage is unavailable.
+      }
     }
     set({ language });
   },
   setDensity: (density) => {
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(UI_DENSITY_KEY, density);
+      try {
+        window.localStorage.setItem(UI_DENSITY_KEY, density);
+      } catch {
+        // Preference changes should still update UI if browser storage is unavailable.
+      }
     }
     set({ density });
   },
