@@ -27,7 +27,8 @@ Aegis is currently a local Mission Control workspace with:
 - a static Skill Registry metadata catalog
 - a proposal-only Bounded Agent Runtime
 - Aegis Ask for read-only status explanation and safe next-step planning
-- a premium Next.js/Electron Mission Control shell with Advanced diagnostics
+- a unified Next.js/Electron operator workspace with one composer, copy-ready
+  preview drafts, secondary tools, and Advanced diagnostics
 
 It is not yet a full autonomous agent platform, not a general MCP runner, not a
 cloud agent, and not a production security product.
@@ -98,7 +99,7 @@ Aegis should work without paid services as the default product posture.
 | Skill Registry | Implemented static metadata catalog | No skill execution endpoint. |
 | Bounded Agent Runtime | Implemented proposal-only sessions | No tool, MCP, shell, model completion, or memory write from agents. |
 | Aegis Ask | Implemented read-only explanation slice | Answers status/capability/safety questions without execution, memory writes, evidence, verifier success, or grants. |
-| Frontend | Implemented premium Mission Control shell | Mission/Ask/Work/Memory/Capabilities/Advanced/Settings information architecture, English/Turkish UI preference, and Electron window controls; presentation only, no frontend authority. |
+| Frontend | Implemented unified operator workspace | New Task composer with response drafts, History/Projects/Outputs/Memory/Skills navigation, secondary context/tools drawer, English/Turkish UI preference, and Electron window controls; presentation only, no frontend authority. |
 | Historical debt closure | Manifest-only quarantine applied | Unknown-era debt can be quarantined in an ignored manifest store; no journal/evidence/replay repair or archive/compaction execution. |
 
 ## Current Limitations
@@ -197,6 +198,7 @@ scoped by the same proposal contract.
 - [Bounded Agent Runtime](docs/bounded-agent-runtime.md)
 - [Aegis Ask](docs/aegis-ask-product-slice.md)
 - [Premium Mission Control shell](docs/premium-mission-control-shell.md)
+- [Unified Operator Shell](docs/operator-shell.md)
 - [Codex skill pack for Aegis](docs/codex-skill-pack-for-aegis.md)
 
 Historical hackathon and foundation documents remain in `docs/` for traceability

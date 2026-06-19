@@ -91,7 +91,8 @@ Aegis currently includes:
   endpoints
 - static Skill Registry metadata catalog
 - proposal-only Bounded Agent Runtime
-- Next.js/Electron Mission Control frontend
+- Next.js/Electron unified operator workspace with one composer, response
+  drafts, secondary tools, and backend-owned route preview metadata
 
 ## What Aegis Is Not Yet
 
@@ -105,18 +106,19 @@ Aegis is not yet:
 - a vector memory/RAG system
 - a full repo-audit source ingestion platform
 - a CodingAgent mutation platform
-- a finished premium product UI
+- a finished end-to-end operator product with durable conversation lifecycle
+  and complete accessibility coverage
 
 ## Near-Term Product Direction
 
 Near-term product work should prioritize:
 
 - generated drift hygiene and canonical documentation
-- Aegis Ask for read-only explanation and safe next-step planning
+- operator conversation lifecycle and read-only explanation improvements
 - Intent Router / Capability Broker
 - real read-only capability execution
 - Memory Inbox and consent UX
-- premium Mission Control UI
+- keyboard accessibility and broader Electron rendered QA
 - model-assisted explanation through Model Gateway
 - agent-to-skill proposal flow before execution
 - historical evidence/replay debt closure through explicit operator gates

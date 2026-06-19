@@ -195,13 +195,15 @@ plugin execution, model authority, memory write, evidence, verifier success, or
 approval/capability/lease grant. The deterministic router distinguishes Skill
 Registry, Tool Registry, and Plugin Registry questions without model calls.
 
-Frontend / Mission Control Shell: implemented premium product shell with
-Mission, Ask, Work, Memory, Capabilities, Advanced, and Settings surfaces. It
-remains presentation only. The current shell adapts the Stitch Mission
-Workspace design direction into native Aegis components, adds English/Turkish
-UI language selection in Settings, keeps runtime truth visible, and includes
-Electron-owned window controls. Raw diagnostics are available from Advanced
-instead of dominating the first screen.
+Frontend / Operator Workspace: implemented unified product shell centered on a
+single New Task composer and `OperatorResponseDraft`. Primary navigation is
+History, Projects, Outputs, Memory, and Skills; Settings and Advanced remain
+secondary controls. Existing Ask, Work, capability, model, memory, artifact,
+and diagnostic surfaces remain reachable through those destinations and the
+workspace drawer instead of competing as dashboard panels. It remains
+presentation only. English/Turkish UI preferences, Electron-owned window
+controls, backend/fallback route-source labels, runtime truth, and raw debt
+visibility are preserved.
 
 Launcher: implemented baseline launcher surfaces. Launcher cleanup remains
 future work.
@@ -210,9 +212,10 @@ future work.
 
 - Runtime health is warning-level, not green.
 - Raw evidence and replay diagnostics still fail.
-- UI/product experience has a premium Mission Control shell with localized
-  Mission/Settings surfaces and Electron window controls, but deeper product
-  polish and more rendered Electron QA remain useful.
+- UI/product experience has a unified operator workspace with responsive
+  desktop/mobile rendering, localized controls, and Electron window controls,
+  but conversation persistence, keyboard accessibility, and broader Electron
+  state QA remain useful follow-up work.
 - Aegis Ask is implemented as a narrow read-only explanation slice, not an
   execution surface.
 - Full autonomous operation is not implemented.
@@ -265,8 +268,9 @@ Implemented:
 - bounded Agent Runtime proposal sessions
 - read-only ChatGPT bridge and local launcher helpers
 - Aegis Ask read-only explanation slice
-- premium Mission Control shell, Settings language selector, Electron window
-  controls, and capability map
+- unified operator workspace, copy-ready preview artifacts, secondary context
+  drawer, Settings language selector, Electron window controls, and capability
+  map
 
 Planned:
 
@@ -289,7 +293,8 @@ Do not claim:
 
 ## Next Direction
 
-Continue productization after the premium Mission Control shell by improving
-source-specific read-only summaries, capability broker design, Memory Inbox
-workflow, and controlled read-only capability execution without weakening
-runtime truth or approval/evidence/verifier boundaries.
+Continue productization after the unified operator workspace by improving
+conversation lifecycle, keyboard accessibility, source-specific read-only
+summaries, capability broker design, Memory Inbox workflow, and controlled
+read-only capability execution without weakening runtime truth or
+approval/evidence/verifier boundaries.

@@ -26,24 +26,28 @@ This shell is not:
 - verifier success
 - approval, lease, or capability grant
 
-## Navigation Model
+## Current Navigation Model
 
-The default product navigation is:
+The original Mission dashboard has been consolidated into a unified operator
+workspace. The current primary navigation is:
 
-- Mission: calm first screen with Ask entry, runtime truth, trust stack,
-  capability preview, Context Inspector, Approval Gate pattern, and next safe
-  step.
-- Ask: read-only Aegis Ask panel.
-- Work: Aegis Control, governed command runtime, approvals, and timeline
-  surfaces.
-- Memory: consent-aware Memory OS framing and future Memory Inbox direction.
-- Capabilities: user-facing capability map with implemented, read-only,
-  proposal-only, metadata-only, approval-gated, and future-gated labels.
-- Advanced: raw diagnostics, registries, graph, vision/future-gated surfaces,
-  timeline, and runtime console.
-- Settings: local UI preferences, including the English/Turkish language
-  selector. Settings are presentation preferences and do not call models,
-  tools, APIs, memory, or runtime execution.
+- New Task: the primary composer and response-draft workspace.
+- History: the read-only Aegis Ask/history surface.
+- Projects: governed work and project surfaces.
+- Outputs: draft artifact access through the operator workspace.
+- Memory: consent-aware Memory OS framing and lifecycle controls.
+- Skills: capability, skill, and connector metadata.
+
+Settings and Advanced are secondary controls. Existing Ask, Work, Model Hub,
+capability, registry, and diagnostic panels remain reachable through these
+destinations or the workspace drawer; they no longer compete as equal panels
+on the first screen.
+
+`OperatorResponseDraft` is the main output. It presents a copy-ready preview
+body before the compact route metadata. The right context inspector contains
+the process trace, artifact list, and secondary tool drawer. Copying requires
+an explicit user action and does not persist an artifact, write memory, execute
+a tool, or create evidence.
 
 ## Runtime Truth
 
@@ -61,17 +65,21 @@ Mission Home may summarize:
 It must not claim full health when status is warning or unknown. Current
 blockers can be zero while raw evidence/replay debt remains visible.
 
-The Mission Composer includes a presentation-only reasoning mode selector:
+The operator composer includes presentation-only route and safety metadata:
 
-- Deterministic
-- Local model
-- External disabled
+- Auto Mode preview
+- local-first source preference
+- cloud approval boundary
+- no memory write
+- no command execution
 
 These controls do not select a provider, call a model, route context, or grant
 execution permission. They are UI framing for future policy-backed routing.
 
-The Mission screen also includes safety chips for read-only behavior, no tool
-execution, no memory write, and approval-gated action boundaries.
+The route preview prefers the backend-owned deterministic preview endpoint and
+labels a frontend fallback explicitly when the endpoint is unavailable. Both
+paths are preview metadata, not model intelligence, execution permission,
+evidence, verifier success, or approval.
 
 ## Electron Shell
 
@@ -158,8 +166,10 @@ These panels remain presentation surfaces over backend data and projections.
 
 ## Remaining Risks
 
-- The shell is a first product-quality pass, not a full design system rewrite.
+- The shell is a product-quality operator workspace, not a finished design
+  system or durable conversation product.
 - Memory Inbox is framed but not fully implemented.
 - Model Council, External API Broker, Review Board, and Robustness Lab remain
   future work.
-- More rendered QA across Electron and varied runtime states is still useful.
+- Keyboard accessibility, conversation persistence, and more rendered Electron
+  QA across varied runtime states remain useful.
