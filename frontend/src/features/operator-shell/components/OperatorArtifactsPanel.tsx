@@ -1,0 +1,114 @@
+"use client";
+
+import React from 'react';
+import { FileText } from 'lucide-react';
+
+import { StatusBadge } from '@/components/StatusBadge';
+import { dictionaryFor } from '@/i18n';
+import { useOperatorStore } from '@/store/useOperatorStore';
+import { useUIStore } from '@/store/useUIStore';
+import type { OperatorArtifact, OperatorArtifactType } from '@/types/operator';
+
+export const OperatorArtifactsPanel = () => {
+  const language = useUIStore((state) => state.language);
+  const t = dictionaryFor(language).operatorShell;
+  const artifacts = useOperatorStore((state) => state.artifacts);
+  const selectedArtifactId = useOperatorStore((state) => state.selectedArtifactId);
+  const selectArtifact = useOperatorStore((state) => state.selectArtifact);
+  const selected = artifacts.find((item) => item.id === selectedArtifactId) ?? artifacts[0] ?? null;
+
+  return (
+    <section className="rounded-lg border border-white/10 bg-white/[0.045] p-4 shadow-xl shadow-black/15">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-accent">{t.artifactsTitle}</p>
+          <p className="mt-2 text-xs leading-5 text-foreground/50">{t.artifactsCopy}</p>
+        </div>
+        <StatusBadge label={t.previewOnly} tone="info" />
+      </div>
+
+      {artifacts.length === 0 ? (
+        <div className="rounded-md border border-white/10 bg-black/20 p-4">
+          <p className="text-sm font-semibold text-white">{t.noArtifactsTitle}</p>
+          <p className="mt-2 text-xs leading-6 text-foreground/50">{t.noArtifactsCopy}</p>
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {artifacts.map((artifact) => (
+            <button
+              key={artifact.id}
+              type="button"
+              onClick={() => selectArtifact(artifact.id)}
+              className={`rounded-md border p-3 text-left transition-colors ${
+                selected?.id === artifact.id
+                  ? 'border-accent/30 bg-accent/[0.08]'
+                  : 'border-white/10 bg-black/20 hover:border-white/20'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <FileText size={14} className="shrink-0 text-accent" />
+                <span className="min-w-0 break-words text-xs font-semibold text-white">{artifactTitle(artifact.type, t)}</span>
+              </div>
+              <p className="mt-2 line-clamp-2 text-[11px] leading-5 text-foreground/50">{artifact.request}</p>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selected && (
+        <div className="mt-3 rounded-md border border-white/10 bg-black/20 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-white">{artifactTitle(selected.type, t)}</span>
+            <StatusBadge label={t.previewOnly} tone="unknown" />
+          </div>
+          <p className="text-[11px] leading-5 text-foreground/54">{artifactSummary(selected, t)}</p>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {selected.safetyFlags.map((flag) => (
+              <StatusBadge key={flag} label={formatFlag(flag, t)} tone="unknown" />
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
+
+function artifactTitle(type: OperatorArtifactType, t: ReturnType<typeof dictionaryFor>['operatorShell']): string {
+  const labels: Record<OperatorArtifactType, string> = {
+    safe_plan_draft: t.artifactSafePlanDraft,
+    codex_prompt_draft: t.artifactCodexPromptDraft,
+    ui_review_plan: t.artifactUiReviewPlan,
+    research_plan: t.artifactResearchPlan,
+    memory_action_preview: t.artifactMemoryActionPreview,
+    model_routing_summary: t.artifactModelRoutingSummary,
+    command_approval_preview: t.artifactCommandApprovalPreview,
+  };
+  return labels[type];
+}
+
+function artifactSummary(artifact: OperatorArtifact, t: ReturnType<typeof dictionaryFor>['operatorShell']): string {
+  const labels: Record<OperatorArtifactType, string> = {
+    safe_plan_draft: t.artifactSafePlanSummary,
+    codex_prompt_draft: t.artifactCodexPromptSummary,
+    ui_review_plan: t.artifactUiReviewSummary,
+    research_plan: t.artifactResearchPlanSummary,
+    memory_action_preview: t.artifactMemoryActionSummary,
+    model_routing_summary: t.artifactModelRoutingSummaryCopy,
+    command_approval_preview: t.artifactCommandApprovalSummary,
+  };
+  return `${labels[artifact.type]} ${t.artifactRequestPrefix}: "${artifact.request}"`;
+}
+
+function formatFlag(flag: string, t: ReturnType<typeof dictionaryFor>['operatorShell']): string {
+  const labels: Record<string, string> = {
+    no_command_execution: t.noCommandExecution,
+    no_model_call: t.noModelCall,
+    no_cloud_call: t.noCloudCall,
+    no_image_upload: t.noImageUpload,
+    no_memory_write: t.noMemoryWrite,
+    no_evidence: t.noEvidence,
+    no_verifier_success: t.noVerifierSuccess,
+    no_approval_or_permission_grant: t.noApprovalOrPermission,
+  };
+  return labels[flag] ?? flag;
+}

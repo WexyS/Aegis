@@ -3,6 +3,7 @@
 import React from 'react';
 import {
   Box,
+  Compass,
   Maximize2,
   Minimize2,
   Monitor,
@@ -37,6 +38,7 @@ export const Header = () => {
 
       <div className="flex min-w-0 flex-1 items-center justify-center gap-2 lg:justify-start">
         <ControlChip icon={<ShieldCheck size={15} />} label={t.header.localMode} active />
+        <ControlChip icon={<Compass size={15} />} label={t.header.autoModePreview} />
         <ControlChip icon={<Monitor size={15} />} label={t.header.externalApisOff} />
         <ControlChip icon={<Box size={15} />} label={t.header.modelBoundary} />
         <ControlChip
