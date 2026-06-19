@@ -210,7 +210,7 @@ export const ModelHubPanel = ({ language }: { language: Language }) => {
           <h2 className="mt-2 text-xl font-semibold tracking-tight text-white">{t.title}</h2>
           <p className="mt-2 max-w-3xl text-sm leading-7 text-foreground/60">{t.subtitle}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex max-w-full flex-wrap gap-2 xl:justify-end">
           <StatusBadge label={t.localOnly} tone="info" icon={<ShieldCheck size={12} />} />
           <StatusBadge label={t.noCloudFallback} tone="unknown" />
           <StatusBadge label={statusLabel(gatewayStatus, t)} tone={statusTone(gatewayStatus)} />
@@ -266,7 +266,7 @@ export const ModelHubPanel = ({ language }: { language: Language }) => {
 
         <div className="rounded-xl border border-white/10 bg-black/20 p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
+            <div className="min-w-0">
               <h3 className="text-sm font-semibold text-white">{t.userTriggeredActions}</h3>
               <p className="mt-1 text-xs leading-6 text-foreground/52">{t.userTriggeredCopy}</p>
             </div>
@@ -350,9 +350,9 @@ export const ModelHubPanel = ({ language }: { language: Language }) => {
       </div>
 
       <div className="mt-4 rounded-xl border border-warning/20 bg-warning/[0.04] p-4">
-        <div className="flex items-start gap-3">
+        <div className="flex min-w-0 items-start gap-3">
           <AlertTriangle size={17} className="mt-0.5 shrink-0 text-warning" />
-          <p className="text-xs leading-6 text-foreground/58">{t.boundaryCopy}</p>
+          <p className="min-w-0 break-words text-xs leading-6 text-foreground/58">{t.boundaryCopy}</p>
         </div>
       </div>
 
@@ -386,9 +386,9 @@ const ResultBox = ({
     </div>
     <div className="grid gap-1">
       {lines.map((line, index) => (
-        <div key={`${line}-${index}`} className="flex items-center gap-2 text-[11px] text-foreground/50">
+        <div key={`${line}-${index}`} className="flex min-w-0 items-start gap-2 text-[11px] text-foreground/50">
           <CheckCircle2 size={11} className="shrink-0 text-accent" />
-          <span className="break-words">{line}</span>
+          <span className="min-w-0 break-words">{line}</span>
         </div>
       ))}
     </div>

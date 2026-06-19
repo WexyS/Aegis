@@ -26,14 +26,14 @@ export const LocalModelProfilesSection = ({
   return (
     <div className="rounded-xl border border-white/10 bg-black/20 p-4">
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-accent">
             <Cpu size={14} />
             {t.localProfiles}
           </div>
           <p className="mt-2 text-xs leading-6 text-foreground/52">{t.localProfilesCopy}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex max-w-full flex-wrap gap-2 sm:justify-end">
           <StatusBadge label={t.noAutoSwitch} tone="unknown" />
           <StatusBadge label={t.recommendationsOnly} tone="info" />
           <StatusBadge label={t.noEnvWrite} tone="unknown" />
@@ -41,7 +41,7 @@ export const LocalModelProfilesSection = ({
         </div>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-2 lg:grid-cols-2">
         <ModelHubFactRow label={t.targetHardware} value={formatHardware(status)} />
         <ModelHubFactRow label={t.configuredModel} value={modelName} />
         <ModelHubFactRow label={t.matchedProfile} value={activeProfile?.matched_profile_label ?? t.unknown} />
@@ -64,16 +64,16 @@ export const LocalModelProfilesSection = ({
       <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {(status?.local_model_profiles ?? []).map((profile) => (
           <div key={profile.profile_id} className="min-w-0 rounded-lg border border-white/10 bg-white/[0.025] p-3">
-            <div className="flex items-start justify-between gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <h4 className="break-words text-sm font-semibold text-white">{profile.label}</h4>
-                <p className="mt-1 break-words text-[11px] leading-5 text-foreground/48">
+                <p className="mt-1 break-words font-mono text-[11px] leading-5 text-foreground/48">
                   {profile.preferred_model_id_hint}
                 </p>
               </div>
               <StatusBadge label={memoryPressureLabel(profile.memory_pressure, t)} tone={profileTone(profile.memory_pressure)} />
             </div>
-            <p className="mt-2 text-xs leading-5 text-foreground/56">{profile.purpose}</p>
+            <p className="mt-2 break-words text-xs leading-5 text-foreground/56">{profile.purpose}</p>
             <div className="mt-3 flex flex-wrap gap-1.5">
               {profile.default_profile ? <StatusBadge label={t.defaultProfileBadge} tone="info" /> : null}
               {profile.manual_selection_required ? <StatusBadge label={t.manualSelection} tone="warning" /> : null}

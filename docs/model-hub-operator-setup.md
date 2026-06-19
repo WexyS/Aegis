@@ -57,6 +57,8 @@ For the current operator hardware target, NVIDIA RTX 4080 with 12 GB VRAM and
 
 - `qwen/qwen3.5-9b`: fast summaries and low-resource explanations
 - `google/gemma-4-12b`: default balanced proposal profile
+- `qwen/qwen3-vl-8b`: Qwen 3 VL 8B local vision review candidate for
+  screenshots, UI review, visual inspection, and image-grounded reasoning
 - `qwen2.5-coder-14b-instruct`: manual coding review profile
 - `deepseek-r1-distill-qwen-14b`: manual reasoning review profile
 - `gpt-oss-20b`: heavy manual experiment; may spill to RAM/CPU on 12 GB VRAM
@@ -64,6 +66,11 @@ For the current operator hardware target, NVIDIA RTX 4080 with 12 GB VRAM and
 
 The configured model is not live proof. Use LM Studio `/v1/models` or the
 explicit probe path to verify the exact loaded model id.
+
+The Qwen 3 VL 8B profile is metadata only. Screenshots or images require a
+future explicit Vision Input Boundary before automatic image routing exists.
+The profile does not upload images, call a model automatically, grant evidence,
+or make visual output authoritative.
 
 ## External Provider Readiness
 
@@ -89,9 +96,10 @@ $env:AEGIS_GEMINI_API_KEY="<paste-key-in-your-own-shell>"
 $env:AEGIS_GEMINI_MODEL="<future-model-id>"
 ```
 
-These variables are not used to call providers yet in this sprint. They are
-readiness metadata only until a future live External Provider Broker is
-implemented.
+These variables are not used to call providers yet in this sprint. API key
+presence is not authorization, and there is no automatic cloud fallback. They
+are readiness metadata only until a future live External Provider Broker is
+explicitly implemented.
 
 The current External Provider Broker Boundary can preview provider setup and a
 redacted prompt envelope through `POST /model-hub/external-provider-preview`.
@@ -101,6 +109,12 @@ The preview remains blocked and must keep `would_call_provider=false`,
 Future cloud use requires explicit provider enablement, exact provider/model
 selection, prompt preview, cost warning, privacy warning, no secrets, no raw
 logs/journals/evidence/repo dumps by default, and proposal-only output.
+
+## Memory Visibility
+
+Mission Control hides deleted Memory records by default in the normal Memory OS
+list. Deleted records are visible only through the explicit show-deleted audit
+toggle and remain non-active; they do not count as active memory.
 
 ## Disabled Smoke
 

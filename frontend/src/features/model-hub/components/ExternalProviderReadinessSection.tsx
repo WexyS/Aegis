@@ -14,8 +14,8 @@ export const ExternalProviderReadinessSection = ({
   t: ModelHubText;
 }) => (
   <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-    <div className="mb-3 flex items-start justify-between gap-3">
-      <div>
+    <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
         <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-accent">
           <CloudOff size={14} />
           {t.externalReadiness}
@@ -28,7 +28,7 @@ export const ExternalProviderReadinessSection = ({
     <div className="grid gap-2">
       {(status?.external_provider_readiness ?? []).map((provider) => (
         <div key={provider.provider_id} className="min-w-0 rounded-lg border border-white/10 bg-white/[0.025] p-3">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-2">
               <KeyRound size={14} className="shrink-0 text-foreground/45" />
               <span className="min-w-0 break-words text-sm font-semibold text-white">{provider.label}</span>
@@ -47,7 +47,7 @@ export const ExternalProviderReadinessSection = ({
             {provider.cost_warning_required ? <StatusBadge label={t.costWarningRequired} tone="warning" /> : null}
             {provider.privacy_warning_required ? <StatusBadge label={t.privacyWarningRequired} tone="warning" /> : null}
           </div>
-          <p className="mt-2 break-words text-[11px] leading-5 text-foreground/48">
+          <p className="mt-2 max-w-full overflow-x-auto whitespace-nowrap font-mono text-[11px] leading-5 text-foreground/48">
             {provider.expected_env_vars.join(' / ')}
           </p>
         </div>

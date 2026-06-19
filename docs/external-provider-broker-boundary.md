@@ -9,6 +9,10 @@ operator-selected cloud or external model providers. It is not provider
 integration, not cloud routing, not a model call, and not permission to send
 data outside the machine.
 
+Qwen 3 VL 8B is tracked separately as a local vision profile candidate. It does
+not enable automatic screenshot/image routing. Screenshots and images require a
+future explicit Vision Input Boundary before any automatic image path can exist.
+
 ## Scope
 
 This boundary represents:
@@ -37,6 +41,9 @@ The Model Hub may show placeholder commands for:
 These are placeholders only. API key presence is boolean metadata and is never
 authorization, cost acceptance, privacy acceptance, provider health, model
 availability, or execution permission.
+
+Cloud provider usage remains disabled unless a future broker/live-call sprint
+explicitly enables it. No automatic cloud fallback exists.
 
 ## Prompt Preview Boundary
 
@@ -122,6 +129,10 @@ LM Studio/OpenAI-compatible only.
 
 Mode Policy and Orchestrator readiness remain metadata and do not grant cloud
 routing.
+
+Deleted Memory records are hidden by default in the normal Mission Control UI
+and are visible only through an explicit show-deleted audit toggle. Deleted
+records remain non-active and do not grant authority.
 
 ## Intentionally Not Done
 

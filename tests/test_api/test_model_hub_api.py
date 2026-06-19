@@ -101,6 +101,21 @@ async def test_model_hub_status_is_config_only_when_gateway_disabled() -> None:
     assert data["external_provider_broker_boundary"]["ui_env_write_allowed"] is False
     assert data["external_provider_broker_boundary"]["provider_setup_guidance"]
     assert data["local_model_profiles"]
+    vision_profile = next(
+        record for record in data["local_model_profiles"]
+        if record["profile_id"] == "vision_review"
+    )
+    assert vision_profile["preferred_model_id_hint"] == "qwen/qwen3-vl-8b"
+    assert "Qwen 3 VL 8B" in vision_profile["purpose"]
+    assert "automatic_image_upload_disabled" in vision_profile["warnings"]
+    assert "automatic_model_call_disabled" in vision_profile["warnings"]
+    assert vision_profile["default_profile"] is False
+    assert vision_profile["cloud_fallback_allowed"] is False
+    assert vision_profile["authority"] is False
+    assert vision_profile["evidence"] is False
+    assert vision_profile["verifier_success"] is False
+    assert vision_profile["approval_granted"] is False
+    assert vision_profile["capability_lease_granted"] is False
     assert data["external_provider_readiness"]
     assert all(record["cloud_completion_enabled"] is False for record in data["external_provider_readiness"])
     assert all(record["api_key_value_exposed"] is False for record in data["external_provider_readiness"])

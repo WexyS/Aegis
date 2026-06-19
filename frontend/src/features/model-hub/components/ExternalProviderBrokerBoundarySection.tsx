@@ -74,14 +74,14 @@ export const ExternalProviderBrokerBoundarySection = ({
   return (
     <div className="rounded-xl border border-white/10 bg-black/20 p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-accent">
             <ShieldAlert size={14} />
             {t.externalBrokerBoundary}
           </div>
           <p className="mt-2 max-w-3xl text-xs leading-6 text-foreground/52">{t.externalBrokerBoundaryCopy}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex max-w-full flex-wrap gap-2 lg:justify-end">
           <StatusBadge label={t.brokerPreviewOnly} tone="info" />
           <StatusBadge label={t.cloudDisabled} tone="warning" />
           <StatusBadge label={t.keyInputDisabled} tone="unknown" />
@@ -125,8 +125,8 @@ export const ExternalProviderBrokerBoundarySection = ({
         </div>
 
         <div className="rounded-lg border border-accent/15 bg-accent/[0.025] p-3">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
               <div className="flex items-center gap-2 text-xs font-semibold text-white">
                 <Eye size={14} className="text-accent" />
                 {t.providerPromptPreview}
@@ -246,18 +246,20 @@ const ProviderSetupCard = ({
   t: ModelHubText;
 }) => (
   <div className="rounded-md border border-white/10 bg-black/20 p-2.5">
-    <div className="mb-2 flex items-center justify-between gap-2">
+    <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <span className="min-w-0 break-words text-xs font-semibold text-white">{provider.label}</span>
       <StatusBadge
         label={provider.api_key_present ? t.keyPresentCallsDisabled : t.keyMissing}
         tone={provider.api_key_present ? 'warning' : 'unknown'}
       />
     </div>
-    <p className="break-all text-[11px] leading-5 text-foreground/50">
-      {t.apiKeyPlaceholder}: {provider.api_key_placeholder}
+    <p className="min-w-0 text-[11px] leading-5 text-foreground/50">
+      <span>{t.apiKeyPlaceholder}: </span>
+      <span className="break-words font-mono">{provider.api_key_placeholder}</span>
     </p>
-    <p className="break-all text-[11px] leading-5 text-foreground/50">
-      {t.modelPlaceholder}: {provider.model_placeholder}
+    <p className="min-w-0 text-[11px] leading-5 text-foreground/50">
+      <span>{t.modelPlaceholder}: </span>
+      <span className="break-words font-mono">{provider.model_placeholder}</span>
     </p>
   </div>
 );
@@ -270,7 +272,7 @@ const PreviewResult = ({
   t: ModelHubText;
 }) => (
   <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.025] p-3">
-    <div className="mb-2 flex items-center justify-between gap-3">
+    <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <h4 className="text-xs font-semibold text-white">{t.previewResult}</h4>
       <StatusBadge label={preview.status} tone="warning" />
     </div>
@@ -306,7 +308,7 @@ const PreviewList = ({
 }) => (
   <div>
     <span className="font-semibold text-foreground/70">{title}: </span>
-    <span>{items.length ? items.map(formatToken).join(', ') : t.none}</span>
+    <span className="break-words">{items.length ? items.map(formatToken).join(', ') : t.none}</span>
   </div>
 );
 

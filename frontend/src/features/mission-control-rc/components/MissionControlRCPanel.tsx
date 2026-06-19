@@ -57,6 +57,7 @@ export const MissionControlRCPanel = () => {
   const [selectedReport, setSelectedReport] = React.useState<AutoPilotReport | null>(null);
   const [memories, setMemories] = React.useState<MemoryItem[]>([]);
   const [memorySearch, setMemorySearch] = React.useState('');
+  const [showDeletedMemories, setShowDeletedMemories] = React.useState(false);
   const [manualMemory, setManualMemory] = React.useState('');
   const [manualScope, setManualScope] = React.useState('session');
   const [manualSensitivity, setManualSensitivity] = React.useState('private');
@@ -82,12 +83,46 @@ export const MissionControlRCPanel = () => {
     }
   }, [selectedReport]);
 
+  const fetchMemoryList = React.useCallback(async ({
+    includeDeleted = showDeletedMemories,
+    search = memorySearch,
+  }: {
+    includeDeleted?: boolean;
+    search?: string;
+  } = {}) => {
+    const keyword = search.trim();
+    if (!keyword) {
+      return listMemories(includeDeleted ? { include_deleted: true } : { include_deleted: false });
+    }
+    if (!includeDeleted) {
+      return searchMemories({ keyword, include_sensitive: true });
+    }
+
+    const response = await listMemories({ include_deleted: true });
+    const needle = keyword.toLowerCase();
+    const memoriesForAudit = (response.memories ?? []).filter((memory) => memoryMatchesSearch(memory, needle));
+    return {
+      ...response,
+      memories: memoriesForAudit,
+      result_count: memoriesForAudit.length,
+    };
+  }, [memorySearch, showDeletedMemories]);
+
   const refreshMemories = React.useCallback(async () => {
-    const response = memorySearch.trim()
-      ? await searchMemories({ keyword: memorySearch.trim(), include_sensitive: true })
-      : await listMemories({ include_deleted: true });
+    const response = await fetchMemoryList();
     setMemories(response.memories ?? []);
-  }, [memorySearch]);
+  }, [fetchMemoryList]);
+
+  const toggleDeletedMemories = React.useCallback(async (showDeleted: boolean) => {
+    setShowDeletedMemories(showDeleted);
+    setError(null);
+    try {
+      const response = await fetchMemoryList({ includeDeleted: showDeleted });
+      setMemories(response.memories ?? []);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, [fetchMemoryList]);
 
   const refreshSessions = React.useCallback(async () => {
     const response = await fetchSocietySessions();
@@ -103,7 +138,7 @@ export const MissionControlRCPanel = () => {
       try {
         const [reportList, memoryList, sessionList] = await Promise.all([
           fetchAutoPilotReports(),
-          listMemories({ include_deleted: true }),
+          listMemories({ include_deleted: false }),
           fetchSocietySessions(),
         ]);
         if (cancelled) return;
@@ -296,6 +331,8 @@ export const MissionControlRCPanel = () => {
               memories={memories}
               search={memorySearch}
               setSearch={setMemorySearch}
+              showDeleted={showDeletedMemories}
+              onToggleDeleted={toggleDeletedMemories}
               manualMemory={manualMemory}
               setManualMemory={setManualMemory}
               manualScope={manualScope}
@@ -571,6 +608,8 @@ const MemoryPanel = ({
   memories,
   search,
   setSearch,
+  showDeleted,
+  onToggleDeleted,
   manualMemory,
   setManualMemory,
   manualScope,
@@ -591,6 +630,8 @@ const MemoryPanel = ({
   memories: MemoryItem[];
   search: string;
   setSearch: (value: string) => void;
+  showDeleted: boolean;
+  onToggleDeleted: (value: boolean) => void;
   manualMemory: string;
   setManualMemory: (value: string) => void;
   manualScope: string;
@@ -615,7 +656,7 @@ const MemoryPanel = ({
       <SmallInput label="repository_ref" value={repositoryRef} onChange={setRepositoryRef} />
       <SmallInput label="session_ref" value={sessionRef} onChange={setSessionRef} />
     </div>
-    <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+    <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
       <input
         value={search}
         onChange={(event) => setSearch(event.target.value)}
@@ -623,6 +664,15 @@ const MemoryPanel = ({
         className="rounded-md border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-foreground/80 outline-none focus:border-accent/50"
       />
       <IconButton label="Search/List" icon={<Search size={14} />} onClick={onRefresh} />
+      <label className="inline-flex min-h-[2.25rem] items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.035] px-3 text-[11px] font-bold uppercase tracking-wider text-foreground/58 transition-colors hover:border-emerald-300/30 hover:text-emerald-200">
+        <input
+          type="checkbox"
+          checked={showDeleted}
+          onChange={(event) => void onToggleDeleted(event.target.checked)}
+          className="h-3.5 w-3.5 accent-emerald-300"
+        />
+        Show deleted
+      </label>
     </div>
     <div className="mt-3 grid gap-2">
       <textarea
@@ -638,7 +688,7 @@ const MemoryPanel = ({
       </div>
     </div>
     <BoundaryNotice>
-      Candidate memory is not active memory. Active memory is not authority and does not grant permission.
+      Candidate memory is not active memory. Deleted records are hidden by default and only shown for explicit audit review.
     </BoundaryNotice>
     <div className="mt-3 space-y-2">
       {memories.length === 0 ? (
@@ -935,6 +985,21 @@ function toneForMemoryStatus(status: string): StatusToneName {
   if (status === 'proposed') return 'warning';
   if (status === 'deleted' || status === 'rejected') return 'danger';
   return 'unknown';
+}
+
+function memoryMatchesSearch(memory: MemoryItem, needle: string): boolean {
+  return [
+    memory.id,
+    memory.type,
+    memory.content,
+    memory.content_summary,
+    memory.scope,
+    memory.status,
+    memory.sensitivity,
+    memory.project_ref,
+    memory.repository_ref,
+    memory.session_ref,
+  ].some((value) => String(value ?? '').toLowerCase().includes(needle));
 }
 
 function toneText(tone: StatusToneName): string {

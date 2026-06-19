@@ -19,6 +19,7 @@ def test_deterministic_local_model_profiles_exist() -> None:
     assert set(profiles) == {
         "fast_summary",
         "default_proposal",
+        "vision_review",
         "coding_review",
         "reasoning_review",
         "heavy_experiment",
@@ -36,6 +37,7 @@ def test_profile_hints_and_resource_guardrails_match_operator_hardware() -> None
     assert guardrails["system_ram_gb_target"] == 32
     assert guardrails["expected_local_server"] == "http://127.0.0.1:1234/v1"
     assert profiles["default_proposal"]["preferred_model_id_hint"] == "google/gemma-4-12b"
+    assert profiles["vision_review"]["preferred_model_id_hint"] == "qwen/qwen3-vl-8b"
     assert profiles["fast_summary"]["preferred_model_id_hint"] == "qwen/qwen3.5-9b"
     assert profiles["coding_review"]["preferred_model_id_hint"] == "qwen2.5-coder-14b-instruct"
     assert profiles["reasoning_review"]["preferred_model_id_hint"] == "deepseek-r1-distill-qwen-14b"
@@ -56,6 +58,12 @@ def test_profile_budget_and_selection_policy() -> None:
     assert profiles["default_proposal"]["recommended_max_input_chars"] == 4000
     assert profiles["default_proposal"]["recommended_max_output_tokens"] == 384
     assert profiles["default_proposal"]["recommended_timeout_seconds"] == 30
+
+    assert profiles["vision_review"]["default_profile"] is False
+    assert profiles["vision_review"]["manual_selection_required"] is True
+    assert profiles["vision_review"]["memory_pressure"] == "medium_high"
+    assert profiles["vision_review"]["recommended_max_input_chars"] == 3000
+    assert profiles["vision_review"]["recommended_timeout_seconds"] == 45
 
     assert profiles["coding_review"]["manual_selection_required"] is True
     assert profiles["coding_review"]["memory_pressure"] == "medium_high"
@@ -88,8 +96,45 @@ def test_all_local_profiles_are_non_authority_and_local_first() -> None:
         assert profile["capability_lease_granted"] is False
 
 
+def test_vision_review_profile_is_local_proposal_only_boundary_metadata() -> None:
+    profiles = _profiles_by_id()
+    profile = profiles["vision_review"]
+    searchable_metadata = " ".join(
+        [
+            str(profile["label"]),
+            str(profile["purpose"]),
+            str(profile["preferred_model_id_hint"]),
+            " ".join(profile["warnings"]),
+            " ".join(profile["limitations"]),
+            " ".join(profile["operator_steps"]),
+        ]
+    )
+
+    assert "Qwen 3 VL 8B" in searchable_metadata
+    assert "screenshot" in searchable_metadata
+    assert "visual inspection" in searchable_metadata
+    assert "image-grounded reasoning" in searchable_metadata
+    assert profile["default_profile"] is False
+    assert recommended_default_profile_id() == "default_proposal"
+    assert profile["eligible_for_completion"] is True
+    assert profile["eligible_for_rerank"] is False
+    assert profile["cloud_fallback_allowed"] is False
+    assert profile["execution_permission"] == LOCAL_MODEL_PROFILE_EXECUTION_PERMISSION
+    assert profile["authority"] is False
+    assert profile["model_output_is_truth"] is False
+    assert profile["evidence"] is False
+    assert profile["verifier_success"] is False
+    assert profile["approval_granted"] is False
+    assert profile["capability_lease_granted"] is False
+    assert "automatic_image_upload_disabled" in profile["warnings"]
+    assert "automatic_model_call_disabled" in profile["warnings"]
+    assert "vision_input_requires_explicit_future_boundary" in profile["warnings"]
+    assert "no_authority_evidence_verifier_approval_permission_or_execution_granted" in profile["limitations"]
+
+
 def test_known_model_profile_matching_is_metadata_only() -> None:
     assert match_configured_model_profile("google/gemma-4-12b")["matched_profile_id"] == "default_proposal"
+    assert match_configured_model_profile("Qwen/Qwen3-VL-8B-Instruct")["matched_profile_id"] == "vision_review"
     assert match_configured_model_profile("mradermacher/qwen2.5-coder-14b-instruct-q4_k_m")[
         "matched_profile_id"
     ] == "coding_review"
