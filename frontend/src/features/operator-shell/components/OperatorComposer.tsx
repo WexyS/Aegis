@@ -36,7 +36,7 @@ export const OperatorComposer = () => {
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
-              submitPreviewRequest();
+              void submitPreviewRequest();
             }
           }}
           rows={6}
@@ -55,7 +55,7 @@ export const OperatorComposer = () => {
           </div>
           <button
             type="button"
-            onClick={() => submitPreviewRequest()}
+            onClick={() => { void submitPreviewRequest(); }}
             disabled={!composerText.trim()}
             className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-5 text-sm font-semibold text-background transition-colors hover:bg-accent-light disabled:cursor-not-allowed disabled:opacity-45"
           >

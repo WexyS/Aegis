@@ -50,7 +50,7 @@ const TraceRow = ({ item, decision }: { item: OperatorTraceItem; decision: Opera
           <span className="text-xs font-semibold text-white">{traceLabel(item.step, t)}</span>
           <StatusBadge label={traceStatusLabel(item.status, t)} tone={traceTone(item.status)} />
         </div>
-        <p className="mt-1 break-words text-[11px] leading-5 text-foreground/50">{traceDetail(item.step, decision, t)}</p>
+        <p className="mt-1 break-words text-[11px] leading-5 text-foreground/50">{item.detail ?? traceDetail(item.step, decision, t)}</p>
       </div>
     </div>
   );

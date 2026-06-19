@@ -39,8 +39,9 @@ def test_operator_store_false_safety_flags_are_all_defined() -> None:
 
 def test_operator_store_does_not_import_or_call_execution_surfaces() -> None:
     store = _read("store/useOperatorStore.ts")
+    assert "previewOperatorRoute" in store
+    assert "import { previewOperatorRoute } from '@/lib/api';" in store
     prohibited = (
-        "@/lib/api",
         "sendCommand",
         "askAegis",
         "previewExternalProviderBroker",
@@ -73,8 +74,12 @@ def test_operator_artifacts_and_trace_remain_preview_only() -> None:
             "no_command_execution",
             "no_model_call",
             "no_cloud_call",
+            "no_external_provider_call",
+            "no_kimi_moonshot_call",
             "no_image_upload",
+            "no_video_upload",
             "no_memory_write",
+            "no_tool_call",
             "no_evidence",
             "no_verifier_success",
             "no_approval_or_permission_grant",
@@ -101,11 +106,12 @@ def test_route_preview_is_deterministic_preview_metadata() -> None:
     route_preview = _read("features/operator-shell/components/OperatorRoutePreview.tsx")
     en = _read("i18n/en.ts")
 
-    assert "deterministicPreview" in route_preview
+    assert "previewSourceBackend" in route_preview
+    assert "previewSourceFallback" in route_preview
     assert "routePreviewSafetyCopy" in route_preview
-    assert "deterministic frontend UX metadata" in en
-    assert "not model intelligence" in en
-    assert "not backend authority" in en
+    assert "deterministic route metadata" in en
+    assert "backend-owned deterministic preview contract" in en
+    assert "frontend fallback preview" in en
 
 
 def test_composer_attachment_and_voice_are_placeholders_not_uploads() -> None:
@@ -190,5 +196,9 @@ def test_store_keeps_deterministic_preview_builder_frontend_local() -> None:
     assert "classifyOperatorIntents" in store
     assert "chooseRouteId" in store
     assert "stablePreviewId" in store
+    assert "backend_contract" in store
+    assert "frontend_fallback" in store
+    assert "backendPreviewAvailable" in store
+    assert "backendPreviewError" in store
     assert re.search(r"cloudNeeded:\s*false", store)
     assert "permissionMode: 'safe_preview'" in store

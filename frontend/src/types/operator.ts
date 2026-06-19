@@ -49,24 +49,37 @@ export type OperatorPermissionMode = 'safe_preview';
 export interface OperatorModelCandidate {
   profileId: string;
   modelHint: string;
+  selectedForCall?: boolean;
+  proposalOnly?: boolean;
 }
 
 export interface OperatorTraceItem {
   id: string;
   step: OperatorTraceStep;
   status: OperatorTraceStatus;
+  detail?: string;
 }
 
 export interface OperatorArtifact {
   id: string;
   type: OperatorArtifactType;
   status: 'draft' | 'preview-only';
+  title?: string;
   request: string;
+  summary?: string;
   safetyFlags: string[];
 }
 
+export type OperatorPreviewSource = 'backend_contract' | 'frontend_fallback';
+
 export interface OperatorDecisionPreview {
   id: string;
+  contract?: string;
+  status?: string;
+  routerMode?: string;
+  previewSource: OperatorPreviewSource;
+  backendPreviewAvailable: boolean;
+  backendPreviewError: string | null;
   request: string;
   intents: OperatorIntent[];
   primaryIntent: OperatorIntent;
@@ -91,4 +104,53 @@ export interface OperatorDecisionPreview {
     permissionGranted: false;
     backendAuthority: false;
   };
+}
+
+export interface OperatorBackendRoutePreview {
+  contract: string;
+  status: string;
+  router_mode: string;
+  request: string;
+  preview_id: string;
+  request_id: string;
+  intents: OperatorIntent[];
+  primary_intent: OperatorIntent;
+  route_id: OperatorRouteId;
+  model_candidates: Array<{
+    profile_id: string;
+    model_hint: string;
+    selected_for_call: boolean;
+    proposal_only: boolean;
+  }>;
+  permission_mode: OperatorPermissionMode;
+  cloud_needed: boolean;
+  approval_needed: boolean;
+  memory_action_proposed: boolean;
+  vision_boundary_required: boolean;
+  research_boundary_required: boolean;
+  artifact: {
+    id: string;
+    type: OperatorArtifactType;
+    status: 'preview_only' | 'blocked_preview';
+    title: string;
+    request: string;
+    summary: string;
+    safety_flags: string[];
+  };
+  trace_items: Array<{
+    id: string;
+    step: OperatorTraceStep;
+    status: OperatorTraceStatus;
+    detail: string;
+  }>;
+  command_execution_performed: false;
+  model_call_performed: false;
+  cloud_call_performed: false;
+  image_upload_performed: false;
+  memory_write_performed: false;
+  evidence_created: false;
+  verifier_success: false;
+  approval_granted: false;
+  permission_granted: false;
+  authority: false;
 }

@@ -47,7 +47,7 @@ export const OperatorArtifactsPanel = () => {
             >
               <div className="flex items-center gap-2">
                 <FileText size={14} className="shrink-0 text-accent" />
-                <span className="min-w-0 break-words text-xs font-semibold text-white">{artifactTitle(artifact.type, t)}</span>
+                <span className="min-w-0 break-words text-xs font-semibold text-white">{artifact.title ?? artifactTitle(artifact.type, t)}</span>
               </div>
               <p className="mt-2 line-clamp-2 text-[11px] leading-5 text-foreground/50">{artifact.request}</p>
             </button>
@@ -58,10 +58,10 @@ export const OperatorArtifactsPanel = () => {
       {selected && (
         <div className="mt-3 rounded-md border border-white/10 bg-black/20 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-white">{artifactTitle(selected.type, t)}</span>
+            <span className="text-xs font-semibold text-white">{selected.title ?? artifactTitle(selected.type, t)}</span>
             <StatusBadge label={t.previewOnly} tone="unknown" />
           </div>
-          <p className="text-[11px] leading-5 text-foreground/54">{artifactSummary(selected, t)}</p>
+          <p className="text-[11px] leading-5 text-foreground/54">{selected.summary ?? artifactSummary(selected, t)}</p>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {selected.safetyFlags.map((flag) => (
               <StatusBadge key={flag} label={formatFlag(flag, t)} tone="unknown" />
@@ -104,8 +104,12 @@ function formatFlag(flag: string, t: ReturnType<typeof dictionaryFor>['operatorS
     no_command_execution: t.noCommandExecution,
     no_model_call: t.noModelCall,
     no_cloud_call: t.noCloudCall,
+    no_external_provider_call: t.noExternalProviderCall,
+    no_kimi_moonshot_call: t.noKimiMoonshotCall,
     no_image_upload: t.noImageUpload,
+    no_video_upload: t.noVideoUpload,
     no_memory_write: t.noMemoryWrite,
+    no_tool_call: t.noToolCall,
     no_evidence: t.noEvidence,
     no_verifier_success: t.noVerifierSuccess,
     no_approval_or_permission_grant: t.noApprovalOrPermission,

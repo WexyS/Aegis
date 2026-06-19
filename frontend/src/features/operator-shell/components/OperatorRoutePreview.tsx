@@ -37,7 +37,20 @@ export const OperatorRoutePreview = ({ decision }: { decision: OperatorDecisionP
           <h2 className="mt-2 text-lg font-semibold text-white">{formatRoute(decision.routeId, t)}</h2>
           <p className="mt-2 break-words text-xs leading-6 text-foreground/58">{decision.request}</p>
         </div>
-        <StatusBadge label={t.deterministicPreview} tone="info" />
+        <div className="flex flex-col items-start gap-2 lg:items-end">
+          <StatusBadge
+            label={decision.previewSource === 'backend_contract' ? t.previewSourceBackend : t.previewSourceFallback}
+            tone={decision.previewSource === 'backend_contract' ? 'success' : 'warning'}
+          />
+          <div className="flex max-w-sm items-start gap-2 rounded-md border border-white/10 bg-black/20 p-2">
+            <LockKeyhole size={13} className="mt-0.5 shrink-0 text-accent" />
+            <p className="text-[11px] leading-5 text-foreground/55">
+              {decision.previewSource === 'backend_contract'
+                ? t.previewSourceBackendCopy
+                : `${t.previewSourceFallbackCopy}${decision.backendPreviewError ? ` ${decision.backendPreviewError}` : ''}`}
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">

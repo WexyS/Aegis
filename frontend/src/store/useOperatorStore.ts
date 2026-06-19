@@ -1,12 +1,15 @@
 import { create } from 'zustand';
 
+import { previewOperatorRoute } from '@/lib/api';
 import type {
   OperatorArtifact,
   OperatorArtifactType,
+  OperatorBackendRoutePreview,
   OperatorDecisionPreview,
   OperatorIntent,
   OperatorModelCandidate,
   OperatorPermissionMode,
+  OperatorPreviewSource,
   OperatorRouteId,
   OperatorTraceItem,
 } from '@/types/operator';
@@ -18,10 +21,13 @@ type OperatorStoreState = {
   artifacts: OperatorArtifact[];
   selectedArtifactId: string | null;
   permissionModePreview: OperatorPermissionMode;
+  previewSource: OperatorPreviewSource;
+  backendPreviewAvailable: boolean;
+  backendPreviewError: string | null;
   setComposerText: (value: string) => void;
   clearOperatorSession: () => void;
   selectArtifact: (artifactId: string) => void;
-  submitPreviewRequest: (request?: string) => OperatorDecisionPreview | null;
+  submitPreviewRequest: (request?: string) => Promise<OperatorDecisionPreview | null>;
 };
 
 const FALSE_SAFETY_FLAGS = {
@@ -41,8 +47,12 @@ const NO_ACTION_FLAGS = [
   'no_command_execution',
   'no_model_call',
   'no_cloud_call',
+  'no_external_provider_call',
+  'no_kimi_moonshot_call',
   'no_image_upload',
+  'no_video_upload',
   'no_memory_write',
+  'no_tool_call',
   'no_evidence',
   'no_verifier_success',
   'no_approval_or_permission_grant',
@@ -55,6 +65,9 @@ export const useOperatorStore = create<OperatorStoreState>((set, get) => ({
   artifacts: [],
   selectedArtifactId: null,
   permissionModePreview: 'safe_preview',
+  previewSource: 'frontend_fallback',
+  backendPreviewAvailable: false,
+  backendPreviewError: null,
   setComposerText: (value) => set({ composerText: value }),
   clearOperatorSession: () => set({
     composerText: '',
@@ -62,32 +75,77 @@ export const useOperatorStore = create<OperatorStoreState>((set, get) => ({
     traceItems: [],
     artifacts: [],
     selectedArtifactId: null,
+    previewSource: 'frontend_fallback',
+    backendPreviewAvailable: false,
+    backendPreviewError: null,
   }),
   selectArtifact: (artifactId) => set({ selectedArtifactId: artifactId }),
-  submitPreviewRequest: (request) => {
+  submitPreviewRequest: async (request) => {
     const text = (request ?? get().composerText).trim();
     if (!text) return null;
-    const decision = buildDecisionPreview(text);
-    const artifact = buildArtifact(decision);
-    const traceItems = buildTraceItems(decision);
+    let decision: OperatorDecisionPreview;
+    let artifact: OperatorArtifact;
+    let traceItems: OperatorTraceItem[];
+
+    try {
+      const backendPreview = await previewOperatorRoute(text);
+      decision = mapBackendDecisionPreview(backendPreview);
+      artifact = mapBackendArtifact(backendPreview);
+      traceItems = backendPreview.trace_items.map((item) => ({
+        id: item.id,
+        step: item.step,
+        status: item.status,
+        detail: item.detail,
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Backend preview unavailable.';
+      decision = buildDecisionPreview(text, {
+        previewSource: 'frontend_fallback',
+        backendPreviewAvailable: false,
+        backendPreviewError: message,
+      });
+      artifact = buildArtifact(decision);
+      traceItems = buildTraceItems(decision);
+    }
+
     set((state) => ({
       composerText: text,
       lastDecision: decision,
       traceItems,
       artifacts: [artifact, ...state.artifacts.filter((item) => item.id !== artifact.id)].slice(0, 6),
       selectedArtifactId: artifact.id,
+      previewSource: decision.previewSource,
+      backendPreviewAvailable: decision.backendPreviewAvailable,
+      backendPreviewError: decision.backendPreviewError,
     }));
     return decision;
   },
 }));
 
-function buildDecisionPreview(request: string): OperatorDecisionPreview {
+function buildDecisionPreview(
+  request: string,
+  source: {
+    previewSource: OperatorPreviewSource;
+    backendPreviewAvailable: boolean;
+    backendPreviewError: string | null;
+  } = {
+    previewSource: 'frontend_fallback',
+    backendPreviewAvailable: false,
+    backendPreviewError: null,
+  },
+): OperatorDecisionPreview {
   const intents = classifyOperatorIntents(request);
   const primaryIntent = choosePrimaryIntent(intents);
   const routeId = chooseRouteId(intents, primaryIntent);
   const id = `operator-preview-${stablePreviewId(`${routeId}:${request}`)}`;
   return {
     id,
+    contract: 'aegis-operator-auto-router-preview',
+    status: 'preview_only',
+    routerMode: 'deterministic_preview',
+    previewSource: source.previewSource,
+    backendPreviewAvailable: source.backendPreviewAvailable,
+    backendPreviewError: source.backendPreviewError,
     request,
     intents,
     primaryIntent,
@@ -101,6 +159,59 @@ function buildDecisionPreview(request: string): OperatorDecisionPreview {
     artifactId: `${id}-artifact`,
     permissionMode: 'safe_preview',
     safety: FALSE_SAFETY_FLAGS,
+  };
+}
+
+function mapBackendDecisionPreview(backendPreview: OperatorBackendRoutePreview): OperatorDecisionPreview {
+  return {
+    id: backendPreview.preview_id,
+    contract: backendPreview.contract,
+    status: backendPreview.status,
+    routerMode: backendPreview.router_mode,
+    previewSource: 'backend_contract',
+    backendPreviewAvailable: true,
+    backendPreviewError: null,
+    request: backendPreview.request,
+    intents: backendPreview.intents,
+    primaryIntent: backendPreview.primary_intent,
+    routeId: backendPreview.route_id,
+    modelCandidates: backendPreview.model_candidates.map((candidate) => ({
+      profileId: candidate.profile_id,
+      modelHint: candidate.model_hint,
+      selectedForCall: candidate.selected_for_call,
+      proposalOnly: candidate.proposal_only,
+    })),
+    cloudNeeded: backendPreview.cloud_needed,
+    approvalNeeded: backendPreview.approval_needed,
+    memoryActionProposed: backendPreview.memory_action_proposed,
+    visionBoundaryRequired: backendPreview.vision_boundary_required,
+    researchBoundaryRequired: backendPreview.research_boundary_required,
+    artifactId: backendPreview.artifact.id,
+    permissionMode: backendPreview.permission_mode,
+    safety: {
+      commandExecutionPerformed: backendPreview.command_execution_performed,
+      modelCallPerformed: backendPreview.model_call_performed,
+      cloudCallPerformed: backendPreview.cloud_call_performed,
+      imageUploadPerformed: backendPreview.image_upload_performed,
+      memoryWritePerformed: backendPreview.memory_write_performed,
+      evidenceCreated: backendPreview.evidence_created,
+      verifierSuccessCreated: backendPreview.verifier_success,
+      approvalGranted: backendPreview.approval_granted,
+      permissionGranted: backendPreview.permission_granted,
+      backendAuthority: backendPreview.authority,
+    },
+  };
+}
+
+function mapBackendArtifact(backendPreview: OperatorBackendRoutePreview): OperatorArtifact {
+  return {
+    id: backendPreview.artifact.id,
+    type: backendPreview.artifact.type,
+    status: 'preview-only',
+    title: backendPreview.artifact.title,
+    request: backendPreview.artifact.request,
+    summary: backendPreview.artifact.summary,
+    safetyFlags: backendPreview.artifact.safety_flags,
   };
 }
 

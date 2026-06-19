@@ -23,11 +23,30 @@ import {
   RepoAuditDryRunProjection,
   ToolRegistrySnapshot,
 } from '@/types/runtime';
+import type { OperatorBackendRoutePreview } from '@/types/operator';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:8400';
 
 export function getVisionStreamUrl(): string {
   return new URL('/vision/stream', API_URL).toString();
+}
+
+export async function previewOperatorRoute(request: string): Promise<OperatorBackendRoutePreview> {
+  const url = new URL('/operator/preview-route', API_URL);
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({ request }),
+  });
+  const body = await parseJsonBody<OperatorBackendRoutePreview | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Operator route preview failed: ${response.status}`));
+  }
+  if (!body || !('contract' in body)) {
+    throw new Error('Operator route preview returned no contract.');
+  }
+  return body as OperatorBackendRoutePreview;
 }
 
 export async function askAegis(payload: AskRequest): Promise<AskResponse> {

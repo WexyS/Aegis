@@ -141,6 +141,10 @@ def create_app():
     from aegis.api.routes_ask import router as ask_router
     fastapi_app.include_router(ask_router)
 
+    # Backend-owned operator Auto Mode route preview contract
+    from aegis.api.routes_operator import router as operator_router
+    fastapi_app.include_router(operator_router)
+
     # Wrap FastAPI with Socket.IO ASGI middleware
     asgi_app = create_socketio_app(fastapi_app)
 
