@@ -37,6 +37,8 @@ The Model Hub may show placeholder commands for:
 - OpenAI: `AEGIS_OPENAI_API_KEY`, `AEGIS_OPENAI_MODEL`
 - Anthropic: `AEGIS_ANTHROPIC_API_KEY`, `AEGIS_ANTHROPIC_MODEL`
 - Gemini: `AEGIS_GEMINI_API_KEY`, `AEGIS_GEMINI_MODEL`
+- Moonshot / Kimi: `AEGIS_MOONSHOT_API_KEY`, `AEGIS_MOONSHOT_MODEL`,
+  optional `AEGIS_MOONSHOT_BASE_URL`
 
 These are placeholders only. API key presence is boolean metadata and is never
 authorization, cost acceptance, privacy acceptance, provider health, model
@@ -44,6 +46,12 @@ availability, or execution permission.
 
 Cloud provider usage remains disabled unless a future broker/live-call sprint
 explicitly enables it. No automatic cloud fallback exists.
+
+Moonshot / Kimi is an external cloud provider readiness candidate, not a local
+LM Studio profile in this Aegis setup. Suggested future model ids are
+`kimi-k2.7-code` and `kimi-k2.7-code-highspeed`. Multimodal or tool support in
+any provider does not grant Aegis vision, video, file upload, tool execution, or
+computer-control authority.
 
 ## Prompt Preview Boundary
 
@@ -62,6 +70,12 @@ The endpoint:
 The preview is not permission. Even when all acknowledgements are present, the
 current result remains blocked until a future External Provider Broker
 implementation exists.
+
+Future live Kimi or Moonshot use requires a scoped External Provider Live
+Broker sprint with prompt preview, cost warning, privacy warning, no-secret
+confirmation, explicit operator opt-in, and proposal-only output validation. No
+Kimi cloud call, automatic image/video upload, automatic tool call, or automatic
+cloud fallback is enabled by this document or readiness metadata.
 
 ## Required Future Acknowledgements
 

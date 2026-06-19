@@ -91,7 +91,7 @@ export const en = {
     requiredBeforeAction: 'required before action',
     notGranted: 'not granted',
     notCreated: 'not created',
-    routePreviewSafetyCopy: 'This preview is deterministic frontend UX metadata. It is not model intelligence, backend authority, execution, evidence, verifier success, approval, permission, or memory.',
+    routePreviewSafetyCopy: 'This preview is deterministic frontend UX metadata. It is not model intelligence, not backend authority, not execution, evidence, verifier success, approval, permission, or memory.',
     processTraceTitle: 'Process trace',
     processTraceCopy: 'Summarized operational metadata, not hidden reasoning.',
     processTraceSafetyCopy: 'No command, model, memory, cloud, evidence, verifier, or approval action was performed by this preview.',

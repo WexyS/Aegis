@@ -15,6 +15,11 @@ Auto Mode preview is deterministic frontend-only UX metadata. It uses simple
 keyword matching to preview an intent, route, model profile candidate, boundary
 requirements, process trace, and draft artifact.
 
+The route preview recognizes model/provider wording such as LM Studio, Qwen,
+Gemma, DeepSeek, OpenRouter, Moonshot, and Kimi as Model Hub review metadata.
+That classification is not model intelligence, not backend authority, and not
+provider selection.
+
 The preview does not:
 
 - execute commands
@@ -25,6 +30,10 @@ The preview does not:
 - create evidence
 - create verifier success
 - grant approval, permission, leases, or authority
+
+Attachment, voice, screenshot, image, and vision controls in this shell remain
+placeholders or boundary previews. They do not upload files, call models, call
+providers, or perform computer/tool actions.
 
 Process trace is summarized operational metadata, not hidden reasoning.
 Artifacts are preview-only frontend drafts and are not persisted to backend.

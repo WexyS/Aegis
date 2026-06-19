@@ -16,6 +16,9 @@ class ExternalProviderDefinition:
     intended_use: str
     api_key_env_var: str
     model_env_var: str
+    base_url_env_var: str | None = None
+    default_base_url_guidance: str | None = None
+    suggested_models: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -26,6 +29,8 @@ class ExternalProviderReadiness:
     status: str
     intended_use: str
     expected_env_vars: tuple[str, ...]
+    default_base_url_guidance: str | None
+    suggested_models: tuple[str, ...]
     api_key_present: bool
     api_key_value_exposed: bool
     cloud_completion_enabled: bool
@@ -42,10 +47,18 @@ class ExternalProviderReadiness:
     output_authority: bool
     output_is_evidence: bool
     output_is_verifier_success: bool
+    authority: bool
+    evidence_created: bool
+    verifier_success: bool
     approval_granted: bool
+    permission_granted: bool
+    lease_grant: bool
     capability_lease_granted: bool
     memory_write_allowed: bool
     tool_execution_allowed: bool
+    model_call_allowed: bool
+    external_api_call_allowed: bool
+    data_sent_external: bool
     execution_permission: str
     warnings: tuple[str, ...]
     limitations: tuple[str, ...]
@@ -96,6 +109,20 @@ PROVIDER_DEFINITIONS: tuple[ExternalProviderDefinition, ...] = (
         api_key_env_var="AEGIS_GEMINI_API_KEY",
         model_env_var="AEGIS_GEMINI_MODEL",
     ),
+    ExternalProviderDefinition(
+        provider_id="moonshot_kimi",
+        label="Moonshot / Kimi",
+        provider_family="external_cloud_provider",
+        intended_use=(
+            "Future operator-selected external coding, long-context code review, "
+            "agentic coding plan, and multimodal/code review candidate."
+        ),
+        api_key_env_var="AEGIS_MOONSHOT_API_KEY",
+        model_env_var="AEGIS_MOONSHOT_MODEL",
+        base_url_env_var="AEGIS_MOONSHOT_BASE_URL",
+        default_base_url_guidance="https://api.moonshot.ai/v1",
+        suggested_models=("kimi-k2.7-code", "kimi-k2.7-code-highspeed"),
+    ),
 )
 
 
@@ -138,8 +165,16 @@ def expected_provider_env_placeholders() -> list[dict[str, str]]:
             "provider_id": definition.provider_id,
             "api_key_env_var": definition.api_key_env_var,
             "model_env_var": definition.model_env_var,
+            "base_url_env_var": definition.base_url_env_var or "",
+            "default_base_url_guidance": definition.default_base_url_guidance or "",
+            "suggested_models": definition.suggested_models,
             "api_key_placeholder": f'$env:{definition.api_key_env_var}="<paste-key-in-your-own-shell>"',
-            "model_placeholder": f'$env:{definition.model_env_var}="<future-model-id>"',
+            "model_placeholder": f'$env:{definition.model_env_var}="{_model_placeholder_value(definition)}"',
+            "base_url_placeholder": (
+                f'$env:{definition.base_url_env_var}="{definition.default_base_url_guidance}"'
+                if definition.base_url_env_var and definition.default_base_url_guidance
+                else ""
+            ),
         }
         for definition in PROVIDER_DEFINITIONS
     ]
@@ -151,13 +186,18 @@ def _readiness_for(
 ) -> ExternalProviderReadiness:
     key_present = bool(str(env.get(definition.api_key_env_var, "")).strip())
     status = "key_present_calls_disabled" if key_present else "missing_key_disabled"
+    expected_env_vars = [definition.api_key_env_var, definition.model_env_var]
+    if definition.base_url_env_var:
+        expected_env_vars.append(definition.base_url_env_var)
     return ExternalProviderReadiness(
         provider_id=definition.provider_id,
         label=definition.label,
         provider_family=definition.provider_family,
         status=status,
         intended_use=definition.intended_use,
-        expected_env_vars=(definition.api_key_env_var, definition.model_env_var),
+        expected_env_vars=tuple(expected_env_vars),
+        default_base_url_guidance=definition.default_base_url_guidance,
+        suggested_models=definition.suggested_models,
         api_key_present=key_present,
         api_key_value_exposed=False,
         cloud_completion_enabled=False,
@@ -174,10 +214,18 @@ def _readiness_for(
         output_authority=False,
         output_is_evidence=False,
         output_is_verifier_success=False,
+        authority=False,
+        evidence_created=False,
+        verifier_success=False,
         approval_granted=False,
+        permission_granted=False,
+        lease_grant=False,
         capability_lease_granted=False,
         memory_write_allowed=False,
         tool_execution_allowed=False,
+        model_call_allowed=False,
+        external_api_call_allowed=False,
+        data_sent_external=False,
         execution_permission=EXTERNAL_PROVIDER_EXECUTION_PERMISSION,
         warnings=(
             "key_presence_is_not_authorization",
@@ -201,3 +249,9 @@ def _readiness_for(
             "proposal_only_output_envelope",
         ),
     )
+
+
+def _model_placeholder_value(definition: ExternalProviderDefinition) -> str:
+    if definition.suggested_models:
+        return definition.suggested_models[0]
+    return "<future-model-id>"

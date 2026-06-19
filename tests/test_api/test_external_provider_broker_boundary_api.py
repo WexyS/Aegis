@@ -19,6 +19,9 @@ def clear_external_provider_env(monkeypatch: pytest.MonkeyPatch):
         "AEGIS_OPENAI_API_KEY",
         "AEGIS_ANTHROPIC_API_KEY",
         "AEGIS_GEMINI_API_KEY",
+        "AEGIS_MOONSHOT_API_KEY",
+        "AEGIS_MOONSHOT_MODEL",
+        "AEGIS_MOONSHOT_BASE_URL",
     ):
         monkeypatch.delenv(name, raising=False)
     load_settings(force_reload=True)
@@ -44,6 +47,40 @@ async def test_external_provider_preview_endpoint_is_dry_run_only() -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "blocked_until_external_provider_broker_enabled"
+    assert data["would_call_provider"] is False
+    assert data["cloud_call_performed"] is False
+    assert data["external_api_called"] is False
+
+
+@pytest.mark.asyncio
+async def test_external_provider_preview_endpoint_supports_kimi_as_blocked_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = "moonshot-secret-should-not-return"
+    monkeypatch.setenv("AEGIS_MOONSHOT_API_KEY", secret)
+    load_settings(force_reload=True)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            API_PREVIEW,
+            json={
+                "provider_id": "moonshot_kimi",
+                "model_id": "kimi-k2.7-code",
+                "purpose": "coding_review",
+                "prompt": "Summarize this small code-review plan as proposal-only metadata.",
+                "operator_acknowledgements": list(REQUIRED_OPERATOR_ACKNOWLEDGEMENTS),
+            },
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "blocked_until_external_provider_broker_enabled"
+    assert data["provider_id"] == "moonshot_kimi"
+    assert data["provider_label"] == "Moonshot / Kimi"
+    assert data["provider_status"] == "key_present_calls_disabled"
+    assert data["model_id"] == "kimi-k2.7-code"
+    assert secret not in repr(data)
     assert data["would_call_provider"] is False
     assert data["cloud_call_performed"] is False
     assert data["external_api_called"] is False

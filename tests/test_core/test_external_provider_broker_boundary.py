@@ -106,6 +106,32 @@ def test_provider_setup_guidance_never_exposes_key_values() -> None:
     assert secret not in repr(guidance)
 
 
+def test_moonshot_kimi_provider_setup_guidance_is_disabled_preview_only() -> None:
+    secret = "moonshot-secret-must-not-leak"
+    readiness = list_external_provider_readiness({"AEGIS_MOONSHOT_API_KEY": secret})
+
+    guidance = build_provider_setup_guidance(provider_readiness=readiness)
+    kimi = next(item for item in guidance if item["provider_id"] == "moonshot_kimi")
+
+    assert kimi["label"] == "Moonshot / Kimi"
+    assert kimi["status"] == "key_present_calls_disabled"
+    assert kimi["api_key_env_var"] == "AEGIS_MOONSHOT_API_KEY"
+    assert kimi["model_env_var"] == "AEGIS_MOONSHOT_MODEL"
+    assert kimi["base_url_env_var"] == "AEGIS_MOONSHOT_BASE_URL"
+    assert kimi["default_base_url_guidance"] == "https://api.moonshot.ai/v1"
+    assert "kimi-k2.7-code" in kimi["suggested_models"]
+    assert "kimi-k2.7-code" in kimi["model_placeholder"]
+    assert "<paste-key-in-your-own-shell>" in kimi["api_key_placeholder"]
+    assert secret not in repr(kimi)
+    assert kimi["api_key_present"] is True
+    assert kimi["api_key_value_exposed"] is False
+    assert kimi["operator_managed_env_only"] is True
+    assert kimi["ui_key_input_allowed"] is False
+    assert kimi["ui_env_write_allowed"] is False
+    assert kimi["cloud_call_enabled"] is False
+    assert kimi["automatic_fallback_allowed"] is False
+
+
 def test_valid_preview_request_still_blocks_provider_call() -> None:
     request = {
         "provider_id": "openrouter",
@@ -138,6 +164,33 @@ def test_valid_preview_request_still_blocks_provider_call() -> None:
         "external_provider_broker_not_enabled",
         "external_provider_calls_disabled",
     )
+    _assert_false_invariants(preview)
+
+
+def test_moonshot_kimi_preview_request_remains_blocked_and_no_send() -> None:
+    preview = build_external_provider_prompt_preview(
+        {
+            "provider_id": "moonshot_kimi",
+            "model_id": "kimi-k2.7-code",
+            "purpose": "coding_review",
+            "prompt": "Review this small code summary as proposal-only metadata.",
+            "operator_acknowledgements": list(REQUIRED_OPERATOR_ACKNOWLEDGEMENTS),
+        },
+        provider_readiness=list_external_provider_readiness({"AEGIS_MOONSHOT_API_KEY": "present"}),
+    )
+
+    assert preview["status"] == "blocked_until_external_provider_broker_enabled"
+    assert preview["provider_id"] == "moonshot_kimi"
+    assert preview["provider_label"] == "Moonshot / Kimi"
+    assert preview["model_id"] == "kimi-k2.7-code"
+    assert preview["would_call_provider"] is False
+    assert preview["cloud_call_performed"] is False
+    assert preview["external_api_called"] is False
+    assert preview["http_request_performed"] is False
+    assert preview["model_call_performed"] is False
+    assert preview["prompt_payload_sent"] is False
+    assert preview["data_sent_external"] is False
+    assert preview["transcript_persisted"] is False
     _assert_false_invariants(preview)
 
 

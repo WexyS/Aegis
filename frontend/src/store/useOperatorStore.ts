@@ -159,7 +159,7 @@ function classifyOperatorIntents(request: string): OperatorIntent[] {
   if (hasAny(text, ['web', 'arastir', 'araştır', 'internet', 'kaynak', 'source', 'research'])) {
     intents.add('web_research');
   }
-  if (hasAny(text, ['model', 'lm studio', 'qwen', 'gemma', 'deepseek', 'openrouter', 'model hub'])) {
+  if (hasAny(text, ['model', 'lm studio', 'qwen', 'gemma', 'deepseek', 'openrouter', 'moonshot', 'kimi', 'model hub'])) {
     intents.add('model_hub');
   }
   if (hasAny(text, ['komut', 'calistir', 'çalıştır', 'execute', 'shell', 'terminal', 'run '])) {

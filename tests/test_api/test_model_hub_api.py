@@ -65,6 +65,9 @@ def clear_model_hub_env(monkeypatch: pytest.MonkeyPatch):
         "AEGIS_OPENAI_API_KEY",
         "AEGIS_ANTHROPIC_API_KEY",
         "AEGIS_GEMINI_API_KEY",
+        "AEGIS_MOONSHOT_API_KEY",
+        "AEGIS_MOONSHOT_MODEL",
+        "AEGIS_MOONSHOT_BASE_URL",
     ):
         monkeypatch.delenv(name, raising=False)
     load_settings(force_reload=True)
@@ -119,6 +122,16 @@ async def test_model_hub_status_is_config_only_when_gateway_disabled() -> None:
     assert data["external_provider_readiness"]
     assert all(record["cloud_completion_enabled"] is False for record in data["external_provider_readiness"])
     assert all(record["api_key_value_exposed"] is False for record in data["external_provider_readiness"])
+    kimi = next(
+        record for record in data["external_provider_readiness"]
+        if record["provider_id"] == "moonshot_kimi"
+    )
+    assert kimi["label"] == "Moonshot / Kimi"
+    assert "AEGIS_MOONSHOT_API_KEY" in kimi["expected_env_vars"]
+    assert "AEGIS_MOONSHOT_MODEL" in kimi["expected_env_vars"]
+    assert "kimi-k2.7-code" in kimi["suggested_models"]
+    assert kimi["cloud_completion_enabled"] is False
+    assert kimi["automatic_fallback_allowed"] is False
 
 
 @pytest.mark.asyncio
@@ -240,5 +253,49 @@ async def test_model_hub_status_reports_provider_key_presence_without_value(
     assert broker_guidance["cloud_call_enabled"] is False
     assert secret not in repr(data["external_provider_broker_boundary"])
     assert data["external_api_called"] is False
+    assert data["data_sent_external"] is False
+    _assert_model_hub_false_invariants(data)
+
+
+@pytest.mark.asyncio
+async def test_model_hub_status_includes_kimi_readiness_without_cloud_enablement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = "moonshot-secret-must-not-return"
+    monkeypatch.setenv("AEGIS_MOONSHOT_API_KEY", secret)
+    monkeypatch.setenv("AEGIS_MOONSHOT_MODEL", "kimi-k2.7-code")
+    load_settings(force_reload=True)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(API_STATUS)
+
+    assert response.status_code == 200
+    data = response.json()
+    kimi = next(
+        record for record in data["external_provider_readiness"]
+        if record["provider_id"] == "moonshot_kimi"
+    )
+    assert kimi["label"] == "Moonshot / Kimi"
+    assert kimi["status"] == "key_present_calls_disabled"
+    assert kimi["api_key_present"] is True
+    assert kimi["api_key_value_exposed"] is False
+    assert kimi["cloud_completion_enabled"] is False
+    assert kimi["automatic_fallback_allowed"] is False
+    assert kimi["manual_operator_opt_in_required"] is True
+    assert "kimi-k2.7-code" in kimi["suggested_models"]
+    assert secret not in repr(data)
+    broker_guidance = next(
+        record for record in data["external_provider_broker_boundary"]["provider_setup_guidance"]
+        if record["provider_id"] == "moonshot_kimi"
+    )
+    assert broker_guidance["api_key_present"] is True
+    assert broker_guidance["api_key_value_exposed"] is False
+    assert broker_guidance["cloud_call_enabled"] is False
+    assert broker_guidance["automatic_fallback_allowed"] is False
+    assert "kimi-k2.7-code" in broker_guidance["model_placeholder"]
+    assert data["cloud_fallback_policy"]["automatic_cloud_fallback_allowed"] is False
+    assert data["external_api_called"] is False
+    assert data["cloud_routing_allowed"] is False
     assert data["data_sent_external"] is False
     _assert_model_hub_false_invariants(data)

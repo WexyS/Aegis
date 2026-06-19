@@ -94,12 +94,22 @@ $env:AEGIS_ANTHROPIC_API_KEY="<paste-key-in-your-own-shell>"
 $env:AEGIS_ANTHROPIC_MODEL="<future-model-id>"
 $env:AEGIS_GEMINI_API_KEY="<paste-key-in-your-own-shell>"
 $env:AEGIS_GEMINI_MODEL="<future-model-id>"
+$env:AEGIS_MOONSHOT_API_KEY="<paste-key-in-your-own-shell>"
+$env:AEGIS_MOONSHOT_MODEL="kimi-k2.7-code"
+$env:AEGIS_MOONSHOT_BASE_URL="https://api.moonshot.ai/v1"
 ```
 
 These variables are not used to call providers yet in this sprint. API key
 presence is not authorization, and there is no automatic cloud fallback. They
 are readiness metadata only until a future live External Provider Broker is
 explicitly implemented.
+
+Moonshot / Kimi is tracked as an external cloud provider readiness candidate,
+not a local LM Studio profile in this Aegis setup. Suggested future model ids
+are `kimi-k2.7-code` and `kimi-k2.7-code-highspeed`. Kimi provider readiness
+does not enable cloud calls, automatic fallback, automatic image/video upload,
+automatic tool calls, memory writes, evidence, verifier success, approval,
+permission, or lease grants. Provider output remains proposal-only.
 
 The current External Provider Broker Boundary can preview provider setup and a
 redacted prompt envelope through `POST /model-hub/external-provider-preview`.
@@ -108,7 +118,9 @@ The preview remains blocked and must keep `would_call_provider=false`,
 
 Future cloud use requires explicit provider enablement, exact provider/model
 selection, prompt preview, cost warning, privacy warning, no secrets, no raw
-logs/journals/evidence/repo dumps by default, and proposal-only output.
+logs/journals/evidence/repo dumps by default, and proposal-only output. Future
+live Kimi use specifically requires an External Provider Live Broker sprint
+before any prompt payload can leave the machine.
 
 ## Memory Visibility
 
