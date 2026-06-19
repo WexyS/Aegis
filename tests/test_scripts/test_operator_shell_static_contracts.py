@@ -202,3 +202,71 @@ def test_store_keeps_deterministic_preview_builder_frontend_local() -> None:
     assert "backendPreviewError" in store
     assert re.search(r"cloudNeeded:\s*false", store)
     assert "permissionMode: 'safe_preview'" in store
+    assert "'pull request'" in store
+    assert "'github pr'" in store
+    assert "'pr'," not in store
+
+
+def test_unified_workspace_uses_response_draft_as_primary_output() -> None:
+    shell = _read("features/operator-shell/components/UnifiedOperatorShell.tsx")
+    response = _read("features/operator-shell/components/OperatorResponseDraft.tsx")
+
+    assert shell.index("<OperatorResponseDraft />") < shell.index("<OperatorRoutePreview")
+    _assert_contains_all(
+        response,
+        (
+            "selectedArtifact.body",
+            "navigator.clipboard.writeText",
+            "previewOnly",
+            "noCommandExecution",
+            "noVerifierSuccess",
+            "responseDraftSafetyFooter",
+        ),
+    )
+
+
+def test_artifact_body_is_copy_ready_and_preview_only() -> None:
+    store = _read("store/useOperatorStore.ts")
+    artifacts = _read("features/operator-shell/components/OperatorArtifactsPanel.tsx")
+
+    _assert_contains_all(store, ("buildArtifactBody", "body: buildArtifactBody"))
+    _assert_contains_all(
+        artifacts,
+        ("navigator.clipboard.writeText", "selected.body", "<pre", "StatusBadge label={t.previewOnly}"),
+    )
+
+
+def test_primary_navigation_is_workspace_focused_and_legacy_panels_are_secondary() -> None:
+    sidebar = _read("features/sidebar/components/Sidebar.tsx")
+    drawer = _read("features/operator-shell/components/OperatorWorkspaceDrawer.tsx")
+
+    primary_match = re.search(r"const NAV_ITEMS = \[(.*?)\] as const;", sidebar, re.DOTALL)
+    assert primary_match is not None
+    primary = primary_match.group(1)
+    _assert_contains_all(primary, ("'History'", "'Projects'", "'Outputs'", "'Memory'", "'Skills'"))
+    for legacy in ("labelKey: 'mission'", "labelKey: 'ask'", "labelKey: 'work'", "labelKey: 'capabilities'", "'Advanced'"):
+        assert legacy not in primary
+
+    _assert_contains_all(
+        drawer,
+        ("target: 'History'", "target: 'Projects'", "target: 'Outputs'", "target: 'Memory'", "target: 'Settings'", "target: 'Skills'", "target: 'Advanced'"),
+    )
+
+
+def test_memory_copy_does_not_claim_ten_plus_active_layers() -> None:
+    sources = "\n".join(
+        (
+            _read("i18n/en.ts"),
+            _read("i18n/tr.ts"),
+            _read("features/operator-shell/components/UnifiedOperatorShell.tsx"),
+            _read("features/operator-shell/components/OperatorContextPanel.tsx"),
+        )
+    ).lower()
+
+    unsupported_claims = (
+        "10+ active " + "layer",
+        "10+ active " + "layers",
+        "10+ aktif " + "katman",
+    )
+    for unsupported_claim in unsupported_claims:
+        assert unsupported_claim not in sources

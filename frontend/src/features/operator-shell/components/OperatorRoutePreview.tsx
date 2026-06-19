@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { GitBranch, LockKeyhole, ShieldAlert } from 'lucide-react';
+import { ChevronDown, GitBranch, LockKeyhole, ShieldAlert } from 'lucide-react';
 
 import { StatusBadge } from '@/components/StatusBadge';
 import { dictionaryFor } from '@/i18n';
@@ -14,7 +14,7 @@ export const OperatorRoutePreview = ({ decision }: { decision: OperatorDecisionP
 
   if (!decision) {
     return (
-      <section className="rounded-lg border border-white/10 bg-white/[0.035] p-4">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
         <div className="flex items-start gap-3">
           <GitBranch size={17} className="mt-0.5 shrink-0 text-accent" />
           <div className="min-w-0">
@@ -27,31 +27,24 @@ export const OperatorRoutePreview = ({ decision }: { decision: OperatorDecisionP
   }
 
   return (
-    <section className="rounded-lg border border-accent/20 bg-accent/[0.04] p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+    <details className="group rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+      <summary className="flex cursor-pointer list-none flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-accent">
+          <div className="flex items-center gap-2 text-xs font-semibold text-accent">
             <GitBranch size={15} />
             {t.autoDecisionTitle}
           </div>
-          <h2 className="mt-2 text-lg font-semibold text-white">{formatRoute(decision.routeId, t)}</h2>
-          <p className="mt-2 break-words text-xs leading-6 text-foreground/58">{decision.request}</p>
+          <h2 className="mt-1 break-words text-base font-semibold text-white">{formatRoute(decision.routeId, t)}</h2>
+          <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-foreground/52">{decision.request}</p>
         </div>
-        <div className="flex flex-col items-start gap-2 lg:items-end">
+        <div className="flex shrink-0 items-center gap-2">
           <StatusBadge
             label={decision.previewSource === 'backend_contract' ? t.previewSourceBackend : t.previewSourceFallback}
             tone={decision.previewSource === 'backend_contract' ? 'success' : 'warning'}
           />
-          <div className="flex max-w-sm items-start gap-2 rounded-md border border-white/10 bg-black/20 p-2">
-            <LockKeyhole size={13} className="mt-0.5 shrink-0 text-accent" />
-            <p className="text-[11px] leading-5 text-foreground/55">
-              {decision.previewSource === 'backend_contract'
-                ? t.previewSourceBackendCopy
-                : `${t.previewSourceFallbackCopy}${decision.backendPreviewError ? ` ${decision.backendPreviewError}` : ''}`}
-            </p>
-          </div>
+          <ChevronDown size={16} className="text-foreground/45 transition-transform group-open:rotate-180" />
         </div>
-      </div>
+      </summary>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <PreviewCell label={t.detectedIntent} value={decision.intents.map((intent) => formatIntent(intent, t)).join(' + ')} />
@@ -60,7 +53,16 @@ export const OperatorRoutePreview = ({ decision }: { decision: OperatorDecisionP
         <PreviewCell label={t.outputArtifact} value={t.artifactPreviewOnly} />
       </div>
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-3 flex max-w-full items-start gap-2 rounded-xl border border-white/10 bg-black/20 p-3">
+        <LockKeyhole size={13} className="mt-0.5 shrink-0 text-accent" />
+        <p className="text-[11px] leading-5 text-foreground/55">
+          {decision.previewSource === 'backend_contract'
+            ? t.previewSourceBackendCopy
+            : `${t.previewSourceFallbackCopy}${decision.backendPreviewError ? ` ${decision.backendPreviewError}` : ''}`}
+        </p>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <BoundaryFlag label={t.cloud} value={decision.cloudNeeded ? t.approvalRequired : t.notUsed} />
         <BoundaryFlag label={t.memory} value={decision.memoryActionProposed ? t.proposedOnly : t.noAutomaticWrite} />
         <BoundaryFlag label={t.vision} value={decision.visionBoundaryRequired ? t.boundaryRequired : t.notNeeded} />
@@ -71,23 +73,23 @@ export const OperatorRoutePreview = ({ decision }: { decision: OperatorDecisionP
         <BoundaryFlag label={t.verifier} value={t.notCreated} />
       </div>
 
-      <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/20 bg-warning/[0.05] p-3">
+      <div className="mt-3 flex items-start gap-2 rounded-xl border border-warning/20 bg-warning/[0.05] p-3">
         <ShieldAlert size={15} className="mt-0.5 shrink-0 text-warning" />
         <p className="text-xs leading-6 text-foreground/60">{t.routePreviewSafetyCopy}</p>
       </div>
-    </section>
+    </details>
   );
 };
 
 const PreviewCell = ({ label, value }: { label: string; value: string }) => (
-  <div className="min-w-0 rounded-md border border-white/10 bg-black/20 p-3">
-    <div className="text-[10px] font-bold uppercase tracking-wide text-foreground/38">{label}</div>
+  <div className="min-w-0 rounded-xl border border-white/10 bg-black/20 p-3">
+    <div className="text-[10px] font-semibold text-foreground/38">{label}</div>
     <div className="mt-2 break-words text-xs font-semibold leading-5 text-foreground/78" title={value}>{value}</div>
   </div>
 );
 
 const BoundaryFlag = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2">
+  <div className="flex min-w-0 items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
     <span className="text-xs text-foreground/50">{label}</span>
     <span className="min-w-0 break-words text-right text-xs font-semibold text-foreground/78">{value}</span>
   </div>

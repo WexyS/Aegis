@@ -67,6 +67,7 @@ export interface OperatorArtifact {
   title?: string;
   request: string;
   summary?: string;
+  body?: string;
   safetyFlags: string[];
 }
 
@@ -135,6 +136,7 @@ export interface OperatorBackendRoutePreview {
     title: string;
     request: string;
     summary: string;
+    body?: string;
     safety_flags: string[];
   };
   trace_items: Array<{

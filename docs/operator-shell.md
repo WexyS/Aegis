@@ -2,9 +2,15 @@
 
 ## Purpose
 
-The Unified Operator Shell makes Mission the main local-first operator entry:
-one composer, Auto Mode preview chips, deterministic route preview, process
-trace, and draft artifacts.
+The Unified Operator Shell is the main local-first operator entry: one composer,
+one primary response draft, a compact route preview, and a secondary context
+inspector. The primary navigation now follows workspace tasks: new task,
+history, projects, outputs, memory, and skills.
+
+The former dashboard-style Mission, Ask, Work, Capabilities, and diagnostic
+panels are not parallel primary destinations. Existing surfaces remain
+available through the workspace drawer, Settings, or Advanced diagnostics when
+their detail is needed.
 
 This shell includes a backend-owned Auto Mode Router preview contract for route
 classification. It is not live Auto Mode execution, autonomous execution, or
@@ -49,6 +55,16 @@ providers, or perform computer/tool actions.
 Process trace is summarized operational metadata, not hidden reasoning.
 Artifacts are preview-only drafts and are not evidence, verifier output,
 approval, permission, or execution result.
+
+`OperatorResponseDraft` is the main output surface. It renders the selected
+artifact summary and a copy-ready body before the compact route metadata. Copy
+requires an explicit operator click and does not write memory, persist an
+artifact, execute a tool, or create evidence. The context inspector keeps the
+trace, artifact list, and legacy detail surfaces available as secondary tools.
+
+Memory copy describes the real consent and lifecycle boundary only. The shell
+does not claim a fixed active-layer count because the frontend does not own or
+verify that runtime fact.
 
 ## Preview Source Labels
 

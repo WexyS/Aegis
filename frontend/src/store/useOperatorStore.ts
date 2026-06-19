@@ -204,15 +204,177 @@ function mapBackendDecisionPreview(backendPreview: OperatorBackendRoutePreview):
 }
 
 function mapBackendArtifact(backendPreview: OperatorBackendRoutePreview): OperatorArtifact {
-  return {
+  const mapped: OperatorArtifact = {
     id: backendPreview.artifact.id,
     type: backendPreview.artifact.type,
     status: 'preview-only',
     title: backendPreview.artifact.title,
     request: backendPreview.artifact.request,
     summary: backendPreview.artifact.summary,
+    body: backendPreview.artifact.body,
     safetyFlags: backendPreview.artifact.safety_flags,
   };
+
+  if (!mapped.body) {
+    return { ...mapped, body: buildArtifactBody(mapped, mapBackendDecisionPreview(backendPreview)) };
+  }
+
+  return mapped;
+}
+
+function artifactTitle(type: OperatorArtifactType): string {
+  const titles: Record<OperatorArtifactType, string> = {
+    safe_plan_draft: 'Safe plan draft',
+    codex_prompt_draft: 'Codex prompt draft',
+    ui_review_plan: 'UI review plan',
+    research_plan: 'Research plan',
+    memory_action_preview: 'Memory action preview',
+    model_routing_summary: 'Model routing summary',
+    command_approval_preview: 'Command approval preview',
+  };
+  return titles[type];
+}
+
+function artifactSummary(type: OperatorArtifactType): string {
+  const summaries: Record<OperatorArtifactType, string> = {
+    safe_plan_draft: 'A bounded plan outline with validation and explicit not-done boundaries.',
+    codex_prompt_draft: 'A draft prompt for a future Codex handoff, not a patch or execution result.',
+    ui_review_plan: 'A UI review checklist that requires a future Vision Input Boundary for images.',
+    research_plan: 'A source plan that would require an external research boundary before live web use.',
+    memory_action_preview: 'A memory lifecycle proposal that would require explicit approve/reject/delete controls.',
+    model_routing_summary: 'A model profile summary that does not prove any model is loaded or live.',
+    command_approval_preview: 'A command safety preview that blocks execution until backend-owned approval and verifier gates exist.',
+  };
+  return summaries[type];
+}
+
+function buildArtifactBody(artifact: OperatorArtifact, decision: OperatorDecisionPreview): string {
+  const selectedRoute = decision.routeId.replaceAll('_', ' ');
+  const intents = decision.intents.join(', ');
+  const modelCandidates = decision.modelCandidates
+    .map((candidate) => `${candidate.profileId}: ${candidate.modelHint}`)
+    .join('\n');
+  const boundaryLines = [
+    `Route: ${selectedRoute}`,
+    `Intent preview: ${intents}`,
+    `Model candidate metadata:\n${modelCandidates}`,
+    `Approval required before any action: ${decision.approvalNeeded ? 'yes' : 'no'}`,
+    `Memory action proposed: ${decision.memoryActionProposed ? 'yes, review-only' : 'no'}`,
+    `Vision boundary required: ${decision.visionBoundaryRequired ? 'yes' : 'no'}`,
+    `External research boundary required: ${decision.researchBoundaryRequired ? 'yes' : 'no'}`,
+  ];
+
+  if (artifact.type === 'codex_prompt_draft') {
+    return [
+      'Draft Codex handoff',
+      '',
+      `User request: ${artifact.request}`,
+      '',
+      'Goal:',
+      '- Inspect the relevant Aegis files first.',
+      '- Keep the change narrow and truth-safe.',
+      '- Preserve backend-owned authority, approvals, evidence, verifier semantics, and runtime state.',
+      '- Validate with focused tests and report commit/push separately.',
+      '',
+      'Preview metadata:',
+      ...boundaryLines.map((line) => `- ${line}`),
+      '',
+      'Not performed by this preview:',
+      '- no command execution',
+      '- no model call',
+      '- no cloud call',
+      '- no memory write',
+      '- no evidence or verifier success',
+    ].join('\n');
+  }
+
+  if (artifact.type === 'command_approval_preview') {
+    return [
+      'Command approval preview',
+      '',
+      `Requested action: ${artifact.request}`,
+      '',
+      'This is blocked at preview level. A future executable action would need:',
+      '- backend policy evaluation',
+      '- explicit operator approval',
+      '- scoped capability permission',
+      '- evidence expectations',
+      '- verifier postconditions',
+      '',
+      'No command was dispatched from this shell.',
+    ].join('\n');
+  }
+
+  if (artifact.type === 'memory_action_preview') {
+    return [
+      'Memory lifecycle preview',
+      '',
+      `Request: ${artifact.request}`,
+      '',
+      'Aegis can only present this as a candidate lifecycle item here.',
+      'Persistent memory would require explicit approve/reject/delete controls and sensitivity review.',
+      '',
+      'No memory write was performed.',
+    ].join('\n');
+  }
+
+  if (artifact.type === 'model_routing_summary') {
+    return [
+      'Model routing summary',
+      '',
+      `Request: ${artifact.request}`,
+      '',
+      'Candidate profiles:',
+      modelCandidates,
+      '',
+      'This does not prove the model is loaded, healthy, selected, or called.',
+      'Model output would remain proposal-only.',
+    ].join('\n');
+  }
+
+  if (artifact.type === 'research_plan') {
+    return [
+      'External research boundary plan',
+      '',
+      `Request: ${artifact.request}`,
+      '',
+      'Before live research, Aegis would need explicit source policy, privacy review, provider boundary, and citation/provenance requirements.',
+      'No web query, browser fetch, API call, or external data transfer occurred.',
+    ].join('\n');
+  }
+
+  if (artifact.type === 'ui_review_plan') {
+    return [
+      'UI review plan',
+      '',
+      `Request: ${artifact.request}`,
+      '',
+      'Review focus:',
+      '- visual hierarchy',
+      '- clickability and focus behavior',
+      '- responsive layout',
+      '- truthful runtime/debt labels',
+      '- no hidden authority in frontend state',
+      '',
+      'Image/vision handling remains future-gated unless explicitly scoped.',
+    ].join('\n');
+  }
+
+  return [
+    'Safe plan draft',
+    '',
+    `Request: ${artifact.request}`,
+    '',
+    'Suggested next steps:',
+    '- inspect the existing implementation and contracts',
+    '- identify the smallest safe change',
+    '- preserve runtime, approval, evidence, verifier, model, memory, and tool boundaries',
+    '- add focused validation',
+    '- report what changed and what stayed intentionally out of scope',
+    '',
+    'Preview metadata:',
+    ...boundaryLines.map((line) => `- ${line}`),
+  ].join('\n');
 }
 
 function buildArtifact(decision: OperatorDecisionPreview): OperatorArtifact {
@@ -228,12 +390,19 @@ function buildArtifact(decision: OperatorDecisionPreview): OperatorArtifact {
     command_approval_preview: 'command_approval_preview',
     approval_review: 'command_approval_preview',
   };
-  return {
+  const type = typeByRoute[decision.routeId];
+  const artifact: OperatorArtifact = {
     id: decision.artifactId,
-    type: typeByRoute[decision.routeId],
+    type,
     status: 'preview-only',
+    title: artifactTitle(type),
+    summary: artifactSummary(type),
     request: decision.request,
     safetyFlags: NO_ACTION_FLAGS,
+  };
+  return {
+    ...artifact,
+    body: buildArtifactBody(artifact, decision),
   };
 }
 
@@ -261,7 +430,7 @@ function classifyOperatorIntents(request: string): OperatorIntent[] {
   if (hasAny(text, ['screenshot', 'image', 'visual', 'vision', 'gorsel', 'görsel', 'ekran goruntusu', 'ekran görüntüsü', 'ui bozuk', 'ui sorunu', 'ui issue', 'arayuz', 'arayüz'])) {
     intents.add('vision_review');
   }
-  if (hasAny(text, ['codex prompt', 'kod', 'code', 'diff', 'test', 'pr', 'repo', 'patch'])) {
+  if (hasAny(text, ['codex prompt', 'kod', 'code', 'diff', 'test', 'pull request', 'github pr', 'repo', 'patch'])) {
     intents.add('code_prompt');
   }
   if (hasAny(text, ['hatirla', 'hatırla', 'unut', 'hafiza', 'hafıza', 'memory', 'remember', 'forget'])) {

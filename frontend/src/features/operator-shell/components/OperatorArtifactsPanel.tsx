@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { FileText } from 'lucide-react';
+import { Check, Copy, FileText } from 'lucide-react';
 
 import { StatusBadge } from '@/components/StatusBadge';
 import { dictionaryFor } from '@/i18n';
@@ -16,9 +16,21 @@ export const OperatorArtifactsPanel = () => {
   const selectedArtifactId = useOperatorStore((state) => state.selectedArtifactId);
   const selectArtifact = useOperatorStore((state) => state.selectArtifact);
   const selected = artifacts.find((item) => item.id === selectedArtifactId) ?? artifacts[0] ?? null;
+  const [copied, setCopied] = React.useState(false);
+
+  const copySelected = React.useCallback(async () => {
+    if (!selected?.body || typeof navigator === 'undefined' || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(selected.body);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      setCopied(false);
+    }
+  }, [selected?.body]);
 
   return (
-    <section className="rounded-lg border border-white/10 bg-white/[0.045] p-4 shadow-xl shadow-black/15">
+    <section className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-xl shadow-black/15">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-accent">{t.artifactsTitle}</p>
@@ -56,12 +68,25 @@ export const OperatorArtifactsPanel = () => {
       )}
 
       {selected && (
-        <div className="mt-3 rounded-md border border-white/10 bg-black/20 p-3">
+        <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <span className="text-xs font-semibold text-white">{selected.title ?? artifactTitle(selected.type, t)}</span>
-            <StatusBadge label={t.previewOnly} tone="unknown" />
+            <button
+              type="button"
+              onClick={copySelected}
+              disabled={!selected.body}
+              className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2 text-[11px] font-semibold text-foreground/58 hover:border-accent/30 hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {copied ? <Check size={12} /> : <Copy size={12} />}
+              {copied ? t.copiedDraft : t.copyDraft}
+            </button>
           </div>
           <p className="text-[11px] leading-5 text-foreground/54">{selected.summary ?? artifactSummary(selected, t)}</p>
+          {selected.body && (
+            <pre className="mt-3 max-h-56 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-white/10 bg-[#111217] p-3 font-sans text-[11px] leading-5 text-foreground/62 custom-scrollbar">
+              {selected.body}
+            </pre>
+          )}
           <div className="mt-3 flex flex-wrap gap-1.5">
             {selected.safetyFlags.map((flag) => (
               <StatusBadge key={flag} label={formatFlag(flag, t)} tone="unknown" />

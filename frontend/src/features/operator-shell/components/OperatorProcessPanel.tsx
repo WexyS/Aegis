@@ -19,7 +19,7 @@ export const OperatorProcessPanel = () => {
   const items = traceItems.length ? traceItems : emptyTrace();
 
   return (
-    <section className="rounded-lg border border-white/10 bg-white/[0.045] p-4 shadow-xl shadow-black/15">
+    <section className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-xl shadow-black/15">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-accent">{t.processTraceTitle}</p>

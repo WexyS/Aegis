@@ -28,7 +28,7 @@ function normalizeDensity(value: string | null): 'comfortable' | 'compact' {
 }
 
 export const useUIStore = create<UIState>((set) => ({
-  activeTab: 'Mission',
+  activeTab: 'Operator',
   language: 'en',
   density: 'comfortable',
   preferencesHydrated: false,

@@ -25,11 +25,11 @@ export default function AegisDashboard() {
   return (
     <AppShell>
       <div className="relative z-10 flex-1 min-h-0 min-w-0 overflow-hidden">
-        {activeTab === 'Mission' && <MissionHome />}
-        {activeTab === 'Ask' && <AskAegisPanel />}
-        {activeTab === 'Work' && <WorkSurface />}
+        {(activeTab === 'Mission' || activeTab === 'Operator' || activeTab === 'Outputs') && <MissionHome />}
+        {(activeTab === 'Ask' || activeTab === 'History') && <AskAegisPanel />}
+        {(activeTab === 'Work' || activeTab === 'Projects') && <WorkSurface />}
         {activeTab === 'Memory' && <MemoryOverviewPanel />}
-        {activeTab === 'Capabilities' && <CapabilitiesPanel />}
+        {(activeTab === 'Capabilities' || activeTab === 'Skills') && <CapabilitiesPanel />}
         {activeTab === 'Advanced' && <AdvancedWorkspace />}
         {activeTab === 'Settings' && <SettingsPanel />}
       </div>

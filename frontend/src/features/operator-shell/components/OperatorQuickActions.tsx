@@ -21,18 +21,18 @@ export const OperatorQuickActions = () => {
   ];
 
   return (
-    <section className="rounded-lg border border-white/10 bg-black/20 p-4">
-      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-        <h2 className="text-sm font-semibold text-white">{t.quickActionsTitle}</h2>
-        <p className="text-xs text-foreground/45">{t.quickActionsCopy}</p>
+    <section>
+      <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-xs font-semibold text-foreground/58">{t.quickActionsTitle}</h2>
+        <p className="text-[11px] text-foreground/42">{t.quickActionsCopy}</p>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="flex flex-wrap gap-2">
         {actions.map((action) => (
           <button
             key={action.label}
             type="button"
             onClick={() => setComposerText(action.prompt)}
-            className="flex min-h-[46px] items-center gap-2 rounded-md border border-white/10 bg-white/[0.035] px-3 text-left text-xs font-semibold text-foreground/68 transition-colors hover:border-accent/30 hover:text-accent"
+            className="inline-flex min-h-[34px] items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-left text-xs font-semibold text-foreground/62 transition-colors hover:border-accent/30 hover:bg-accent/[0.06] hover:text-accent"
           >
             {action.icon}
             <span className="min-w-0 break-words">{action.label}</span>
