@@ -14,6 +14,8 @@ interface UIState {
   setDensity: (density: 'comfortable' | 'compact') => void;
   toggleSidebar: () => void;
   toggleInspector: () => void;
+  setSidebarOpen: (open: boolean) => void;
+  setInspectorOpen: (open: boolean) => void;
 }
 
 const UI_LANGUAGE_KEY = 'aegis.ui.language';
@@ -33,7 +35,7 @@ export const useUIStore = create<UIState>((set) => ({
   density: 'comfortable',
   preferencesHydrated: false,
   isSidebarOpen: true,
-  isInspectorOpen: true,
+  isInspectorOpen: false,
   setActiveTab: (tab) => set({ activeTab: tab }),
   hydratePreferencesFromStorage: () => {
     if (typeof window === 'undefined') return;
@@ -70,4 +72,6 @@ export const useUIStore = create<UIState>((set) => ({
   },
   toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
   toggleInspector: () => set((state) => ({ isInspectorOpen: !state.isInspectorOpen })),
+  setSidebarOpen: (isSidebarOpen) => set({ isSidebarOpen }),
+  setInspectorOpen: (isInspectorOpen) => set({ isInspectorOpen }),
 }));

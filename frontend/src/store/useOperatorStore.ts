@@ -8,10 +8,13 @@ import type {
   OperatorDecisionPreview,
   OperatorIntent,
   OperatorModelCandidate,
+  OperatorModelPreference,
   OperatorPermissionMode,
+  OperatorPlanningDetail,
   OperatorPreviewSource,
   OperatorRouteId,
   OperatorTraceItem,
+  OperatorSessionHistoryItem,
 } from '@/types/operator';
 
 type OperatorStoreState = {
@@ -19,13 +22,18 @@ type OperatorStoreState = {
   lastDecision: OperatorDecisionPreview | null;
   traceItems: OperatorTraceItem[];
   artifacts: OperatorArtifact[];
+  sessionHistory: OperatorSessionHistoryItem[];
   selectedArtifactId: string | null;
+  modelPreference: OperatorModelPreference;
+  planningDetail: OperatorPlanningDetail;
   permissionModePreview: OperatorPermissionMode;
   previewSource: OperatorPreviewSource;
   backendPreviewAvailable: boolean;
   backendPreviewError: string | null;
   setComposerText: (value: string) => void;
-  clearOperatorSession: () => void;
+  setModelPreference: (value: OperatorModelPreference) => void;
+  setPlanningDetail: (value: OperatorPlanningDetail) => void;
+  startNewTask: () => void;
   selectArtifact: (artifactId: string) => void;
   submitPreviewRequest: (request?: string) => Promise<OperatorDecisionPreview | null>;
 };
@@ -63,17 +71,21 @@ export const useOperatorStore = create<OperatorStoreState>((set, get) => ({
   lastDecision: null,
   traceItems: [],
   artifacts: [],
+  sessionHistory: [],
   selectedArtifactId: null,
+  modelPreference: 'auto',
+  planningDetail: 'balanced',
   permissionModePreview: 'safe_preview',
   previewSource: 'frontend_fallback',
   backendPreviewAvailable: false,
   backendPreviewError: null,
   setComposerText: (value) => set({ composerText: value }),
-  clearOperatorSession: () => set({
+  setModelPreference: (modelPreference) => set({ modelPreference }),
+  setPlanningDetail: (planningDetail) => set({ planningDetail }),
+  startNewTask: () => set({
     composerText: '',
     lastDecision: null,
     traceItems: [],
-    artifacts: [],
     selectedArtifactId: null,
     previewSource: 'frontend_fallback',
     backendPreviewAvailable: false,
@@ -109,10 +121,21 @@ export const useOperatorStore = create<OperatorStoreState>((set, get) => ({
     }
 
     set((state) => ({
-      composerText: text,
+      composerText: '',
       lastDecision: decision,
       traceItems,
       artifacts: [artifact, ...state.artifacts.filter((item) => item.id !== artifact.id)].slice(0, 6),
+      sessionHistory: [
+        {
+          id: `${decision.id}-${Date.now()}`,
+          request: text,
+          artifactId: artifact.id,
+          artifactTitle: artifact.title ?? 'Preview output',
+          previewSource: decision.previewSource,
+          createdAt: new Date().toISOString(),
+        },
+        ...state.sessionHistory,
+      ].slice(0, 24),
       selectedArtifactId: artifact.id,
       previewSource: decision.previewSource,
       backendPreviewAvailable: decision.backendPreviewAvailable,
@@ -270,11 +293,25 @@ function buildArtifactBody(artifact: OperatorArtifact, decision: OperatorDecisio
       '',
       `User request: ${artifact.request}`,
       '',
-      'Goal:',
-      '- Inspect the relevant Aegis files first.',
-      '- Keep the change narrow and truth-safe.',
-      '- Preserve backend-owned authority, approvals, evidence, verifier semantics, and runtime state.',
-      '- Validate with focused tests and report commit/push separately.',
+      'Goal',
+      '- Inspect the relevant Aegis source of truth first and deliver the smallest complete change.',
+      '',
+      'Scope',
+      '- Keep the implementation bounded to the named product surface.',
+      '- Preserve backend-owned authority and current route contracts.',
+      '',
+      'Forbidden',
+      '- do not bypass policy, approval, evidence, verifier, memory, model, or tool boundaries',
+      '- do not introduce hidden cloud fallback or optimistic success',
+      '- do not stage generated output or secrets',
+      '',
+      'Validation',
+      '- add focused positive and negative contract tests',
+      '- run relevant lint, build, and backend suites',
+      '- inspect the final diff and staged file list',
+      '',
+      'Final report',
+      '- report changed files, line statistics, exact behavior, validation, commit, and push separately',
       '',
       'Preview metadata:',
       ...boundaryLines.map((line) => `- ${line}`),
@@ -311,10 +348,16 @@ function buildArtifactBody(artifact: OperatorArtifact, decision: OperatorDecisio
       '',
       `Request: ${artifact.request}`,
       '',
-      'Aegis can only present this as a candidate lifecycle item here.',
-      'Persistent memory would require explicit approve/reject/delete controls and sensitivity review.',
+      'Proposed action',
+      '- classify this as a candidate memory lifecycle item',
       '',
-      'No memory write was performed.',
+      'Scope and sensitivity',
+      '- confirm user, project, retention, and sensitivity scope before persistence',
+      '- expose approve, reject, forget, and delete controls',
+      '',
+      'Not performed',
+      '- no memory layer was activated',
+      '- no memory write, merge, promotion, or durable retention occurred',
     ].join('\n');
   }
 
@@ -324,11 +367,16 @@ function buildArtifactBody(artifact: OperatorArtifact, decision: OperatorDecisio
       '',
       `Request: ${artifact.request}`,
       '',
-      'Candidate profiles:',
+      'Local-first candidate profiles',
       modelCandidates,
       '',
-      'This does not prove the model is loaded, healthy, selected, or called.',
-      'Model output would remain proposal-only.',
+      'Provider boundary',
+      '- frontend preference does not select or load a model',
+      '- external providers remain disabled metadata unless separately approved and configured',
+      '',
+      'Not performed',
+      '- no provider probe, model load, inference, embedding, reranking, or cloud call',
+      '- candidate metadata does not prove availability, health, quality, or selection',
     ].join('\n');
   }
 
@@ -338,8 +386,19 @@ function buildArtifactBody(artifact: OperatorArtifact, decision: OperatorDecisio
       '',
       `Request: ${artifact.request}`,
       '',
-      'Before live research, Aegis would need explicit source policy, privacy review, provider boundary, and citation/provenance requirements.',
-      'No web query, browser fetch, API call, or external data transfer occurred.',
+      'Research question',
+      `- ${artifact.request}`,
+      '',
+      'Candidate source categories',
+      '- primary documentation and first-party repositories',
+      '- official standards or research publications where relevant',
+      '',
+      'Privacy and provenance',
+      '- classify private context before any external routing',
+      '- require source references, freshness, and citation boundaries',
+      '',
+      'Not performed',
+      '- no web query, browser fetch, API call, source ingestion, or external transfer',
     ].join('\n');
   }
 
@@ -356,7 +415,14 @@ function buildArtifactBody(artifact: OperatorArtifact, decision: OperatorDecisio
       '- truthful runtime/debt labels',
       '- no hidden authority in frontend state',
       '',
-      'Image/vision handling remains future-gated unless explicitly scoped.',
+      'Expected evidence for a future implementation',
+      '- desktop and mobile rendered screenshots',
+      '- keyboard, focus, overflow, and interaction checks',
+      '- lint/build and focused UI contract results',
+      '',
+      'Not performed',
+      '- no image was uploaded or analyzed',
+      '- vision handling remains future-gated unless explicitly scoped',
     ].join('\n');
   }
 
@@ -365,12 +431,23 @@ function buildArtifactBody(artifact: OperatorArtifact, decision: OperatorDecisio
     '',
     `Request: ${artifact.request}`,
     '',
-    'Suggested next steps:',
-    '- inspect the existing implementation and contracts',
-    '- identify the smallest safe change',
+    'Goal',
+    `- ${artifact.request}`,
+    '',
+    'Steps',
+    '- inspect the existing implementation and source-of-truth contracts',
+    '- identify the smallest complete product change',
     '- preserve runtime, approval, evidence, verifier, model, memory, and tool boundaries',
-    '- add focused validation',
-    '- report what changed and what stayed intentionally out of scope',
+    '- implement focused tests and truthful fallback behavior',
+    '',
+    'Validation',
+    '- run focused tests first, then relevant broader checks',
+    '- inspect rendered behavior when the change is user-facing',
+    '- review the final diff and staged files before commit',
+    '',
+    'Not performed by this preview',
+    '- no command, model, cloud, tool, or memory action',
+    '- no evidence, verifier success, approval, lease, or permission grant',
     '',
     'Preview metadata:',
     ...boundaryLines.map((line) => `- ${line}`),

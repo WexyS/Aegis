@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { ShieldCheck } from 'lucide-react';
+import { Bot, X } from 'lucide-react';
 
 import { dictionaryFor } from '@/i18n';
 import { useOperatorStore } from '@/store/useOperatorStore';
@@ -17,42 +17,64 @@ export const UnifiedOperatorShell = () => {
   const language = useUIStore((state) => state.language);
   const t = dictionaryFor(language).operatorShell;
   const lastDecision = useOperatorStore((state) => state.lastDecision);
+  const isInspectorOpen = useUIStore((state) => state.isInspectorOpen);
+  const setInspectorOpen = useUIStore((state) => state.setInspectorOpen);
+
+  React.useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setInspectorOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [setInspectorOpen]);
 
   return (
-    <div className="operator-shell relative h-full min-h-0 overflow-y-auto bg-[#151516] pb-8 custom-scrollbar">
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.026),transparent_18%),linear-gradient(135deg,rgba(30,31,34,0.98),rgba(18,19,21,0.99))]" />
-      <div className="pointer-events-none absolute inset-0 opacity-[0.04] bg-[repeating-linear-gradient(135deg,rgba(255,255,255,0.75)_0px,rgba(255,255,255,0.75)_1px,transparent_1px,transparent_9px)]" />
-
-      <div className="relative z-10 mx-auto grid w-full max-w-[95rem] gap-5 p-4 xl:grid-cols-[minmax(0,1fr)_24rem] xl:p-6">
-        <main className="min-w-0">
-          <section className="mx-auto flex min-h-[calc(100dvh-8rem)] w-full max-w-5xl flex-col justify-center py-6">
-            <div className="mb-5 inline-flex w-fit items-center gap-2 rounded-xl border border-white/10 bg-white/[0.045] px-3 py-1.5 text-xs font-semibold text-foreground/62">
-              <ShieldCheck size={14} />
-              {t.eyebrow}
+    <div className="operator-shell relative flex h-full min-h-0 bg-[#131313]">
+      <main className="min-w-0 flex-1 overflow-y-auto custom-scrollbar">
+        {!lastDecision ? (
+          <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col justify-center px-5 py-10 sm:px-8">
+            <div className="mb-8 text-center">
+              <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-lg border border-[#4a4333] bg-[#28241c] text-[#f4bf4f]">
+                <Bot size={21} />
+              </div>
+              <h2 className="mt-5 text-3xl font-semibold text-[#f4f1ea]">{t.heroTitle}</h2>
+              <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[#8f8b84]">{t.heroSubtitle}</p>
             </div>
-            <h1 className="max-w-4xl text-3xl font-semibold leading-tight text-white sm:text-4xl lg:text-5xl">
-              {t.heroTitle}
-            </h1>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-foreground/58 sm:text-base">
-              {t.heroSubtitle}
-            </p>
-
-            <div className="mt-8 space-y-4">
-              <OperatorComposer />
-              <OperatorQuickActions />
-            </div>
-          </section>
-
-          <div className="mx-auto w-full max-w-5xl space-y-4 pb-6">
-            <OperatorResponseDraft />
-            <OperatorRoutePreview decision={lastDecision} />
+            <OperatorComposer />
+            <div className="mt-4"><OperatorQuickActions /></div>
           </div>
-        </main>
+        ) : (
+          <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-4 pt-6 sm:px-7 sm:pt-8">
+            <div className="flex-1 pb-36">
+              <div className="mb-6 flex justify-end">
+                <div className="max-w-[88%] rounded-xl rounded-br-sm bg-[#292825] px-4 py-3 text-sm leading-6 text-[#e3dfd7]">
+                  {lastDecision.request}
+                </div>
+              </div>
+              <OperatorResponseDraft />
+              <div className="mt-4"><OperatorRoutePreview decision={lastDecision} /></div>
+            </div>
+            <div className="sticky bottom-0 z-20 -mx-4 bg-[linear-gradient(180deg,transparent,#131313_18%)] px-4 pb-4 pt-8 sm:-mx-7 sm:px-7 sm:pb-6">
+              <OperatorComposer compact />
+            </div>
+          </div>
+        )}
+      </main>
 
-        <div className="min-w-0 xl:sticky xl:top-5 xl:self-start">
-          <OperatorContextPanel />
+      {isInspectorOpen && (
+        <div className="absolute inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label={t.contextPanelTitle}>
+          <button type="button" className="absolute inset-0 bg-black/55" aria-label={t.closeContext} onClick={() => setInspectorOpen(false)} />
+          <aside className="relative z-10 h-full w-[min(92vw,24rem)] overflow-y-auto border-l border-[#34322f] bg-[#181817] p-4 shadow-2xl custom-scrollbar">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-[#ece9e2]">{t.contextPanelTitle}</h2>
+              <button type="button" onClick={() => setInspectorOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-md text-[#8f8b84] hover:bg-[#292825] hover:text-[#f4f1ea]" aria-label={t.closeContext}>
+                <X size={17} />
+              </button>
+            </div>
+            <OperatorContextPanel />
+          </aside>
         </div>
-      </div>
+      )}
     </div>
   );
 };

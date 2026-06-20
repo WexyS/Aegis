@@ -114,12 +114,15 @@ def test_route_preview_is_deterministic_preview_metadata() -> None:
     assert "frontend fallback preview" in en
 
 
-def test_composer_attachment_and_voice_are_placeholders_not_uploads() -> None:
+def test_composer_attachment_is_disabled_and_model_controls_are_preferences() -> None:
     composer = _read("features/operator-shell/components/OperatorComposer.tsx")
 
-    assert "PlaceholderButton" in composer
-    assert "attachmentPlaceholder" in composer
-    assert "microphonePlaceholder" in composer
+    assert "attachmentUnavailable" in composer
+    assert "disabled title={t.attachmentUnavailable}" in composer
+    assert "modelPreference" in composer
+    assert "planningDetail" in composer
+    assert 'value="external_provider" disabled' in composer
+    assert "Mic" not in composer
     assert 'type="file"' not in composer
     assert "upload" not in composer.lower()
     assert "FormData" not in composer
@@ -217,10 +220,8 @@ def test_unified_workspace_uses_response_draft_as_primary_output() -> None:
         (
             "selectedArtifact.body",
             "navigator.clipboard.writeText",
-            "previewOnly",
-            "noCommandExecution",
-            "noVerifierSuccess",
             "responseDraftSafetyFooter",
+            "<article",
         ),
     )
 
@@ -243,7 +244,8 @@ def test_primary_navigation_is_workspace_focused_and_legacy_panels_are_secondary
     primary_match = re.search(r"const NAV_ITEMS = \[(.*?)\] as const;", sidebar, re.DOTALL)
     assert primary_match is not None
     primary = primary_match.group(1)
-    _assert_contains_all(primary, ("'History'", "'Projects'", "'Outputs'", "'Memory'", "'Skills'"))
+    _assert_contains_all(primary, ("'History'", "'Projects'", "'Outputs'", "'Memory'", "'Customize'", "'Settings'"))
+    assert "'Skills'" not in primary
     for legacy in ("labelKey: 'mission'", "labelKey: 'ask'", "labelKey: 'work'", "labelKey: 'capabilities'", "'Advanced'"):
         assert legacy not in primary
 

@@ -5,12 +5,24 @@
 The Unified Operator Shell is the main local-first operator entry: one composer,
 one primary response draft, a compact route preview, and a secondary context
 inspector. The primary navigation now follows workspace tasks: new task,
-history, projects, outputs, memory, and skills.
+history, projects, outputs, memory, customize, and settings.
 
 The former dashboard-style Mission, Ask, Work, Capabilities, and diagnostic
 panels are not parallel primary destinations. Existing surfaces remain
 available through the workspace drawer, Settings, or Advanced diagnostics when
 their detail is needed.
+
+History and Outputs use current browser-session frontend state only. They do
+not load durable conversations, manufacture example projects, persist
+artifacts, or claim backend authority. Projects therefore presents a truthful
+zero-state and only offers buttons that prefill a bounded Operator request.
+
+The composer includes model-candidate and planning-detail preferences. These
+values are presentation metadata: they do not select, load, probe, or call a
+model. External-provider metadata remains disabled, and no cloud fallback is
+introduced. Context is closed by default and keeps route/trace metadata behind
+an explicit secondary drawer so `OperatorResponseDraft` remains the primary
+output.
 
 This shell includes a backend-owned Auto Mode Router preview contract for route
 classification. It is not live Auto Mode execution, autonomous execution, or

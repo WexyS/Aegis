@@ -1,28 +1,18 @@
 "use client";
 
 import React from 'react';
-import {
-  Box,
-  Compass,
-  Maximize2,
-  Minimize2,
-  Monitor,
-  ShieldCheck,
-  Square,
-  X,
-} from 'lucide-react';
+import { Maximize2, Minimize2, PanelRight, Settings, ShieldCheck, Square, X } from 'lucide-react';
 
 import { dictionaryFor } from '@/i18n';
-import { useRuntimeStore } from '@/store/useRuntimeStore';
 import { useUIStore } from '@/store/useUIStore';
 
 export const Header = () => {
   const language = useUIStore((state) => state.language);
+  const activeTab = useUIStore((state) => state.activeTab);
+  const setActiveTab = useUIStore((state) => state.setActiveTab);
+  const toggleInspector = useUIStore((state) => state.toggleInspector);
   const t = dictionaryFor(language);
-  const pendingApprovals = useRuntimeStore((state) => state.pendingApprovals);
-  const pendingClarifications = useRuntimeStore((state) => state.pendingClarifications);
   const [isElectron, setIsElectron] = React.useState(false);
-  const pendingCount = pendingApprovals.length + pendingClarifications.length;
 
   React.useEffect(() => {
     setIsElectron(Boolean(window.aegis?.isElectron && window.aegis.windowAction));
@@ -33,65 +23,59 @@ export const Header = () => {
   }, []);
 
   return (
-    <header className="electron-drag-region relative z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-[#09090d]/[0.82] px-3 pl-4 backdrop-blur-2xl sm:px-4 lg:px-6">
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent" />
-
-      <div className="flex min-w-0 flex-1 items-center justify-center gap-2 lg:justify-start">
-        <ControlChip icon={<ShieldCheck size={15} />} label={t.header.localMode} active />
-        <ControlChip icon={<Compass size={15} />} label={t.header.autoModePreview} />
-        <ControlChip icon={<Monitor size={15} />} label={t.header.externalApisOff} />
-        <ControlChip icon={<Box size={15} />} label={t.header.modelBoundary} />
-        <ControlChip
-          icon={<ShieldCheck size={15} />}
-          label={`${t.header.approvalGate}: ${pendingCount} ${t.header.pending}`}
-          warning={pendingCount > 0}
-        />
+    <header className="electron-drag-region relative z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-[#2b2a28] bg-[#151515] px-3 sm:px-4 lg:px-5">
+      <div className="flex min-w-0 items-center gap-3">
+        <h1 className="truncate text-sm font-semibold text-[#f4f1ea]">{surfaceLabel(activeTab, t.nav)}</h1>
+        <span className="hidden items-center gap-1.5 text-xs text-[#8d8a84] sm:inline-flex">
+          <ShieldCheck size={13} className="text-[#f4bf4f]" />
+          {t.header.localFirstPreview}
+        </span>
       </div>
 
-      {isElectron && (
-        <div className="electron-no-drag flex shrink-0 items-center gap-1">
-          <WindowButton label={t.header.minimize} onClick={() => sendWindowAction('minimize')}>
-            <Minimize2 size={15} />
+      <div className="electron-no-drag flex shrink-0 items-center gap-1">
+        {activeTab === 'Operator' && (
+          <WindowButton label={t.header.context} onClick={toggleInspector}>
+            <PanelRight size={15} />
           </WindowButton>
-          <WindowButton label={t.header.maximize} onClick={() => sendWindowAction('toggle-maximize')}>
-            <Square size={13} />
-          </WindowButton>
-          <WindowButton label={t.header.fullscreen} onClick={() => sendWindowAction('toggle-fullscreen')}>
-            <Maximize2 size={15} />
-          </WindowButton>
-          <WindowButton label={t.header.close} danger onClick={() => sendWindowAction('close')}>
-            <X size={16} />
-          </WindowButton>
-        </div>
-      )}
+        )}
+        <WindowButton label={t.nav.settings} onClick={() => setActiveTab('Settings')}>
+          <Settings size={15} />
+        </WindowButton>
+        {isElectron && (
+          <>
+            <WindowButton label={t.header.minimize} onClick={() => sendWindowAction('minimize')}>
+              <Minimize2 size={15} />
+            </WindowButton>
+            <WindowButton label={t.header.maximize} onClick={() => sendWindowAction('toggle-maximize')}>
+              <Square size={13} />
+            </WindowButton>
+            <WindowButton label={t.header.fullscreen} onClick={() => sendWindowAction('toggle-fullscreen')}>
+              <Maximize2 size={15} />
+            </WindowButton>
+            <WindowButton label={t.header.close} danger onClick={() => sendWindowAction('close')}>
+              <X size={16} />
+            </WindowButton>
+          </>
+        )}
+      </div>
     </header>
   );
 };
 
-const ControlChip = ({
-  icon,
-  label,
-  active = false,
-  warning = false,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  active?: boolean;
-  warning?: boolean;
-}) => (
-  <div
-    className={`electron-no-drag hidden items-center gap-2 rounded-xl border px-3 py-1.5 text-[11px] font-semibold tracking-wide shadow-lg shadow-black/10 sm:inline-flex ${
-      warning
-        ? 'border-warning/25 bg-warning/10 text-warning'
-        : active
-          ? 'border-accent/25 bg-accent/10 text-accent'
-          : 'border-white/10 bg-white/[0.035] text-foreground/55'
-    }`}
-  >
-    <span className={active ? 'text-accent' : warning ? 'text-warning' : 'text-foreground/45'}>{icon}</span>
-    <span className="truncate">{label}</span>
-  </div>
-);
+function surfaceLabel(activeTab: string, nav: ReturnType<typeof dictionaryFor>['nav']): string {
+  const labels: Record<string, string> = {
+    Operator: nav.operator,
+    History: nav.history,
+    Projects: nav.projects,
+    Outputs: nav.outputs,
+    Memory: nav.memory,
+    Customize: nav.customize,
+    Settings: nav.settings,
+    Skills: nav.skills,
+    Advanced: nav.advancedTools,
+  };
+  return labels[activeTab] ?? nav.operator;
+}
 
 const WindowButton = ({
   children,
@@ -109,10 +93,10 @@ const WindowButton = ({
     aria-label={label}
     title={label}
     onClick={onClick}
-    className={`flex h-8 w-9 items-center justify-center rounded-md border transition-colors ${
+    className={`flex h-10 w-10 items-center justify-center rounded-md border transition-colors ${
       danger
-        ? 'border-transparent text-foreground/55 hover:bg-danger/20 hover:text-danger'
-        : 'border-transparent text-foreground/45 hover:border-white/10 hover:bg-white/[0.06] hover:text-white'
+        ? 'border-transparent text-[#9b9891] hover:bg-[#4c2020] hover:text-[#ffd6d6]'
+        : 'border-transparent text-[#9b9891] hover:border-[#383632] hover:bg-[#232321] hover:text-[#f4f1ea]'
     }`}
   >
     {children}

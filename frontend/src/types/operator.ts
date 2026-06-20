@@ -46,6 +46,26 @@ export type OperatorArtifactType =
 
 export type OperatorPermissionMode = 'safe_preview';
 
+export type OperatorModelPreference =
+  | 'auto'
+  | 'fast_summary'
+  | 'balanced_draft'
+  | 'code_review'
+  | 'reasoning_plan'
+  | 'vision_review'
+  | 'external_provider';
+
+export type OperatorPlanningDetail = 'concise' | 'balanced' | 'deep';
+
+export interface OperatorSessionHistoryItem {
+  id: string;
+  request: string;
+  artifactId: string;
+  artifactTitle: string;
+  previewSource: OperatorPreviewSource;
+  createdAt: string;
+}
+
 export interface OperatorModelCandidate {
   profileId: string;
   modelHint: string;

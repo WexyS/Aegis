@@ -30,10 +30,10 @@ export const OperatorWorkspaceDrawer = () => {
   ];
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+    <section>
       <div className="mb-3">
-        <h2 className="text-sm font-semibold text-white">{t.workspaceDrawerTitle}</h2>
-        <p className="mt-1 text-xs leading-5 text-foreground/50">{t.workspaceDrawerCopy}</p>
+        <h2 className="text-sm font-semibold text-[#ece9e2]">{t.workspaceDrawerTitle}</h2>
+        <p className="mt-1 text-xs leading-5 text-[#817d76]">{t.workspaceDrawerCopy}</p>
       </div>
       <div className="grid gap-2">
         {shortcuts.map((shortcut) => (
@@ -41,12 +41,12 @@ export const OperatorWorkspaceDrawer = () => {
             key={shortcut.label}
             type="button"
             onClick={() => setActiveTab(shortcut.target)}
-            className="flex min-h-[44px] items-start gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-left transition-colors hover:border-accent/30 hover:bg-accent/[0.06]"
+            className="flex min-h-11 items-start gap-3 rounded-md border border-[#33312e] bg-[#191918] px-3 py-2.5 text-left transition-colors hover:border-[#5b5039] hover:bg-[#22211f]"
           >
-            <span className="mt-0.5 shrink-0 text-accent">{shortcut.icon}</span>
+            <span className="mt-0.5 shrink-0 text-[#f4bf4f]">{shortcut.icon}</span>
             <span className="min-w-0">
-              <span className="block text-xs font-semibold text-foreground/82">{shortcut.label}</span>
-              <span className="mt-0.5 block break-words text-[11px] leading-5 text-foreground/45">{shortcut.detail}</span>
+              <span className="block text-xs font-semibold text-[#c9c5bc]">{shortcut.label}</span>
+              <span className="mt-0.5 block break-words text-[11px] leading-5 text-[#77736d]">{shortcut.detail}</span>
             </span>
           </button>
         ))}
