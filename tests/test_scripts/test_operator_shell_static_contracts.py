@@ -91,6 +91,55 @@ def test_memory_inbox_uses_explicit_backend_lifecycle_and_secret_guard() -> None
     assert "proposeMemory(" not in operator_action
 
 
+def test_context_drawer_has_dialog_focus_and_restore_contract() -> None:
+    header = _read("components/Header.tsx")
+    shell = _read("features/operator-shell/components/UnifiedOperatorShell.tsx")
+
+    _assert_contains_all(header, ('id="operator-context-trigger"', 'ariaExpanded={isInspectorOpen}', 'ariaControls="operator-context-drawer"'))
+    _assert_contains_all(
+        shell,
+        (
+            'id="operator-context-drawer"',
+            'role="dialog"',
+            'aria-modal="true"',
+            'aria-labelledby="operator-context-title"',
+            "event.key === 'Escape'",
+            "event.key !== 'Tab'",
+            "element.getClientRects().length > 0",
+            "element.closest('details:not([open])')",
+            "closeButtonRef.current?.focus()",
+            "document.getElementById('operator-context-trigger')?.focus()",
+            "onClick={() => setInspectorOpen(false)}",
+        ),
+    )
+
+
+def test_operator_async_states_and_copy_success_are_announced() -> None:
+    composer = _read("features/operator-shell/components/OperatorComposer.tsx")
+    proposal = _read("features/operator-shell/components/OperatorLocalProposalPanel.tsx")
+    response = _read("features/operator-shell/components/OperatorResponseDraft.tsx")
+    outputs = _read("features/workspace/components/OutputsSurface.tsx")
+
+    _assert_contains_all(composer, ('role="status"', 'aria-live="polite"', "routePreviewStarted", "routePreviewCompleted", "routePreviewUnavailable"))
+    _assert_contains_all(proposal, ('role="status"', 'aria-live="polite"', "localProposalRequestStarted", "localProposalCompleted", "localProposalUnavailable", "localProposalCopied"))
+    _assert_contains_all(response, ('role="status"', 'aria-live="polite"', "copied ? t.copiedDraft"))
+    _assert_contains_all(outputs, ('role="status"', 'aria-live="polite"', "copied ? t.copied"))
+
+
+def test_memory_inbox_has_validation_labels_and_delete_focus_contract() -> None:
+    inbox = _read("features/memory/components/MemoryOverviewPanel.tsx")
+    form = _read("features/workspace/components/MemoryCandidateForm.tsx")
+
+    _assert_contains_all(form, ('<label', 'id="memory-candidate-error"', 'role="alert"', 'aria-invalid={errorField', 'aria-describedby={errorField', 'createStarted', 'createCouldNotBeCreated', 'aria-live="polite"'))
+    _assert_contains_all(inbox, ("deleteButtonRef", "cancelDeleteButtonRef.current?.focus()", "deleteButtonRef.current?.focus()", "approveCandidateLabel", "rejectCandidateLabel", "deleteCandidateLabel", 'role="alert"', 'role="status"'))
+
+
+def test_operator_workspace_has_shared_visible_focus_contract() -> None:
+    globals_css = _read("app/globals.css")
+
+    _assert_contains_all(globals_css, (":where(button, a, input, select, textarea, summary, [tabindex]):focus-visible", "outline: 2px solid #f4bf4f", "outline-offset: 3px"))
+
+
 def test_operator_artifacts_and_trace_remain_preview_only() -> None:
     store = _read("store/useOperatorStore.ts")
     artifacts = _read("features/operator-shell/components/OperatorArtifactsPanel.tsx")

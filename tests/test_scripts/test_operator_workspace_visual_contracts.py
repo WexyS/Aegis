@@ -73,6 +73,21 @@ def test_context_is_closed_by_default_and_metadata_stays_secondary() -> None:
     assert shell.index("<OperatorResponseDraft />") < shell.index("<OperatorLocalProposalPanel />")
     assert "<details" in route
     assert "<details open" not in route
+    assert 'w-[min(92vw,24rem)]' in shell
+
+
+def test_accessible_mobile_controls_keep_native_interaction_contracts() -> None:
+    globals_css = _read("app/globals.css")
+    composer = _read("features/operator-shell/components/OperatorComposer.tsx")
+    memory_form = _read("features/workspace/components/MemoryCandidateForm.tsx")
+
+    assert "button, a, input, select, textarea, summary" in globals_css
+    assert "flex-wrap" in composer
+    assert "md:flex-row" in composer
+    assert "sm:grid-cols-3" in memory_form
+    assert '<select' in composer
+    assert '<textarea' in composer
+    assert 'type="button"' in composer
 
 
 def test_model_and_planning_controls_cannot_claim_or_perform_selection() -> None:

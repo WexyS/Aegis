@@ -38,6 +38,15 @@ raw evidence, and cloud context are excluded. The result is unverified,
 proposal-only model output and cannot become evidence, execution, approval,
 verifier success, permission, or runtime truth.
 
+The Operator proposal panel exposes a compact, request-scoped readiness label
+and a link to the existing model settings. It distinguishes disabled,
+misconfigured, unavailable, in-progress, and completed-request outcomes from
+the backend response. It intentionally does not claim that a provider is ready
+before the existing backend probe/status semantics support that conclusion.
+No readiness probe, model completion, LM Studio startup, or configuration write
+runs on page load. Loading, completion, failure, and copy results are announced
+to assistive technology without echoing the submitted prompt.
+
 ## Required Local Setup
 
 LM Studio must be running locally with its OpenAI-compatible server enabled.
@@ -142,6 +151,11 @@ Mission Control hides deleted Memory records by default in the normal Memory OS
 list. Deleted records are visible only through the explicit show-deleted audit
 toggle and remain non-active; they do not count as active memory.
 
+In the unified Operator workspace, Memory candidate creation and every approve,
+reject, or delete transition remain explicit local lifecycle actions. The UI
+announces backend completion and failures but does not turn lifecycle state into
+truth, authority, evidence, permission, or automatic persistence.
+
 ## Disabled Smoke
 
 With the gateway disabled, Model Hub should still load and explain the fail
@@ -166,6 +180,11 @@ After the environment is configured and the backend is restarted:
 2. Confirm status shows the local provider and configured model id.
 3. Confirm status still says live provider health is not proved until probe.
 4. Click `Probe LM Studio`.
+
+Configured success is operator-environment specific. Automated frontend QA may
+verify disabled, misconfigured, or unavailable states without changing local
+settings. It must not manufacture a ready state or model output merely to pass
+a smoke test.
 
 Expected success path:
 

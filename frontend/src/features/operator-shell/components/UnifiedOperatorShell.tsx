@@ -21,14 +21,56 @@ export const UnifiedOperatorShell = () => {
   const lastDecision = useOperatorStore((state) => state.lastDecision);
   const isInspectorOpen = useUIStore((state) => state.isInspectorOpen);
   const setInspectorOpen = useUIStore((state) => state.setInspectorOpen);
+  const drawerRef = React.useRef<HTMLElement>(null);
+  const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+  const wasInspectorOpen = React.useRef(false);
 
   React.useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setInspectorOpen(false);
+    if (!isInspectorOpen) {
+      if (wasInspectorOpen.current) {
+        window.requestAnimationFrame(() => document.getElementById('operator-context-trigger')?.focus());
+      }
+      wasInspectorOpen.current = false;
+      return;
+    }
+
+    wasInspectorOpen.current = true;
+    window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+
+    const handleDialogKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setInspectorOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab' || !drawerRef.current) return;
+
+      const focusable = Array.from(drawerRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => {
+        const closedDetails = element.closest('details:not([open])');
+        return element.getClientRects().length > 0
+          && !element.closest('[aria-hidden="true"]')
+          && (!closedDetails || element.tagName === 'SUMMARY');
+      });
+      if (!focusable.length) {
+        event.preventDefault();
+        drawerRef.current.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [setInspectorOpen]);
+    document.addEventListener('keydown', handleDialogKeyDown);
+    return () => document.removeEventListener('keydown', handleDialogKeyDown);
+  }, [isInspectorOpen, setInspectorOpen]);
 
   return (
     <div className="operator-shell relative flex h-full min-h-0 bg-[#131313]">
@@ -66,12 +108,20 @@ export const UnifiedOperatorShell = () => {
       </main>
 
       {isInspectorOpen && (
-        <div className="absolute inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label={t.contextPanelTitle}>
-          <button type="button" className="absolute inset-0 bg-black/55" aria-label={t.closeContext} onClick={() => setInspectorOpen(false)} />
-          <aside className="relative z-10 h-full w-[min(92vw,24rem)] overflow-y-auto border-l border-[#34322f] bg-[#181817] p-4 shadow-2xl custom-scrollbar">
+        <div className="absolute inset-0 z-50 flex justify-end">
+          <button type="button" tabIndex={-1} className="absolute inset-0 bg-black/55" aria-label={t.closeContext} onClick={() => setInspectorOpen(false)} />
+          <aside
+            id="operator-context-drawer"
+            ref={drawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="operator-context-title"
+            tabIndex={-1}
+            className="relative z-10 h-full w-[min(92vw,24rem)] overflow-y-auto border-l border-[#34322f] bg-[#181817] p-4 shadow-2xl custom-scrollbar"
+          >
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-[#ece9e2]">{t.contextPanelTitle}</h2>
-              <button type="button" onClick={() => setInspectorOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-md text-[#8f8b84] hover:bg-[#292825] hover:text-[#f4f1ea]" aria-label={t.closeContext}>
+              <h2 id="operator-context-title" className="text-sm font-semibold text-[#ece9e2]">{t.contextPanelTitle}</h2>
+              <button ref={closeButtonRef} type="button" onClick={() => setInspectorOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-md text-[#8f8b84] hover:bg-[#292825] hover:text-[#f4f1ea]" aria-label={t.closeContext}>
                 <X size={17} />
               </button>
             </div>

@@ -40,7 +40,7 @@ export const OperatorResponseDraft = () => {
             <p className="text-xs font-semibold text-[#f4bf4f]">Aegis</p>
             <h2 className="mt-1 text-lg font-semibold text-[#f4f1ea]">{selectedArtifact.title}</h2>
           </div>
-          <button type="button" onClick={() => void copyDraft()} className="flex h-10 items-center gap-2 rounded-md px-3 text-xs text-[#918d86] hover:bg-[#242321] hover:text-[#f4f1ea]" aria-label={t.copyDraft}>
+          <button type="button" onClick={() => void copyDraft()} className="flex h-10 items-center gap-2 rounded-md px-3 text-xs text-[#918d86] hover:bg-[#242321] hover:text-[#f4f1ea]" aria-label={copied ? t.copiedDraft : t.copyDraft}>
             {copied ? <Check size={14} /> : <Copy size={14} />}
             <span className="hidden sm:inline">{copied ? t.copiedDraft : t.copyDraft}</span>
           </button>
@@ -48,6 +48,7 @@ export const OperatorResponseDraft = () => {
         {selectedArtifact.summary && <p className="mt-3 text-sm leading-6 text-[#aaa69e]">{selectedArtifact.summary}</p>}
         <pre className="mt-4 whitespace-pre-wrap break-words border-l border-[#3b3935] pl-4 font-sans text-sm leading-7 text-[#d1cdc4]">{selectedArtifact.body}</pre>
         <p className="mt-4 text-xs leading-5 text-[#77736d]">{t.responseDraftSafetyFooter}</p>
+        <p className="sr-only" role="status" aria-live="polite">{copied ? t.copiedDraft : ''}</p>
       </div>
     </article>
   );

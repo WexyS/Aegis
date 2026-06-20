@@ -102,6 +102,29 @@ Memory copy describes the real consent and lifecycle boundary only. The shell
 does not claim a fixed active-layer count because the frontend does not own or
 verify that runtime fact.
 
+## Keyboard And Status Accessibility
+
+The Context trigger reports its expanded state and controls the named Context
+drawer. Opening the drawer moves focus to its close button, Tab and Shift+Tab
+remain within the drawer, Escape or the backdrop closes it, and keyboard focus
+returns to the trigger. When closed, the drawer installs no keyboard trap. Its
+bounded mobile width and internal scrolling keep it usable at narrow Windows
+and browser viewports.
+
+Interactive workspace controls share a visible amber focus outline in addition
+to their existing text and icon labels. Route preview, explicit local proposal,
+copy, and Memory Inbox lifecycle results use concise live-region updates.
+Failures remain alerts. Memory validation links the error summary to the
+relevant field where practical, and delete confirmation receives focus before
+requiring a second explicit action. Cancel returns focus to that record's
+delete button.
+
+The local proposal readiness label describes only the current explicit request:
+not checked, request in progress, response received, disabled, incomplete
+configuration, or unavailable. It does not probe on page load and does not call
+or start LM Studio. A response-received label appears only after the existing
+backend completion contract returns an actual completed response.
+
 ## Preview Source Labels
 
 - Backend contract: route preview came from the backend-owned deterministic

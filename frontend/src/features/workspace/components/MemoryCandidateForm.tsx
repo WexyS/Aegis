@@ -28,6 +28,8 @@ export const MemoryCandidateForm = ({ initialContent = '', onCreated, onCancel }
   const [projectRef, setProjectRef] = React.useState('');
   const [repositoryRef, setRepositoryRef] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
+  const [errorField, setErrorField] = React.useState<'content' | 'project' | 'repository' | 'form' | null>(null);
+  const [statusMessage, setStatusMessage] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
 
   const submit = async (event: React.FormEvent) => {
@@ -35,24 +37,30 @@ export const MemoryCandidateForm = ({ initialContent = '', onCreated, onCancel }
     const trimmed = content.trim();
     if (!trimmed) {
       setError(t.contentRequired);
+      setErrorField('content');
       return;
     }
     const secretReason = detectSecretLikeMemoryContent(trimmed);
     if (secretReason) {
       setError(`${t.secretBlocked} ${secretReason}`);
+      setErrorField('content');
       return;
     }
     if ((scope === 'project' || scope === 'repository') && !projectRef.trim()) {
       setError(t.projectRefRequired);
+      setErrorField('project');
       return;
     }
     if (scope === 'repository' && !repositoryRef.trim()) {
       setError(t.repositoryRefRequired);
+      setErrorField('repository');
       return;
     }
 
     setSubmitting(true);
     setError(null);
+    setErrorField(null);
+    setStatusMessage(t.createStarted);
     try {
       await proposeMemory({
         type,
@@ -66,16 +74,19 @@ export const MemoryCandidateForm = ({ initialContent = '', onCreated, onCancel }
         repository_ref: scope === 'repository' ? repositoryRef.trim() : undefined,
         metadata: { source: 'operator_memory_candidate_form', explicit_user_action: true },
       });
+      setStatusMessage(t.candidateCreated);
       await onCreated();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t.createFailed);
+      setErrorField('form');
+      setStatusMessage(t.createCouldNotBeCreated);
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <form onSubmit={(event) => void submit(event)} className="space-y-4 rounded-lg border border-[#3b3935] bg-[#191918] p-4">
+    <form onSubmit={(event) => void submit(event)} aria-describedby={error ? 'memory-candidate-error' : undefined} className="space-y-4 rounded-lg border border-[#3b3935] bg-[#191918] p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-[#f4f1ea]">{t.candidateFormTitle}</h3>
@@ -88,7 +99,7 @@ export const MemoryCandidateForm = ({ initialContent = '', onCreated, onCancel }
 
       <label className="block text-xs font-medium text-[#bdb8ae]">
         {t.content}
-        <textarea value={content} onChange={(event) => setContent(event.target.value)} rows={4} className="mt-2 w-full resize-y rounded-md border border-[#3b3935] bg-[#111] px-3 py-2 text-sm leading-6 text-[#eeeae2] outline-none focus:border-[#8b7b52]" />
+        <textarea value={content} onChange={(event) => setContent(event.target.value)} rows={4} aria-invalid={errorField === 'content'} aria-describedby={errorField === 'content' ? 'memory-candidate-error' : undefined} className="mt-2 w-full resize-y rounded-md border border-[#3b3935] bg-[#111] px-3 py-2 text-sm leading-6 text-[#eeeae2] outline-none focus:border-[#8b7b52]" />
       </label>
       <label className="block text-xs font-medium text-[#bdb8ae]">
         {t.summary}
@@ -127,23 +138,24 @@ export const MemoryCandidateForm = ({ initialContent = '', onCreated, onCancel }
       {(scope === 'project' || scope === 'repository') && (
         <label className="block text-xs font-medium text-[#bdb8ae]">
           {t.projectRef}
-          <input value={projectRef} onChange={(event) => setProjectRef(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-[#3b3935] bg-[#111] px-3 text-sm text-[#eeeae2]" />
+          <input value={projectRef} onChange={(event) => setProjectRef(event.target.value)} aria-invalid={errorField === 'project'} aria-describedby={errorField === 'project' ? 'memory-candidate-error' : undefined} className="mt-2 h-10 w-full rounded-md border border-[#3b3935] bg-[#111] px-3 text-sm text-[#eeeae2]" />
         </label>
       )}
       {scope === 'repository' && (
         <label className="block text-xs font-medium text-[#bdb8ae]">
           {t.repositoryRef}
-          <input value={repositoryRef} onChange={(event) => setRepositoryRef(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-[#3b3935] bg-[#111] px-3 text-sm text-[#eeeae2]" />
+          <input value={repositoryRef} onChange={(event) => setRepositoryRef(event.target.value)} aria-invalid={errorField === 'repository'} aria-describedby={errorField === 'repository' ? 'memory-candidate-error' : undefined} className="mt-2 h-10 w-full rounded-md border border-[#3b3935] bg-[#111] px-3 text-sm text-[#eeeae2]" />
         </label>
       )}
 
-      {error && <div role="alert" className="flex items-start gap-2 rounded-md border border-red-500/25 bg-red-500/10 p-3 text-xs leading-5 text-red-200"><AlertTriangle size={15} className="mt-0.5 shrink-0" />{error}</div>}
+      {error && <div id="memory-candidate-error" role="alert" className="flex items-start gap-2 rounded-md border border-red-500/25 bg-red-500/10 p-3 text-xs leading-5 text-red-200"><AlertTriangle size={15} className="mt-0.5 shrink-0" />{error}</div>}
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#302f2c] pt-4">
         <p className="max-w-xl text-xs leading-5 text-[#77736d]">{t.candidateSafety}</p>
         <button type="submit" disabled={submitting} className="inline-flex h-10 items-center gap-2 rounded-md bg-[#f1ede4] px-4 text-xs font-semibold text-[#171715] hover:bg-white disabled:cursor-not-allowed disabled:opacity-50">
           <Save size={15} /> {submitting ? t.creating : t.createCandidate}
         </button>
       </div>
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">{statusMessage}</p>
     </form>
   );
 };

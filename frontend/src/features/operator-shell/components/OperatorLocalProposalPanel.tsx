@@ -23,6 +23,16 @@ export const OperatorLocalProposalPanel = () => {
   if (!decision) return null;
   const boundaryBlocked = modelPreference === 'external_provider' || modelPreference === 'vision_review';
   const preferenceLabel = t[`modelPreference_${modelPreference}`];
+  const readinessLabel = resolveReadinessLabel(status, error, t);
+  const liveAnnouncement = copied
+    ? t.localProposalCopied
+    : status === 'loading'
+      ? t.localProposalRequestStarted
+      : status === 'completed'
+        ? t.localProposalCompleted
+        : status === 'failed'
+          ? t.localProposalUnavailable
+          : '';
 
   const copyProposal = async () => {
     if (!proposal?.outputText || !navigator.clipboard) return;
@@ -43,12 +53,19 @@ export const OperatorLocalProposalPanel = () => {
           type="button"
           onClick={() => void generate()}
           disabled={status === 'loading' || boundaryBlocked}
+          aria-describedby="local-proposal-readiness"
           className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-[#665b3f] bg-[#28241c] px-4 text-xs font-semibold text-[#f4d27d] hover:bg-[#312b20] disabled:cursor-not-allowed disabled:opacity-45"
         >
           {status === 'loading' ? <Loader2 size={15} className="animate-spin" /> : <Cpu size={15} />}
           {status === 'loading' ? t.generatingLocalDraft : t.generateLocalDraft}
         </button>
       </div>
+
+      <div id="local-proposal-readiness" className="mt-4 flex flex-col justify-between gap-2 rounded-md border border-[#34322f] bg-[#181817] px-3 py-2.5 text-xs sm:flex-row sm:items-center">
+        <span className="text-[#aaa59c]">{t.gatewayReadiness}: <strong className="font-semibold text-[#ddd8cf]">{readinessLabel}</strong></span>
+        <button type="button" className="self-start text-[#d7b96c] underline underline-offset-2 sm:self-auto" onClick={() => setActiveTab('Settings')}>{t.openModelSettings}</button>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-[#77736d]">{t.gatewayReadinessBoundary}</p>
 
       <details className="mt-4 rounded-md border border-[#302f2c] bg-[#181817] px-4 py-3 text-xs text-[#9d9991]">
         <summary className="cursor-pointer font-medium text-[#c8c3ba]">{t.proposalInput}</summary>
@@ -77,7 +94,7 @@ export const OperatorLocalProposalPanel = () => {
               <p className="text-xs font-semibold text-[#f4bf4f]">{t.localProposal}</p>
               <p className="mt-1 text-xs text-[#8f8b84]">{proposal.model ?? t.configuredLocalModel} · {proposal.backendStatus}</p>
             </div>
-            <button type="button" onClick={() => void copyProposal()} className="inline-flex h-10 items-center gap-2 rounded-md px-3 text-xs text-[#a8a39a] hover:bg-[#292825] hover:text-white">
+            <button type="button" onClick={() => void copyProposal()} aria-label={copied ? t.localProposalCopied : t.copyLocalProposal} className="inline-flex h-10 items-center gap-2 rounded-md px-3 text-xs text-[#a8a39a] hover:bg-[#292825] hover:text-white">
               {copied ? <Check size={14} /> : <Copy size={14} />}{copied ? t.copiedDraft : t.copyDraft}
             </button>
           </div>
@@ -88,6 +105,22 @@ export const OperatorLocalProposalPanel = () => {
           {(proposal.warnings.length > 0 || proposal.limitations.length > 0) && <p className="mt-3 text-xs leading-5 text-[#918b81]">{[...proposal.warnings, ...proposal.limitations].join(' · ')}</p>}
         </article>
       )}
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">{liveAnnouncement}</p>
     </section>
   );
 };
+
+function resolveReadinessLabel(
+  status: 'idle' | 'loading' | 'completed' | 'failed',
+  error: string | null,
+  t: ReturnType<typeof dictionaryFor>['operatorShell'],
+): string {
+  if (status === 'loading') return t.gatewayRequestInProgress;
+  if (status === 'completed') return t.gatewayCompletionConfirmed;
+  if (status !== 'failed') return t.gatewayNotChecked;
+  const normalized = (error ?? '').toLowerCase();
+  if (normalized.includes('disabled')) return t.gatewayDisabled;
+  if (normalized.includes('misconfigured') || normalized.includes('missing_model') || normalized.includes('missing model')) return t.gatewayMisconfigured;
+  if (normalized.includes('unavailable') || normalized.includes('timeout') || normalized.includes('connection')) return t.gatewayUnavailable;
+  return t.localProposalUnavailable;
+}

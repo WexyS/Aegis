@@ -92,9 +92,9 @@ export const MemoryOverviewPanel = () => {
         {notice && <div role="status" className="rounded-md border border-emerald-500/20 bg-emerald-500/[0.06] p-3 text-xs text-emerald-100">{notice}</div>}
 
         {loading && memories.length === 0 ? (
-          <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-[#8f8b84]"><Loader2 size={17} className="animate-spin" />{t.loading}</div>
+          <div role="status" aria-live="polite" className="flex min-h-48 items-center justify-center gap-2 text-sm text-[#8f8b84]"><Loader2 size={17} className="animate-spin" />{t.loading}</div>
         ) : memories.length === 0 ? (
-          <div className="flex min-h-52 flex-col items-center justify-center border border-dashed border-[#34322f] px-5 text-center">
+          <div role="status" className="flex min-h-52 flex-col items-center justify-center border border-dashed border-[#34322f] px-5 text-center">
             <Inbox size={24} className="text-[#77736d]" />
             <h2 className="mt-4 text-base font-semibold text-[#e7e2d9]">{t.emptyTitle}</h2>
             <p className="mt-2 max-w-md text-sm leading-6 text-[#77736d]">{t.emptyCopy}</p>
@@ -150,6 +150,19 @@ const MemoryInboxItem = ({ memory, language, busy, confirmDelete, onApprove, onR
 }) => {
   const t = dictionaryFor(language).memory;
   const refs = (memory.source_refs ?? []).map((ref) => String(ref.ref_id ?? ref.ref ?? '')).filter(Boolean);
+  const deleteButtonRef = React.useRef<HTMLButtonElement>(null);
+  const cancelDeleteButtonRef = React.useRef<HTMLButtonElement>(null);
+  const accessibleName = memory.content_summary || memory.id;
+
+  React.useEffect(() => {
+    if (confirmDelete) cancelDeleteButtonRef.current?.focus();
+  }, [confirmDelete]);
+
+  const cancelDelete = () => {
+    onCancelDelete();
+    window.requestAnimationFrame(() => deleteButtonRef.current?.focus());
+  };
+
   return (
     <article className="rounded-lg border border-[#34322f] bg-[#181817] p-4">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -163,10 +176,10 @@ const MemoryInboxItem = ({ memory, language, busy, confirmDelete, onApprove, onR
         </div>
         <div className="flex shrink-0 flex-wrap gap-1">
           {memory.status === 'proposed' && <>
-            <button type="button" disabled={busy} onClick={onApprove} className="flex h-10 items-center gap-2 rounded-md px-3 text-xs text-emerald-200 hover:bg-emerald-500/10"><Check size={14} />{t.actions.approve}</button>
-            <button type="button" disabled={busy} onClick={onReject} className="flex h-10 items-center gap-2 rounded-md px-3 text-xs text-amber-200 hover:bg-amber-500/10"><X size={14} />{t.actions.reject}</button>
+            <button type="button" disabled={busy} onClick={onApprove} aria-label={t.approveCandidateLabel.replace('{candidate}', accessibleName)} className="flex h-10 items-center gap-2 rounded-md px-3 text-xs text-emerald-200 hover:bg-emerald-500/10"><Check size={14} />{t.actions.approve}</button>
+            <button type="button" disabled={busy} onClick={onReject} aria-label={t.rejectCandidateLabel.replace('{candidate}', accessibleName)} className="flex h-10 items-center gap-2 rounded-md px-3 text-xs text-amber-200 hover:bg-amber-500/10"><X size={14} />{t.actions.reject}</button>
           </>}
-          {memory.status !== 'deleted' && <button type="button" disabled={busy} onClick={onDelete} className="flex h-10 items-center gap-2 rounded-md px-3 text-xs text-red-200 hover:bg-red-500/10"><Trash2 size={14} />{t.actions.delete}</button>}
+          {memory.status !== 'deleted' && <button ref={deleteButtonRef} type="button" disabled={busy} onClick={onDelete} aria-label={t.deleteCandidateLabel.replace('{candidate}', accessibleName)} className="flex h-10 items-center gap-2 rounded-md px-3 text-xs text-red-200 hover:bg-red-500/10"><Trash2 size={14} />{t.actions.delete}</button>}
         </div>
       </div>
       <dl className="mt-4 grid gap-2 border-t border-[#302f2c] pt-3 text-[11px] text-[#77736d] sm:grid-cols-2">
@@ -174,7 +187,7 @@ const MemoryInboxItem = ({ memory, language, busy, confirmDelete, onApprove, onR
         <div><dt className="inline">{t.updated}: </dt><dd className="inline text-[#9e9990]">{formatTimestamp(memory.updated_at, language)}</dd></div>
         <div className="sm:col-span-2"><dt className="inline">{t.sourceRefs}: </dt><dd className="inline break-all text-[#9e9990]">{refs.length ? refs.join(', ') : t.noSourceRefs}</dd></div>
       </dl>
-      {confirmDelete && <div className="mt-4 flex flex-col justify-between gap-3 rounded-md border border-red-500/25 bg-red-500/[0.06] p-3 text-xs text-red-100 sm:flex-row sm:items-center"><span>{t.deleteConfirm}</span><div className="flex gap-2"><button type="button" onClick={onCancelDelete} className="h-9 rounded-md px-3 hover:bg-white/5">{t.cancel}</button><button type="button" onClick={onConfirmDelete} className="h-9 rounded-md bg-red-500/20 px-3 font-semibold hover:bg-red-500/30">{t.confirmDelete}</button></div></div>}
+      {confirmDelete && <div role="group" aria-label={t.deleteConfirmationLabel.replace('{candidate}', accessibleName)} className="mt-4 flex flex-col justify-between gap-3 rounded-md border border-red-500/25 bg-red-500/[0.06] p-3 text-xs text-red-100 sm:flex-row sm:items-center"><span>{t.deleteConfirm}</span><div className="flex gap-2"><button ref={cancelDeleteButtonRef} type="button" onClick={cancelDelete} className="h-9 rounded-md px-3 hover:bg-white/5">{t.cancel}</button><button type="button" onClick={onConfirmDelete} className="h-9 rounded-md bg-red-500/20 px-3 font-semibold hover:bg-red-500/30">{t.confirmDelete}</button></div></div>}
     </article>
   );
 };

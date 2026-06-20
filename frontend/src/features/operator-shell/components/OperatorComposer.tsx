@@ -18,6 +18,19 @@ export const OperatorComposer = ({ compact = false }: { compact?: boolean }) => 
   const setModelPreference = useOperatorStore((state) => state.setModelPreference);
   const planningDetail = useOperatorStore((state) => state.planningDetail);
   const setPlanningDetail = useOperatorStore((state) => state.setPlanningDetail);
+  const lastDecision = useOperatorStore((state) => state.lastDecision);
+  const [routeAnnouncement, setRouteAnnouncement] = React.useState('');
+
+  React.useEffect(() => {
+    if (lastDecision) setRouteAnnouncement(t.routePreviewCompleted);
+  }, [lastDecision, t.routePreviewCompleted]);
+
+  const submitRoutePreview = React.useCallback(async () => {
+    if (!composerText.trim()) return;
+    setRouteAnnouncement(t.routePreviewStarted);
+    const decision = await submitPreviewRequest();
+    setRouteAnnouncement(decision ? t.routePreviewCompleted : t.routePreviewUnavailable);
+  }, [composerText, submitPreviewRequest, t.routePreviewCompleted, t.routePreviewStarted, t.routePreviewUnavailable]);
 
   return (
     <section className="rounded-xl border border-[#3a3834] bg-[#242321] shadow-[0_18px_48px_rgba(0,0,0,0.22)]">
@@ -27,7 +40,7 @@ export const OperatorComposer = ({ compact = false }: { compact?: boolean }) => 
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
-            void submitPreviewRequest();
+            void submitRoutePreview();
           }
         }}
         rows={compact ? 2 : 4}
@@ -74,7 +87,7 @@ export const OperatorComposer = ({ compact = false }: { compact?: boolean }) => 
         </div>
         <button
           type="button"
-          onClick={() => { void submitPreviewRequest(); }}
+          onClick={() => { void submitRoutePreview(); }}
           disabled={!composerText.trim()}
           className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#f4bf4f] px-4 text-sm font-semibold text-[#18150f] hover:bg-[#ffd475] disabled:cursor-not-allowed disabled:opacity-35"
         >
@@ -82,6 +95,7 @@ export const OperatorComposer = ({ compact = false }: { compact?: boolean }) => 
           {t.previewRoute}
         </button>
       </div>
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">{routeAnnouncement}</p>
     </section>
   );
 };

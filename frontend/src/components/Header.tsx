@@ -11,6 +11,7 @@ export const Header = () => {
   const activeTab = useUIStore((state) => state.activeTab);
   const setActiveTab = useUIStore((state) => state.setActiveTab);
   const toggleInspector = useUIStore((state) => state.toggleInspector);
+  const isInspectorOpen = useUIStore((state) => state.isInspectorOpen);
   const t = dictionaryFor(language);
   const [isElectron, setIsElectron] = React.useState(false);
 
@@ -34,7 +35,13 @@ export const Header = () => {
 
       <div className="electron-no-drag flex shrink-0 items-center gap-1">
         {activeTab === 'Operator' && (
-          <WindowButton label={t.header.context} onClick={toggleInspector}>
+          <WindowButton
+            id="operator-context-trigger"
+            label={t.header.context}
+            onClick={toggleInspector}
+            ariaExpanded={isInspectorOpen}
+            ariaControls="operator-context-drawer"
+          >
             <PanelRight size={15} />
           </WindowButton>
         )}
@@ -82,17 +89,26 @@ const WindowButton = ({
   label,
   danger = false,
   onClick,
+  id,
+  ariaExpanded,
+  ariaControls,
 }: {
   children: React.ReactNode;
   label: string;
   danger?: boolean;
   onClick: () => void;
+  id?: string;
+  ariaExpanded?: boolean;
+  ariaControls?: string;
 }) => (
   <button
+    id={id}
     type="button"
     aria-label={label}
     title={label}
     onClick={onClick}
+    aria-expanded={ariaExpanded}
+    aria-controls={ariaControls}
     className={`flex h-10 w-10 items-center justify-center rounded-md border transition-colors ${
       danger
         ? 'border-transparent text-[#9b9891] hover:bg-[#4c2020] hover:text-[#ffd6d6]'

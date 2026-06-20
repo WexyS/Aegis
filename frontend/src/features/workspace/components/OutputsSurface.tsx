@@ -42,9 +42,10 @@ export const OutputsSurface = () => {
           <article className="min-w-0 rounded-lg border border-[#33312e] bg-[#191918]">
             <header className="flex items-center justify-between gap-3 border-b border-[#33312e] px-4 py-3">
               <h3 className="truncate text-sm font-semibold text-[#ece9e2]">{selected.title}</h3>
-              <button type="button" onClick={() => void copy()} className="flex h-10 items-center gap-2 rounded-md px-3 text-xs text-[#aaa69e] hover:bg-[#292825] hover:text-[#f4f1ea]">
+              <button type="button" onClick={() => void copy()} aria-label={copied ? t.copied : t.copy} className="flex h-10 items-center gap-2 rounded-md px-3 text-xs text-[#aaa69e] hover:bg-[#292825] hover:text-[#f4f1ea]">
                 {copied ? <Check size={14} /> : <Copy size={14} />}{copied ? t.copied : t.copy}
               </button>
+              <span className="sr-only" role="status" aria-live="polite">{copied ? t.copied : ''}</span>
             </header>
             <pre className="whitespace-pre-wrap break-words p-5 font-sans text-sm leading-7 text-[#c9c5bc]">{selected.body}</pre>
           </article>

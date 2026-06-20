@@ -216,3 +216,10 @@ a {
     transform: none;
   }
 }
+
+/* Shared keyboard focus treatment for the active operator workspace. */
+:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid #f4bf4f !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 1px #131313 !important;
+}
