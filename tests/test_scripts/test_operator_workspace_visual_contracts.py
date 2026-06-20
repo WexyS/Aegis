@@ -70,6 +70,7 @@ def test_context_is_closed_by_default_and_metadata_stays_secondary() -> None:
     assert "event.key === 'Escape'" in shell
     assert "{isInspectorOpen && (" in shell
     assert shell.index("<OperatorResponseDraft />") < shell.index("<OperatorRoutePreview")
+    assert shell.index("<OperatorResponseDraft />") < shell.index("<OperatorLocalProposalPanel />")
     assert "<details" in route
     assert "<details open" not in route
 
@@ -105,6 +106,23 @@ def test_new_operator_workspace_avoids_unsupported_product_claims() -> None:
         assert unsupported not in sources
     assert ">execute<" not in sources
     assert ">deploy<" not in sources
+
+
+def test_local_proposal_and_memory_inbox_are_secondary_explicit_surfaces() -> None:
+    shell = _read("features/operator-shell/components/UnifiedOperatorShell.tsx")
+    proposal = _read("features/operator-shell/components/OperatorLocalProposalPanel.tsx")
+    memory = _read("features/memory/components/MemoryOverviewPanel.tsx")
+    en = _read("i18n/en.ts")
+
+    assert shell.index("<OperatorResponseDraft />") < shell.index("<OperatorLocalProposalPanel />")
+    assert shell.index("<OperatorLocalProposalPanel />") < shell.index("<OperatorRoutePreview")
+    assert "Generate local draft" in en
+    assert "Proposal input" in en
+    assert "Memory Inbox" in en
+    assert "onClick={() => void generate()}" in proposal
+    assert "Active means an approved lifecycle state only" in en
+    assert "Aegis does not create sample or inferred memories" in en
+    assert "listMemories" in memory
 
 
 def test_operator_workspace_has_responsive_overflow_and_touch_contracts() -> None:

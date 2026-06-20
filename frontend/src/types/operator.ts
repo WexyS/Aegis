@@ -57,6 +57,19 @@ export type OperatorModelPreference =
 
 export type OperatorPlanningDetail = 'concise' | 'balanced' | 'deep';
 
+export type LocalProposalStatus = 'idle' | 'loading' | 'completed' | 'failed';
+
+export interface LocalProposalResult {
+  outputText: string;
+  backendStatus: string;
+  model: string | null;
+  purpose: string;
+  durationMs: number;
+  warnings: string[];
+  limitations: string[];
+  modelCallPerformed: boolean;
+}
+
 export interface OperatorSessionHistoryItem {
   id: string;
   request: string;

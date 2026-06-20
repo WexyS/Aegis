@@ -14,7 +14,12 @@ export interface MemoryItem {
   project_ref?: string | null;
   repository_ref?: string | null;
   session_ref?: string | null;
+  created_at?: number;
+  updated_at?: number;
+  deleted_at?: number | null;
+  metadata?: RcRecord;
   candidate_only?: boolean;
+  execution_permission?: string;
   retrieved_memory_is_truth?: boolean;
   memory_output_is_authority?: boolean;
 }

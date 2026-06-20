@@ -40,7 +40,7 @@ def test_operator_store_false_safety_flags_are_all_defined() -> None:
 def test_operator_store_does_not_import_or_call_execution_surfaces() -> None:
     store = _read("store/useOperatorStore.ts")
     assert "previewOperatorRoute" in store
-    assert "import { previewOperatorRoute } from '@/lib/api';" in store
+    assert "import { completeModelGateway, previewOperatorRoute } from '@/lib/api';" in store
     prohibited = (
         "sendCommand",
         "askAegis",
@@ -60,6 +60,35 @@ def test_operator_store_does_not_import_or_call_execution_surfaces() -> None:
 
     for token in prohibited:
         assert token not in store, token
+
+
+def test_local_proposal_requires_explicit_action_and_stays_bounded() -> None:
+    store = _read("store/useOperatorStore.ts")
+    panel = _read("features/operator-shell/components/OperatorLocalProposalPanel.tsx")
+
+    generate_section = store[store.index("generateLocalProposal: async"):store.index("submitPreviewRequest: async")]
+    preview_section = store[store.index("submitPreviewRequest: async"):store.index("function createFrontendSessionId")]
+    assert "completeModelGateway({" in generate_section
+    assert "completeModelGateway({" not in preview_section
+    _assert_contains_all(store, ("purpose: 'proposal_draft'", "External provider metadata is disabled", "Vision review remains a future boundary", "No memory, files, prior chats, secrets", "detectSecretLikeProposalInput", "response.model_call_performed"))
+    _assert_contains_all(panel, ("onClick={() => void generate()}", "proposalInput", "unverifiedModelOutput", "notEvidence", "notExecution", "notApproval", "notVerifierSuccess", "navigator.clipboard.writeText"))
+    for prohibited in ("probeModelGateway", "fetchModelHubStatus", "localStorage"):
+        assert prohibited not in panel
+
+
+def test_memory_inbox_uses_explicit_backend_lifecycle_and_secret_guard() -> None:
+    inbox = _read("features/memory/components/MemoryOverviewPanel.tsx")
+    form = _read("features/workspace/components/MemoryCandidateForm.tsx")
+    guard = _read("features/workspace/memoryGuard.ts")
+    operator_action = _read("features/operator-shell/components/OperatorMemoryCandidateAction.tsx")
+
+    _assert_contains_all(inbox, ("listMemories", "approveMemory", "rejectMemory", "deleteMemory", "deleteConfirmation", "showDeleted"))
+    _assert_contains_all(form, ("proposeMemory", "operator_explicit_candidate", "explicit_user_action: true", "detectSecretLikeMemoryContent"))
+    _assert_contains_all(guard, ("sk-", "API_KEY|TOKEN|PASSWORD"))
+    _assert_contains_all(operator_action, ("memory_action", "MemoryCandidateForm", "createMemoryCandidate"))
+    assert "localStorage" not in form
+    assert "console." not in form
+    assert "proposeMemory(" not in operator_action
 
 
 def test_operator_artifacts_and_trace_remain_preview_only() -> None:

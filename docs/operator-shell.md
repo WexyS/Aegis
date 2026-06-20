@@ -19,10 +19,30 @@ zero-state and only offers buttons that prefill a bounded Operator request.
 
 The composer includes model-candidate and planning-detail preferences. These
 values are presentation metadata: they do not select, load, probe, or call a
-model. External-provider metadata remains disabled, and no cloud fallback is
-introduced. Context is closed by default and keeps route/trace metadata behind
+model during route preview. After a route preview exists, the operator may use
+the separate **Generate local draft** button to make one explicit request to
+the existing local Model Gateway. It sends only the current request and visible
+route, intent, candidate-preference, and detail metadata. It does not include
+memory, files, previous chats, secrets, runtime logs, raw evidence, or cloud
+context. External-provider metadata remains disabled, vision remains a future
+boundary, and no cloud fallback is introduced. Context is closed by default and keeps route/trace metadata behind
 an explicit secondary drawer so `OperatorResponseDraft` remains the primary
 output.
+
+The local result is displayed separately as **Local proposal** with explicit
+labels: unverified model output, not evidence, not execution, not approval, and
+not verifier success. Failure states show the backend error and do not create a
+manufactured fallback answer. A copy action is local clipboard interaction only.
+
+Memory-related routes now offer a separate **Create memory candidate** review
+form. The form calls the existing Memory proposal API only after explicit
+submission. The Memory Inbox reads backend-owned proposed, active, rejected,
+and optionally deleted records, and exposes explicit approve, reject, and
+confirmed-delete actions. Every mutation is followed by a backend refresh.
+Active is a lifecycle state only; it is not authority, truth, evidence,
+permission, or verifier success. The client blocks common secret-like key and
+credential-assignment patterns before submission, while backend validation
+remains authoritative.
 
 This shell includes a backend-owned Auto Mode Router preview contract for route
 classification. It is not live Auto Mode execution, autonomous execution, or
@@ -36,7 +56,7 @@ Auto Mode preview is deterministic metadata. The frontend prefers
 the shell falls back to the existing deterministic frontend preview and labels
 that fallback clearly.
 
-Both paths use simple keyword matching to preview an intent, route, model
+Both route-preview paths use simple keyword matching to preview an intent, route, model
 profile candidate, boundary requirements, process trace, and draft artifact.
 The backend contract is the stronger source for route preview metadata, but it
 still does not grant authority or execution permission.
@@ -59,6 +79,10 @@ The preview does not:
 - create evidence
 - create verifier success
 - grant approval, permission, leases, or authority
+
+An explicit local proposal is outside the deterministic preview operation and
+is the only new model-call path in this workspace. It never runs on page load,
+route preview, preference changes, or Memory Inbox activity.
 
 Attachment, voice, screenshot, image, and vision controls in this shell remain
 placeholders or boundary previews. They do not upload files, call models, call

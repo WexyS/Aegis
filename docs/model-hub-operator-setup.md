@@ -24,6 +24,20 @@ Model Hub displays backend-owned status from:
 Status refresh is metadata only. It does not probe LM Studio and does not call a
 model. Probe and completion require explicit operator action.
 
+The unified Operator workspace also exposes an explicit **Generate local
+draft** action after a deterministic route preview. It reuses
+`POST /model-gateway/complete`; it does not add another provider client,
+automatic probe, automatic completion, or cloud fallback. The selected model
+profile remains a frontend candidate preference until the backend gateway
+accepts the explicit completion request.
+
+The workspace discloses the bounded proposal input before the call: current
+operator request, visible route and intent preview, local candidate preference,
+and requested detail. Memory, files, previous chats, secrets, raw runtime logs,
+raw evidence, and cloud context are excluded. The result is unverified,
+proposal-only model output and cannot become evidence, execution, approval,
+verifier success, permission, or runtime truth.
+
 ## Required Local Setup
 
 LM Studio must be running locally with its OpenAI-compatible server enabled.

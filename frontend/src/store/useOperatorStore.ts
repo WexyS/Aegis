@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { previewOperatorRoute } from '@/lib/api';
+import { completeModelGateway, previewOperatorRoute } from '@/lib/api';
 import type {
   OperatorArtifact,
   OperatorArtifactType,
@@ -9,6 +9,8 @@ import type {
   OperatorIntent,
   OperatorModelCandidate,
   OperatorModelPreference,
+  LocalProposalResult,
+  LocalProposalStatus,
   OperatorPermissionMode,
   OperatorPlanningDetail,
   OperatorPreviewSource,
@@ -30,11 +32,17 @@ type OperatorStoreState = {
   previewSource: OperatorPreviewSource;
   backendPreviewAvailable: boolean;
   backendPreviewError: string | null;
+  currentSessionId: string;
+  localProposalStatus: LocalProposalStatus;
+  localProposal: LocalProposalResult | null;
+  localProposalError: string | null;
   setComposerText: (value: string) => void;
   setModelPreference: (value: OperatorModelPreference) => void;
   setPlanningDetail: (value: OperatorPlanningDetail) => void;
   startNewTask: () => void;
   selectArtifact: (artifactId: string) => void;
+  generateLocalProposal: () => Promise<LocalProposalResult | null>;
+  clearLocalProposal: () => void;
   submitPreviewRequest: (request?: string) => Promise<OperatorDecisionPreview | null>;
 };
 
@@ -79,6 +87,10 @@ export const useOperatorStore = create<OperatorStoreState>((set, get) => ({
   previewSource: 'frontend_fallback',
   backendPreviewAvailable: false,
   backendPreviewError: null,
+  currentSessionId: createFrontendSessionId(),
+  localProposalStatus: 'idle',
+  localProposal: null,
+  localProposalError: null,
   setComposerText: (value) => set({ composerText: value }),
   setModelPreference: (modelPreference) => set({ modelPreference }),
   setPlanningDetail: (planningDetail) => set({ planningDetail }),
@@ -90,8 +102,71 @@ export const useOperatorStore = create<OperatorStoreState>((set, get) => ({
     previewSource: 'frontend_fallback',
     backendPreviewAvailable: false,
     backendPreviewError: null,
+    localProposalStatus: 'idle',
+    localProposal: null,
+    localProposalError: null,
   }),
   selectArtifact: (artifactId) => set({ selectedArtifactId: artifactId }),
+  clearLocalProposal: () => set({ localProposalStatus: 'idle', localProposal: null, localProposalError: null }),
+  generateLocalProposal: async () => {
+    const state = get();
+    const decision = state.lastDecision;
+    if (!decision?.request.trim()) {
+      set({ localProposalStatus: 'failed', localProposal: null, localProposalError: 'A route preview request is required first.' });
+      return null;
+    }
+    if (state.modelPreference === 'external_provider') {
+      set({ localProposalStatus: 'failed', localProposal: null, localProposalError: 'External provider metadata is disabled in this workspace.' });
+      return null;
+    }
+    if (state.modelPreference === 'vision_review') {
+      set({ localProposalStatus: 'failed', localProposal: null, localProposalError: 'Vision review remains a future boundary and cannot generate a local text proposal here.' });
+      return null;
+    }
+    if (detectSecretLikeProposalInput(decision.request)) {
+      set({ localProposalStatus: 'failed', localProposal: null, localProposalError: 'Secret-like content was blocked before the local proposal request.' });
+      return null;
+    }
+
+    const candidate = resolveLocalProposalCandidate(state.modelPreference, decision);
+    const prompt = buildBoundedLocalProposalPrompt({
+      request: decision.request,
+      routeId: decision.routeId,
+      primaryIntent: decision.primaryIntent,
+      candidate,
+      planningDetail: state.planningDetail,
+    });
+    set({ localProposalStatus: 'loading', localProposal: null, localProposalError: null });
+
+    try {
+      const response = await completeModelGateway({
+        purpose: 'proposal_draft',
+        prompt,
+        max_output_tokens: proposalTokenBudget(state.planningDetail),
+      });
+      if (response.status !== 'completed' || !response.model_call_performed || !response.output_text.trim()) {
+        const reasons = response.failure_reasons.length ? response.failure_reasons.join(', ') : response.status;
+        set({ localProposalStatus: 'failed', localProposal: null, localProposalError: reasons });
+        return null;
+      }
+      const result: LocalProposalResult = {
+        outputText: response.output_text,
+        backendStatus: response.status,
+        model: response.model,
+        purpose: response.purpose,
+        durationMs: response.duration_ms,
+        warnings: response.warnings,
+        limitations: response.limitations,
+        modelCallPerformed: response.model_call_performed,
+      };
+      set({ localProposalStatus: 'completed', localProposal: result, localProposalError: null });
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Local Model Gateway request failed.';
+      set({ localProposalStatus: 'failed', localProposal: null, localProposalError: message });
+      return null;
+    }
+  },
   submitPreviewRequest: async (request) => {
     const text = (request ?? get().composerText).trim();
     if (!text) return null;
@@ -140,10 +215,63 @@ export const useOperatorStore = create<OperatorStoreState>((set, get) => ({
       previewSource: decision.previewSource,
       backendPreviewAvailable: decision.backendPreviewAvailable,
       backendPreviewError: decision.backendPreviewError,
+      localProposalStatus: 'idle',
+      localProposal: null,
+      localProposalError: null,
     }));
     return decision;
   },
 }));
+
+function createFrontendSessionId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return `session:operator:${crypto.randomUUID()}`;
+  return `session:operator:${Date.now().toString(36)}`;
+}
+
+function resolveLocalProposalCandidate(
+  preference: OperatorModelPreference,
+  decision: OperatorDecisionPreview,
+): string {
+  const candidates: Record<Exclude<OperatorModelPreference, 'auto' | 'external_provider' | 'vision_review'>, string> = {
+    fast_summary: 'qwen3.5-9b candidate',
+    balanced_draft: 'gemma-4-12b candidate',
+    code_review: 'qwen2.5-coder-14b-instruct candidate',
+    reasoning_plan: 'deepseek-r1-distill-qwen-14b candidate',
+  };
+  if (preference === 'auto') return decision.modelCandidates[0]?.modelHint ?? 'backend configured local candidate';
+  if (preference === 'external_provider' || preference === 'vision_review') return 'not eligible';
+  return candidates[preference];
+}
+
+function buildBoundedLocalProposalPrompt(input: {
+  request: string;
+  routeId: OperatorRouteId;
+  primaryIntent: OperatorIntent;
+  candidate: string;
+  planningDetail: OperatorPlanningDetail;
+}): string {
+  return [
+    'Create a proposal-only local draft for the explicit operator request below.',
+    'Do not claim execution, evidence, verification, approval, authority, file access, memory access, or cloud access.',
+    'No memory, files, prior chats, secrets, runtime logs, raw evidence, or cloud context are included.',
+    '',
+    `Task request: ${input.request}`,
+    `Route preview: ${input.routeId}`,
+    `Intent preview: ${input.primaryIntent}`,
+    `Frontend candidate preference: ${input.candidate}`,
+    `Requested visible detail: ${input.planningDetail}`,
+  ].join('\n');
+}
+
+function proposalTokenBudget(detail: OperatorPlanningDetail): number {
+  if (detail === 'concise') return 192;
+  if (detail === 'deep') return 512;
+  return 320;
+}
+
+function detectSecretLikeProposalInput(value: string): boolean {
+  return /\bsk-[A-Za-z0-9_-]{8,}/i.test(value) || /\b(?:API_KEY|TOKEN|PASSWORD)\s*=\s*\S+/i.test(value);
+}
 
 function buildDecisionPreview(
   request: string,

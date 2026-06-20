@@ -9,6 +9,8 @@ import { useUIStore } from '@/store/useUIStore';
 
 import { OperatorComposer } from './OperatorComposer';
 import { OperatorContextPanel } from './OperatorContextPanel';
+import { OperatorLocalProposalPanel } from './OperatorLocalProposalPanel';
+import { OperatorMemoryCandidateAction } from './OperatorMemoryCandidateAction';
 import { OperatorQuickActions } from './OperatorQuickActions';
 import { OperatorResponseDraft } from './OperatorResponseDraft';
 import { OperatorRoutePreview } from './OperatorRoutePreview';
@@ -52,6 +54,8 @@ export const UnifiedOperatorShell = () => {
                 </div>
               </div>
               <OperatorResponseDraft />
+              <OperatorLocalProposalPanel />
+              <OperatorMemoryCandidateAction />
               <div className="mt-4"><OperatorRoutePreview decision={lastDecision} /></div>
             </div>
             <div className="sticky bottom-0 z-20 -mx-4 bg-[linear-gradient(180deg,transparent,#131313_18%)] px-4 pb-4 pt-8 sm:-mx-7 sm:px-7 sm:pb-6">

@@ -463,9 +463,9 @@ def test_frontend_runtime_telemetry_is_unavailable_until_backend_data_arrives() 
     assert "wsRttMs: undefined" in store_source
     assert "lastSequenceNum: undefined" in store_source
     assert "memoryPercent = 0" not in dashboard_source
-    assert "determinismScore === undefined ? 'Unavailable'" in dashboard_source
     assert "wsRttMs = 0" not in dashboard_source
     assert "lastSequenceNum = 0" not in dashboard_source
+    assert "useRuntimeStore" not in dashboard_source
     assert "cpuPercent = 0" not in stats_source
     assert "memoryPercent = 0" not in stats_source
     assert "ioThroughput = '0 MB/s'" not in stats_source
@@ -479,6 +479,7 @@ def test_frontend_vision_feed_is_disabled_and_future_gated_by_default() -> None:
     dashboard_source = FRONTEND_DASHBOARD.read_text(encoding="utf-8")
     store_source = FRONTEND_RUNTIME_STORE.read_text(encoding="utf-8")
     vision_source = FRONTEND_VISION.read_text(encoding="utf-8")
+    operator_store_source = (ROOT / "frontend" / "src" / "store" / "useOperatorStore.ts").read_text(encoding="utf-8")
 
     assert "export const API_URL" in api_source
     assert "getVisionStreamUrl" in api_source
@@ -490,8 +491,8 @@ def test_frontend_vision_feed_is_disabled_and_future_gated_by_default() -> None:
     assert "src={visionStreamUrl}" not in dashboard_source
     assert "src={visionStreamUrl}" not in vision_source
     assert "LIVE DESKTOP FEED" not in vision_source
-    assert "Vision future-gated" in dashboard_source
     assert "Vision future-gated" in vision_source
+    assert "vision handling remains future-gated unless explicitly scoped" in operator_store_source
 
 
 def test_frontend_raw_controls_are_disabled_not_authoritative() -> None:
