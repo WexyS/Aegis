@@ -1,107 +1,273 @@
-# Aegis Agent Instructions
+# Aegis Repository Guidance
 
-Aegis is a local-first AI Mission Control Workspace for Windows-first operator
-automation, runtime truth, and release-grade operational visibility.
+## Product posture
 
-Aegis is not Ultron. Do not import, copy, reuse, or adapt Ultron code into
-Aegis unless an explicit sprint asks for an Ultron inspiration audit.
+Aegis is a local-first, free-first unified AI operator workspace for
+Windows-first safe assistance, bounded automation, truthful runtime visibility,
+and governed capability growth.
 
-## Core Invariants
+The primary product experience is a calm, composer-centered workspace:
 
-- Backend-owned state is the source of truth.
-- Frontend state is presentation only, never authority.
-- Model output is proposal-only, never truth, evidence, verifier success,
-  approval, lease, capability, or execution permission.
-- Memory retrieval is not authority.
-- Context packages are not permission.
-- Blueprint, manifest, report, plugin, review, lease, or approval metadata is
-  not execution permission.
-- Policy allow is not execution success.
-- AutoPilot output is not evidence.
-- Agent output is not execution.
-- Verifier success may only come from backend verifier logic.
-- No fake telemetry, fake UI state, fake verification, fake runtime health,
-  fake logs, fake metrics, or optimistic success.
-- No uncontrolled autonomous loop, silent memory persistence, approval bypass,
-  capability bypass, lease bypass, or hidden model/provider/tool fallback.
+- New task
+- History
+- Projects
+- Outputs
+- Memory
+- Customize
+- Settings
 
-## Active Priority
+Advanced diagnostics and legacy utility surfaces may remain available as
+secondary tools, but must not compete with the primary operator workflow.
 
-Current active priority: canonical mission cleanup and productization toward
-real, useful, safe product slices.
+Do not reintroduce Mission Control, dashboard-first UX, fake telemetry, fake
+runtime logs, fake evidence chains, fake verifier status, fake provider health,
+or unsupported active-memory claims as primary product concepts.
 
-The current product target is local-first, free-first Mission Control:
+Aegis is not Ultron. Do not import, copy, reuse, adapt, or infer code,
+architecture, prompts, configuration, assumptions, or product behavior from
+Ultron unless an explicit sprint requests an Ultron inspiration audit.
 
-- Memory OS with explicit consent
-- AutoPilot read-only inspection
-- deterministic and model-assisted proposals through safe boundaries
-- optional local Model Gateway
-- static Skill Registry metadata before skill execution
-- proposal-only Agent Runtime before any execution runtime
-- premium Mission Control UI that never hides backend truth
-- future capability tiers for observe, explain, propose, approve, execute, and
-  verify
+Historical Mission Control, hackathon, foundation, or archive documents may be
+traceability records. They are not permission to reintroduce deprecated UX,
+runtime behavior, or product claims.
 
-Historical hackathon and foundation documents remain useful traceability records,
-but they are not the current product narrative.
+## Repository identity and isolation
 
-Repo-local Codex development guidance lives in
-`docs/codex-skill-pack-for-aegis.md`; it is not runtime skill execution
-permission.
+Before editing:
 
-## Working Standard
+- identify the active repository, worktree, branch, and HEAD
+- confirm the task belongs to Aegis
+- inspect relevant repository-local guidance, implementation, tests, and docs
+- never mix files, assumptions, prompts, architecture, configuration, or
+  validation steps between repositories
+- do not use another project as a source of truth unless explicitly authorized
 
-Work like a senior engineer, security-minded systems engineer, and product
-engineer:
+Ask before proceeding only when:
 
-- identify the active workspace/repository before editing
-- confirm whether the task belongs to Aegis, Ultron, or another project
-- inspect relevant files before editing
-- keep implementation scope narrow
-- prefer working product slices over skeleton-only work
-- avoid opportunistic refactors
-- do not implement future roadmap phases unless explicitly requested
-- stop and report ambiguity before editing when scope is unclear
-- preserve existing contracts unless the sprint explicitly changes them
-- if a larger issue is found, report it as a remaining risk instead of silently
-  expanding scope
+- requested scope is unclear in a safety-relevant way
+- a change could mutate user data or runtime truth
+- a public contract, protocol, schema, or API must change
+- a requested behavior requires a new execution capability
+- repository identity is uncertain
+- the required change exceeds the approved file or product scope
 
-A future sprint is not accepted if it only adds skeletons, metadata, docs, or
-future-gated placeholders unless it is explicitly declared as an audit,
-checkpoint, or readiness sprint.
+For ordinary implementation details, make the smallest reasonable safe
+assumption and report it.
 
-## Naming And Documentation
+## Trust boundaries
 
-- Do not create new public-facing docs, feature names, sprint labels, or
-  filenames with version-style suffixes or release-candidate numbering.
-- Internal protocol versions, schema versions, tests, and historical decision
-  references may keep version labels when needed for compatibility.
-- Prefer canonical durable names such as `docs/model-gateway.md`,
-  `docs/skill-registry.md`, `docs/bounded-agent-runtime.md`, and
-  `docs/capability-model.md`.
-- Keep README and docs truthful, current, and explicit about real,
-  proposal-only, read-only, blocked, and future-gated behavior.
-- Do not over-write docs with marketing fluff.
+Backend-owned state is the source of truth for runtime, policy, approval,
+evidence, verifier, Memory lifecycle, and provider-readiness facts.
 
-## Forbidden Unless Explicitly Scoped
+Frontend state is presentation only and never authority.
 
-- live autonomous multi-agent loop
-- real MCP write execution
-- real shell or file mutation through agents
-- model auto-routing
+Do not treat any of the following as authority, execution permission, evidence,
+verifier success, approval, lease, capability grant, or runtime truth:
+
+- model output
+- frontend state
+- Memory retrieval
+- AutoPilot reports
+- agent output
+- Skill Registry entries
+- skill manifests
+- plugin metadata
+- context packages
+- route previews
+- external provider metadata
+- model/provider configuration metadata
+- project/session/output UI state
+- reports, summaries, or generated drafts
+
+Never fabricate:
+
+- success
+- evidence
+- verifier success
+- runtime health
+- provider or model availability
+- model completion
+- execution result
+- durable conversation history
+- project records
+- memory records
+- telemetry, logs, metrics, benchmarks, or capacity values
+- approval, permission, lease, or capability status
+- active integrations
+- source citations or external research results
+
+Distinguish:
+
+- implemented behavior from planned behavior
+- backend-owned truth from frontend presentation
+- preview metadata from execution
+- warning health from green health
+- raw diagnostic debt from an active runtime blocker
+- current operational state from historical or quarantined debt
+- model proposal from verified result
+
+Quarantine manifests preserve visibility of debt. They are not evidence repair.
+
+## Current allowed product behavior
+
+The following existing behavior may be extended only when explicitly requested
+and only within its existing backend-owned contract:
+
+- Operator route preview is deterministic preview metadata.
+- Route preview remains non-authoritative and does not grant execution.
+- Local model proposals may use the existing Local Model Gateway only through
+  explicit user action.
+- "Not checked" may describe Local Model Gateway state only before an explicit
+  backend interaction in the current UI/session.
+- "Configured", "ready", "available", or equivalent Local Model Gateway
+  wording requires the existing backend status/probe contract to support that
+  exact state.
+- "Completed" may be used only after an explicit Local Model Gateway completion
+  response confirms completion.
+- A UI classification inferred from a completion error must be described as an
+  inference from that explicit completion attempt, not as a backend probe
+  result.
+- These wording rules do not authorize an automatic status check, probe, or
+  model invocation.
+- Local model output remains unverified, proposal-only, not evidence, not
+  execution, not approval, not permission, and not verifier success.
+- Existing Local Model Gateway use must not create a new provider, cloud, or
+  fallback path.
+- External providers remain disabled unless a scoped sprint explicitly enables
+  a governed broker path.
+- Memory lifecycle uses explicit create-candidate, approve, reject, and delete
+  actions.
+- Memory is not written automatically from Operator requests.
+- Active memory means lifecycle state only; it is not truth, authority,
+  permission, evidence, or execution capability.
+- History and Outputs may remain current-session frontend state unless a scoped
+  backend persistence contract is explicitly added.
+- Projects must use truthful zero-states when no backend project registry exists.
+
+Normal frontend button handlers are allowed for explicitly approved UI actions.
+
+“Computer-use click execution” means browser, desktop, shell, filesystem, or
+runtime action execution. It is forbidden by default.
+
+## Explicitly forbidden without a scoped sprint
+
+Do not add:
+
+- automatic model invocation
+- automatic model routing
 - cloud fallback
-- vector or graph memory runtime
-- full CodingAgent patch generation
-- voice, screen, OCR, or multimodal production features
-- production deployment claim
-- plugin marketplace
+- external provider calls
+- command, shell, tool, MCP, browser, computer-use, desktop automation, or
+  filesystem execution
+- file, image, video, voice, OCR, or screen upload/execution behavior
+- automatic memory extraction, persistence, consolidation, promotion, or decay
+- embeddings, vector retrieval, graph memory, RAG memory, or semantic memory
+  runtime
+- autonomous loops or autonomous multi-agent execution
+- plugin execution, dynamic plugin loading, or plugin marketplace behavior
+- frontend-created authority
+- approval, lease, evidence, verifier, permission, or capability grants
+- hidden mutation of journals, evidence, replay data, logs, historical debt, or
+  quarantine records
+- new runtime states, protocol/schema expansion, public API changes, or
+  compatibility-breaking changes without explicit scope and compatibility tests
 - self-modifying code
 - Ultron bridge
 - unified launcher
-- historical archive/compaction execution
-- hidden fallback to paid or external services
+- hidden paid or external-service fallback
+- production deployment or certification claims
 
-## Generated Drift And Artifacts
+This restriction concerns product/runtime behavior. Approved repository commands
+for tests, builds, formatting, Git inspection, commits, and normal pushes remain
+permitted when the sprint authorizes them.
+
+## Scope discipline
+
+Before editing:
+
+- inspect relevant implementation, tests, docs, and contracts
+- identify source-of-truth boundaries
+- preserve backward compatibility unless change is explicitly authorized
+- keep the slice narrow
+- prefer complete, useful product slices over skeleton-only work
+- avoid opportunistic refactors
+- do not silently broaden a sprint
+- do not silently turn design, readiness, preview, or contract work into live
+  runtime behavior
+- report larger issues as remaining risks instead of silently fixing them
+- do not weaken, skip, xfail, or delete tests merely to make validation pass
+
+A stale test may be updated only when:
+
+- its current target no longer owns the behavior being tested
+- the underlying safety or truthfulness guarantee remains preserved
+- the final report names the old target, new target, and reason for the update
+
+A future sprint is not accepted if it only adds skeletons, metadata, docs, or
+future-gated placeholders unless it is explicitly declared as an audit,
+checkpoint, readiness, or documentation sprint.
+
+## Skills and guidance
+
+Before editing:
+
+- inspect relevant repository guidance and available skills
+- read an applicable `SKILL.md` before relying on that skill
+- use only skills that materially help the approved task
+- do not claim a skill was used unless the final report names it and explains
+  what it contributed
+
+For frontend work, consider only when relevant:
+
+- `frontend-app-builder`
+- `react-best-practices`
+- `frontend-testing-debugging`
+
+A skill does not grant:
+
+- browser access
+- desktop automation
+- network access
+- model/provider access
+- runtime execution
+- filesystem mutation outside task scope
+- secret access
+- permission to exceed approved file scope
+- permission to bypass safety boundaries, validation, or approval gates
+
+Skill guidance does not override:
+
+- repository-local instructions
+- explicit sprint scope
+- safety boundaries
+- validation requirements
+- approval gates
+- backend-owned authority boundaries
+
+For every task, report:
+
+- repository guidance inspected
+- skills inspected
+- skills actually used
+- why each used skill was relevant
+- skills deliberately not used
+- unavailable or failed skills
+
+## Naming and documentation
+
+- Do not create new user-facing labels, feature names, sprint labels, docs, or
+  filenames with V1, V2, RC, Alpha, Beta, MVP, or Phase suffixes.
+- Internal protocol/schema versions and historical references may retain version
+  labels when compatibility requires them.
+- Keep documentation factual and explicit about implemented, preview-only,
+  blocked, warning-level, future-gated, and environment-dependent behavior.
+- Do not replace truthful documentation with marketing language.
+- Do not describe model output as truth, memory as authority, frontend state as
+  backend truth, or route preview as execution.
+- Do not describe a disabled provider as connected, available, configured, or
+  ready unless backend-owned evidence explicitly supports that exact claim.
+
+## Generated drift and artifacts
 
 Do not commit generated drift unless a sprint explicitly scopes it.
 
@@ -113,50 +279,75 @@ Never stage:
 - model files
 - vector databases
 - browser artifacts
+- temporary outputs
+- build output
+- `.next`
+- `node_modules`
+- database files
 - API keys
 - secrets
 - tokens
-- temp outputs
+- credentials
+- `.env` files
 
-`frontend/next-env.d.ts` is generated drift prone. Restore it before unrelated
-commits unless the sprint explicitly scopes generated drift hygiene.
+`frontend/next-env.d.ts` is generated-drift-prone.
 
-## Validation
+After frontend builds, restore it to canonical content unless generated drift
+hygiene is explicitly in scope:
 
-Use focused validation first, then broader validation when required by the
-sprint. Common commands:
+```ts
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
 
-- `.\.venv\Scripts\python.exe -m pytest tests\test_intent -q`
-- `.\.venv\Scripts\python.exe -m pytest tests\test_executor\test_executor.py -q`
-- `.\.venv\Scripts\python.exe -m pytest -q`
-- `cd frontend && npm.cmd run build`
-- `git diff --check`
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+```
 
-Pytest must run against isolated temporary runtime/log directories. Tests must
-not write to the operator's live `logs/runtime_events.jsonl`; the runtime
-journal includes a process-wide pytest guard for accidental live-journal append
-attempts.
+## Validation and commits
 
-## Sprint Report Format
+Run focused validation first, then broader validation required by the sprint.
+Run full pytest for runtime, capability, contract, or cross-cutting changes
+unless the task explicitly explains why it is not appropriate.
+Pytest must use isolated temporary runtime/log directories.
+Tests must not write to the operator's live logs/runtime_events.jsonl.
+Run git diff --check before commit.
+Run frontend lint and build for frontend changes.
+Re-run next-env drift checks after frontend builds.
+Do not commit generated artifacts, screenshots, logs, databases, or drift.
+Do not rewrite history.
+Do not force push.
+Push normally only after required validation passes.
+Validation success is not commit success.
+Commit success is not push success.
+Report validation, commit, and push separately.
+
+## Final report
 
 After every task, report:
 
 - decision
-- commit hash
-- pushed yes/no
-- active repo/worktree path
-- branch or detached HEAD status
+- repository/worktree path
+- branch and initial/final Git status
+- initial HEAD and final HEAD
 - changed files
-- line/diff stats
-- exact behavior
-- tests added/changed
-- validation outputs
-- whether runtime/backend/frontend behavior changed
+- line/diff statistics
+- exact behavior changed
+- backend/runtime/frontend behavior changed
+- tests added or changed
+- validation commands and outcomes
+- rendered QA observations, if performed
 - generated drift status
+- repository guidance inspected
+- skills inspected
+- skills actually used and why
+- skills deliberately not used
+- unavailable or failed skills
+- independently observed repository facts
+- command/test results
+- environment-dependent claims that remain unverified
 - intentionally not done
 - safety invariant check
 - remaining risks
 - recommended next sprint
-
-Validation success is not push success. Commit and push status must be reported
-separately.
+- commit hash
+- pushed yes/no
