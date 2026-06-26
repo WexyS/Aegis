@@ -106,6 +106,42 @@ export interface OperatorArtifact {
 
 export type OperatorPreviewSource = 'backend_contract' | 'frontend_fallback';
 
+export type OperatorCapabilityClassification =
+  | 'observe_only'
+  | 'explain_only'
+  | 'proposal_only'
+  | 'approval_required'
+  | 'execution_unavailable'
+  | 'provider_unavailable'
+  | 'unsupported_or_ambiguous';
+
+export interface OperatorCapabilityAssessment {
+  contract: 'aegis-read-only-capability-broker-preview';
+  classification: OperatorCapabilityClassification;
+  rationale: string;
+  boundary: string;
+  source: 'backend_route_preview';
+  readOnly: true;
+  previewOnly: true;
+  deterministic: true;
+  nonAuthoritative: true;
+  nonExecuting: true;
+  nonApproving: true;
+  nonVerifying: true;
+  actionPerformed: false;
+  modelCallPerformed: false;
+  providerCallPerformed: false;
+  commandExecuted: false;
+  toolExecuted: false;
+  browserActionPerformed: false;
+  filesystemMutationPerformed: false;
+  memoryWritten: false;
+  approvalGranted: false;
+  evidenceCreated: false;
+  verifierRun: false;
+  executionAuthorized: false;
+}
+
 export interface OperatorDecisionPreview {
   id: string;
   contract?: string;
@@ -125,6 +161,7 @@ export interface OperatorDecisionPreview {
   visionBoundaryRequired: boolean;
   researchBoundaryRequired: boolean;
   artifactId: string;
+  capabilityAssessment: OperatorCapabilityAssessment | null;
   permissionMode: OperatorPermissionMode;
   safety: {
     commandExecutionPerformed: false;
@@ -178,6 +215,32 @@ export interface OperatorBackendRoutePreview {
     status: OperatorTraceStatus;
     detail: string;
   }>;
+  capability_assessment: {
+    contract: 'aegis-read-only-capability-broker-preview';
+    classification: OperatorCapabilityClassification;
+    rationale: string;
+    boundary: string;
+    source: 'backend_route_preview';
+    read_only: true;
+    preview_only: true;
+    deterministic: true;
+    non_authoritative: true;
+    non_executing: true;
+    non_approving: true;
+    non_verifying: true;
+    action_performed: false;
+    model_call_performed: false;
+    provider_call_performed: false;
+    command_executed: false;
+    tool_executed: false;
+    browser_action_performed: false;
+    filesystem_mutation_performed: false;
+    memory_written: false;
+    approval_granted: false;
+    evidence_created: false;
+    verifier_run: false;
+    execution_authorized: false;
+  };
   command_execution_performed: false;
   model_call_performed: false;
   cloud_call_performed: false;

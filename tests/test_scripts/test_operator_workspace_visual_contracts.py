@@ -76,6 +76,17 @@ def test_context_is_closed_by_default_and_metadata_stays_secondary() -> None:
     assert 'w-[min(92vw,24rem)]' in shell
 
 
+def test_capability_assessment_uses_quiet_responsive_route_preview_surface() -> None:
+    shell = _read("features/operator-shell/components/UnifiedOperatorShell.tsx")
+    route = _read("features/operator-shell/components/OperatorRoutePreview.tsx")
+
+    assert shell.index("<OperatorResponseDraft />") < shell.index("<OperatorRoutePreview")
+    assert "operator-capability-assessment-heading" in route
+    assert "sm:grid-cols-2" in route
+    assert "break-words" in route
+    assert "<button" not in route
+
+
 def test_accessible_mobile_controls_keep_native_interaction_contracts() -> None:
     globals_css = _read("app/globals.css")
     composer = _read("features/operator-shell/components/OperatorComposer.tsx")

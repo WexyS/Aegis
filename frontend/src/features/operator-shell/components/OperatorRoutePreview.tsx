@@ -5,7 +5,12 @@ import { ChevronDown, GitBranch, ShieldCheck } from 'lucide-react';
 import { dictionaryFor } from '@/i18n';
 import { useOperatorStore } from '@/store/useOperatorStore';
 import { useUIStore } from '@/store/useUIStore';
-import type { OperatorDecisionPreview, OperatorIntent, OperatorRouteId } from '@/types/operator';
+import type {
+  OperatorCapabilityClassification,
+  OperatorDecisionPreview,
+  OperatorIntent,
+  OperatorRouteId,
+} from '@/types/operator';
 
 export const OperatorRoutePreview = ({ decision }: { decision: OperatorDecisionPreview | null }) => {
   const language = useUIStore((state) => state.language);
@@ -33,6 +38,37 @@ export const OperatorRoutePreview = ({ decision }: { decision: OperatorDecisionP
           <PreviewCell label={t.modelPreferenceLabel} value={t[`modelPreference_${modelPreference}`]} />
           <PreviewCell label={t.planningDetailLabel} value={t[`planningDetail_${planningDetail}`]} />
         </dl>
+        <section
+          aria-labelledby="operator-capability-assessment-heading"
+          className="mt-4 border-t border-[#302f2c] pt-4"
+        >
+          <h3
+            id="operator-capability-assessment-heading"
+            className="flex items-center gap-2 text-xs font-semibold text-[#c9c5bc]"
+          >
+            <ShieldCheck size={14} aria-hidden="true" className="shrink-0 text-[#f4bf4f]" />
+            {t.capabilityAssessmentTitle}
+          </h3>
+          {decision.capabilityAssessment ? (
+            <div className="mt-2 space-y-2 text-[11px] leading-5 text-[#918d86]">
+              <p>
+                <span className="font-medium text-[#d7b469]">
+                  {formatCapabilityClassification(decision.capabilityAssessment.classification, t)}
+                </span>
+                {' - '}{decision.capabilityAssessment.rationale}
+              </p>
+              <p>
+                <span className="font-medium text-[#c9c5bc]">{t.capabilityAssessmentBoundaryLabel}: </span>
+                {decision.capabilityAssessment.boundary}
+              </p>
+              <p className="text-[#77736d]">{t.capabilityAssessmentPreviewCopy}</p>
+            </div>
+          ) : (
+            <p className="mt-2 text-[11px] leading-5 text-[#77736d]">
+              {t.capabilityAssessmentUnavailable}
+            </p>
+          )}
+        </section>
         <p className="mt-4 flex items-start gap-2 text-[11px] leading-5 text-[#77736d]">
           <ShieldCheck size={13} className="mt-0.5 shrink-0 text-[#f4bf4f]" />
           {t.routePreviewSafetyCopy}
@@ -79,4 +115,20 @@ export function formatRoute(route: OperatorRouteId, t: ReturnType<typeof diction
     approval_review: t.routeApprovalReview,
   };
   return labels[route];
+}
+
+function formatCapabilityClassification(
+  classification: OperatorCapabilityClassification,
+  t: ReturnType<typeof dictionaryFor>['operatorShell'],
+): string {
+  const labels: Record<OperatorCapabilityClassification, string> = {
+    observe_only: t.capabilityObserveOnly,
+    explain_only: t.capabilityExplainOnly,
+    proposal_only: t.capabilityProposalOnly,
+    approval_required: t.capabilityApprovalRequired,
+    execution_unavailable: t.capabilityExecutionUnavailable,
+    provider_unavailable: t.capabilityProviderUnavailable,
+    unsupported_or_ambiguous: t.capabilityUnsupportedOrAmbiguous,
+  };
+  return labels[classification];
 }

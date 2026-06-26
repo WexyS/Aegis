@@ -16,6 +16,10 @@ def _assert_no_action_flags(data: dict[str, object]) -> None:
     assert data["proposal_only"] is True
     assert data["requires_backend_owned_policy_before_execution"] is True
     assert data["process_trace_is_summary_not_hidden_reasoning"] is True
+    assessment = data["capability_assessment"]
+    assert isinstance(assessment, dict)
+    assert assessment["action_performed"] is False
+    assert assessment["execution_authorized"] is False
 
 
 @pytest.mark.asyncio
@@ -30,6 +34,7 @@ async def test_operator_preview_route_returns_contract() -> None:
     assert data["status"] == "preview_only"
     assert data["router_mode"] == "deterministic_preview"
     assert data["route_id"] == "status_explainer"
+    assert data["capability_assessment"]["classification"] == "observe_only"
     _assert_no_action_flags(data)
 
 

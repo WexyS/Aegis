@@ -15,6 +15,10 @@ def _assert_no_action_flags(preview: dict[str, object]) -> None:
     assert preview["proposal_only"] is True
     assert preview["requires_backend_owned_policy_before_execution"] is True
     assert preview["process_trace_is_summary_not_hidden_reasoning"] is True
+    assessment = preview["capability_assessment"]
+    assert isinstance(assessment, dict)
+    assert assessment["preview_only"] is True
+    assert assessment["execution_authorized"] is False
 
 
 def test_empty_request_returns_blocked_preview_without_execution() -> None:
@@ -33,6 +37,7 @@ def test_status_request_routes_to_status_explainer() -> None:
     assert preview["status"] == PREVIEW_STATUS
     assert preview["primary_intent"] == "ask_status"
     assert preview["route_id"] == "status_explainer"
+    assert preview["capability_assessment"]["classification"] == "observe_only"
     _assert_no_action_flags(preview)
 
 
@@ -102,6 +107,7 @@ def test_command_execute_request_routes_to_command_approval_preview() -> None:
     assert preview["approval_needed"] is True
     assert preview["permission_mode"] == "safe_preview"
     assert preview["artifact"]["type"] == "command_approval_preview"
+    assert preview["capability_assessment"]["classification"] == "execution_unavailable"
     _assert_no_action_flags(preview)
 
 

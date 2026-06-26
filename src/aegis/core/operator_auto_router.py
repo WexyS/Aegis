@@ -5,6 +5,8 @@ import re
 import unicodedata
 from typing import Any
 
+from aegis.core.capability_broker import build_capability_assessment
+
 
 CONTRACT_NAME = "aegis-operator-auto-router-preview"
 ROUTER_MODE = "deterministic_preview"
@@ -230,7 +232,10 @@ def build_operator_route_preview(request: str) -> dict[str, Any]:
         "external_cloud_candidate_disabled": includes_external_provider_reference(normalized),
         **NO_ACTION_FLAGS,
     }
-    return preview
+    return {
+        **preview,
+        "capability_assessment": build_capability_assessment(display_request, preview),
+    }
 
 
 def classify_operator_intents(normalized_request: str) -> list[str]:

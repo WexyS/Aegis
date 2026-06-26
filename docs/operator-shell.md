@@ -61,6 +61,21 @@ profile candidate, boundary requirements, process trace, and draft artifact.
 The backend contract is the stronger source for route preview metadata, but it
 still does not grant authority or execution permission.
 
+Backend route previews also include a deterministic read-only Capability Broker
+assessment. The compact assessment remains inside the collapsed route-preview
+surface and below the primary response. It explains whether the request maps to
+observation, explanation, proposal, a future approval requirement, unavailable
+execution, an unavailable provider, or an unsupported/ambiguous path. Frontend
+fallback previews do not manufacture this backend-owned assessment.
+
+The assessment does not execute commands, tools, browser or filesystem actions;
+call local/cloud models or providers; write Memory; grant approval, permission,
+leases, or capabilities; create evidence; run a verifier; or authorize
+execution. It does not alter Maintenance Scan warning health or repair/hide
+historical, evidence, replay, or quarantine debt. Local Model Gateway readiness
+remains a separate environment-dependent fact until a configured acceptance
+smoke actually verifies it.
+
 The route preview recognizes model/provider wording such as LM Studio, Qwen,
 Gemma, DeepSeek, OpenRouter, Moonshot, and Kimi as Model Hub review metadata.
 That classification is not model intelligence, not execution, not evidence, not

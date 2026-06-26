@@ -14,6 +14,22 @@ work may be considered. Actual execution still requires backend policy,
 approval where needed, scoped inputs, evidence expectations, verifier checks,
 and runtime lifecycle handling.
 
+## Read-Only Capability Broker
+
+The implemented Capability Broker extends the deterministic Operator route
+preview with a backend-owned capability assessment. It classifies only the
+caller-supplied request and existing route-preview metadata as `observe_only`,
+`explain_only`, `proposal_only`, `approval_required`,
+`execution_unavailable`, `provider_unavailable`, or
+`unsupported_or_ambiguous`.
+
+The assessment is read-only, preview-only, deterministic, non-authoritative,
+non-executing, non-approving, and non-verifying. It does not call a model or
+provider, execute a command/tool/browser/filesystem action, write Memory, grant
+approval or a lease, create evidence, run a verifier, or authorize execution.
+The frontend displays the backend assessment but does not create one when the
+route preview falls back to frontend-only classification.
+
 ## Capability Tiers
 
 | Tier | Meaning | Current examples | Permission rule |
@@ -147,12 +163,11 @@ permission.
 
 Future capability work should add real product value in this order:
 
-1. Intent Router / Capability Broker.
-2. More read-only local inspection capabilities.
-3. Memory Inbox and consent-based memory intelligence.
-4. Agent-to-skill proposal flow.
-5. Approved local safe actions with evidence/verifier strategy.
-6. Optional MCP and external connector layer.
+1. More read-only local inspection capabilities.
+2. Memory Inbox and consent-based memory intelligence.
+3. Agent-to-skill proposal flow.
+4. Approved local safe actions with evidence/verifier strategy.
+5. Optional MCP and external connector layer.
 
 ## Safety Boundary
 

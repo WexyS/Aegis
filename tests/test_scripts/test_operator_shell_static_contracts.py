@@ -192,6 +192,27 @@ def test_route_preview_is_deterministic_preview_metadata() -> None:
     assert "frontend fallback preview" in en
 
 
+def test_capability_assessment_is_backend_owned_secondary_and_non_executing() -> None:
+    shell = _read("features/operator-shell/components/UnifiedOperatorShell.tsx")
+    route_preview = _read("features/operator-shell/components/OperatorRoutePreview.tsx")
+    store = _read("store/useOperatorStore.ts")
+
+    assert shell.index("<OperatorResponseDraft />") < shell.index("<OperatorRoutePreview")
+    _assert_contains_all(
+        route_preview,
+        (
+            "operator-capability-assessment-heading",
+            "capabilityAssessmentTitle",
+            "capabilityAssessmentPreviewCopy",
+            "capabilityAssessmentUnavailable",
+        ),
+    )
+    assert "capability_assessment" in store
+    assert "capabilityAssessment: null" in store
+    for forbidden in ("Approve", "Execute", "Generate local draft", "completeModelGateway", "fetch("):
+        assert forbidden not in route_preview
+
+
 def test_composer_attachment_is_disabled_and_model_controls_are_preferences() -> None:
     composer = _read("features/operator-shell/components/OperatorComposer.tsx")
 
