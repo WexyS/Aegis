@@ -25,6 +25,15 @@ INTENT_COMMAND_PREVIEW = "command_preview"
 INTENT_APPROVAL_REVIEW = "approval_review"
 INTENT_UNKNOWN = "unknown"
 
+BOUNDED_MAINTENANCE_SCAN_REQUESTS = frozenset(
+    {
+        "maintenance scan",
+        "run maintenance scan",
+        "bakim taramasi",
+        "bakim taramasini calistir",
+    }
+)
+
 NO_ACTION_FLAGS: dict[str, bool] = {
     "command_execution_performed": False,
     "model_call_performed": False,
@@ -241,6 +250,8 @@ def build_operator_route_preview(request: str) -> dict[str, Any]:
 def classify_operator_intents(normalized_request: str) -> list[str]:
     if not normalized_request:
         return [INTENT_UNKNOWN]
+    if is_bounded_maintenance_scan_request(normalized_request):
+        return [INTENT_ASK_STATUS]
     intents: list[str] = []
     for intent, keywords in KEYWORDS.items():
         if matches_intent(normalized_request, intent, keywords):
@@ -430,6 +441,10 @@ def summary_for_artifact(artifact_type: str) -> str:
 
 def includes_external_provider_reference(normalized_request: str) -> bool:
     return any(keyword in normalized_request for keyword in ("kimi", "moonshot", "openrouter", "cloud"))
+
+
+def is_bounded_maintenance_scan_request(normalized_request: str) -> bool:
+    return normalized_request.rstrip(" .!?") in BOUNDED_MAINTENANCE_SCAN_REQUESTS
 
 
 def normalize_request(request: str) -> str:

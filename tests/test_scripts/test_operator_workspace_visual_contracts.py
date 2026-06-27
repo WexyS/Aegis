@@ -87,6 +87,23 @@ def test_capability_assessment_uses_quiet_responsive_route_preview_surface() -> 
     assert "<button" not in route
 
 
+def test_maintenance_scan_action_is_primary_responsive_and_keyboard_visible() -> None:
+    shell = _read("features/operator-shell/components/UnifiedOperatorShell.tsx")
+    action = _read("features/operator-shell/components/OperatorMaintenanceScanAction.tsx")
+
+    assert shell.index("<OperatorResponseDraft />") < shell.index("<OperatorMaintenanceScanAction")
+    assert shell.index("<OperatorMaintenanceScanAction") < shell.index("<OperatorLocalProposalPanel />")
+    assert shell.index("<OperatorMaintenanceScanAction") < shell.index("<OperatorMemoryCandidateAction />")
+    assert shell.index("<OperatorMaintenanceScanAction") < shell.index("<OperatorRoutePreview")
+    assert "sm:flex-row" in action
+    assert "sm:grid-cols-2" in action
+    assert "break-words" in action
+    assert "focus-visible:outline" in action
+    assert "min-h-10" in action
+    assert "aria-live=\"polite\"" in action
+    assert "overflow-hidden" not in action
+
+
 def test_accessible_mobile_controls_keep_native_interaction_contracts() -> None:
     globals_css = _read("app/globals.css")
     composer = _read("features/operator-shell/components/OperatorComposer.tsx")

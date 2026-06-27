@@ -30,11 +30,17 @@ approval or a lease, create evidence, run a verifier, or authorize execution.
 The frontend displays the backend assessment but does not create one when the
 route preview falls back to frontend-only classification.
 
+The existing Maintenance Scan is the first explicit read-only invocation exposed
+from the primary Operator workflow. A bounded request is previewed as
+`observe_only`, but the preview does not invoke or authorize it. A separate user
+click reuses `GET /maintenance/scan`; frontend-fallback previews cannot invoke
+the capability.
+
 ## Capability Tiers
 
 | Tier | Meaning | Current examples | Permission rule |
 | --- | --- | --- | --- |
-| Observe | Read backend-owned state or local metadata without mutation. | maintenance scan, tool registry, app registry, runtime snapshot | Can run automatically when read-only and bounded. |
+| Observe | Read backend-owned state or local metadata without mutation. | maintenance scan, tool registry, app registry, runtime snapshot | Operator Maintenance Scan invocation requires an explicit user action; metadata projection remains non-authoritative. |
 | Explain | Summarize observed state without claiming truth beyond sources. | deterministic summaries, Model Gateway proposal text | Output is proposal/context only. |
 | Propose | Create a plan, candidate action, memory proposal, or agent proposal. | action proposals, Memory proposals, historical debt closure dry-run, Agent Runtime sessions | Proposal is not execution permission. |
 | Read-only execute | Perform bounded non-mutating local inspection. | AutoPilot repository structure audit | Allowed only with scoped path and policy limits. |
@@ -57,7 +63,6 @@ Aegis may automatically run bounded work only when all are true:
 Examples:
 
 - runtime snapshot projection
-- read-only maintenance scan
 - registry listing
 - safe status endpoints
 

@@ -20,6 +20,7 @@ import {
   ApprovalHygienePreviewResponse,
   CommandRecord,
   LocalProviderProbeProjection,
+  MaintenanceScanReport,
   RepoAuditDryRunProjection,
   ToolRegistrySnapshot,
 } from '@/types/runtime';
@@ -166,6 +167,19 @@ export async function fetchToolRegistry(): Promise<ToolRegistrySnapshot> {
     throw new Error(`Tool registry request failed: ${response.status}`);
   }
   return response.json() as Promise<ToolRegistrySnapshot>;
+}
+
+export async function fetchMaintenanceScan(): Promise<MaintenanceScanReport> {
+  const url = new URL('/maintenance/scan', API_URL);
+  const response = await fetch(url.toString(), { cache: 'no-store' });
+  const body = await parseJsonBody<MaintenanceScanReport | { detail?: unknown }>(response);
+  if (!response.ok) {
+    throw new Error(resolveErrorDetail(body, `Maintenance Scan request failed: ${response.status}`));
+  }
+  if (!isMaintenanceScanReport(body)) {
+    throw new Error('Maintenance Scan returned no valid read-only backend report.');
+  }
+  return body;
 }
 
 export async function fetchRepoAuditDryRunProjection(): Promise<RepoAuditDryRunProjection> {
@@ -464,6 +478,18 @@ async function parseJsonBody<T>(response: Response): Promise<T | null> {
   } catch {
     return null;
   }
+}
+
+function isMaintenanceScanReport(body: unknown): body is MaintenanceScanReport {
+  if (!body || typeof body !== 'object') return false;
+  const record = body as Record<string, unknown>;
+  const summary = record.summary;
+  return record.scan_version === 'maintenance-scan/1'
+    && record.read_only === true
+    && !!summary
+    && typeof summary === 'object'
+    && typeof (summary as Record<string, unknown>).status === 'string'
+    && Boolean(String((summary as Record<string, unknown>).status).trim());
 }
 
 function resolveErrorDetail(body: unknown, fallback: string): string {

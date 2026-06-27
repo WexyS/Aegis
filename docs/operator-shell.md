@@ -76,6 +76,20 @@ historical, evidence, replay, or quarantine debt. Local Model Gateway readiness
 remains a separate environment-dependent fact until a configured acceptance
 smoke actually verifies it.
 
+An exact bounded Maintenance Scan request is classified as
+`status_explainer` / `observe_only`. The preview states that no scan has run and
+does not authorize the scan. Only a separate **Request Maintenance Scan** click
+calls the existing `GET /maintenance/scan` endpoint. The action is unavailable
+for frontend-fallback previews and never runs on mount, route preview, composer
+submission, quick-action fill, or preference changes.
+
+The Operator surface displays only the backend report version, read-only marker,
+diagnostic status, and bounded counts when present. It does not show raw report
+JSON, local paths, journals, evidence, replay data, or maintenance action
+controls. A received report is not repair, green health, production readiness,
+evidence, verifier success, approval, permission, lease, or authority. Detailed
+diagnostics remain in Advanced.
+
 The route preview recognizes model/provider wording such as LM Studio, Qwen,
 Gemma, DeepSeek, OpenRouter, Moonshot, and Kimi as Model Hub review metadata.
 That classification is not model intelligence, not execution, not evidence, not
@@ -112,6 +126,9 @@ artifact summary and a copy-ready body before the compact route metadata. Copy
 requires an explicit operator click and does not write memory, persist an
 artifact, execute a tool, or create evidence. The context inspector keeps the
 trace, artifact list, and legacy detail surfaces available as secondary tools.
+For an eligible Maintenance Scan request, the explicit action and its
+request-scoped backend result appear after this response and before proposal,
+Memory, and route-preview metadata.
 
 Memory copy describes the real consent and lifecycle boundary only. The shell
 does not claim a fixed active-layer count because the frontend does not own or

@@ -39,6 +39,30 @@ async def test_operator_preview_route_returns_contract() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "prompt",
+    (
+        "Run Maintenance Scan",
+        "Maintenance Scan",
+        "Bakım Taramasını Çalıştır",
+        "Bakım Taraması",
+    ),
+)
+async def test_operator_preview_routes_bounded_maintenance_scan_without_invoking_it(prompt: str) -> None:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(API_ROUTE, json={"request": prompt})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["primary_intent"] == "ask_status"
+    assert data["route_id"] == "status_explainer"
+    assert data["capability_assessment"]["classification"] == "observe_only"
+    assert "no scan has run yet" in data["capability_assessment"]["boundary"]
+    _assert_no_action_flags(data)
+
+
+@pytest.mark.asyncio
 async def test_operator_preview_empty_request_fails_safely() -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

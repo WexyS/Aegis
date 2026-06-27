@@ -213,6 +213,63 @@ def test_capability_assessment_is_backend_owned_secondary_and_non_executing() ->
         assert forbidden not in route_preview
 
 
+def test_maintenance_scan_requires_explicit_backend_owned_operator_action() -> None:
+    shell = _read("features/operator-shell/components/UnifiedOperatorShell.tsx")
+    action = _read("features/operator-shell/components/OperatorMaintenanceScanAction.tsx")
+    quick_actions = _read("features/operator-shell/components/OperatorQuickActions.tsx")
+    api = _read("lib/api.ts")
+
+    _assert_contains_all(
+        action,
+        (
+            "decision.previewSource === 'backend_contract'",
+            "decision.backendPreviewAvailable",
+            "decision.routeId === 'status_explainer'",
+            "decision.capabilityAssessment?.classification === 'observe_only'",
+            "BOUNDED_MAINTENANCE_SCAN_REQUESTS.has",
+            "onClick={() => { void requestMaintenanceScan(); }}",
+            "const report = await fetchMaintenanceScan()",
+            "setMaintenanceScan(report)",
+            "setRequestResult(null)",
+            "requestStatus === 'requesting'",
+            "requestStatus === 'received'",
+            "requestStatus === 'unavailable'",
+            "Array.isArray(requestResult?.summary.attention)",
+        ),
+    )
+    assert shell.index("<OperatorResponseDraft />") < shell.index("<OperatorMaintenanceScanAction")
+    assert shell.index("<OperatorMaintenanceScanAction") < shell.index("<OperatorLocalProposalPanel />")
+    assert "fetchMaintenanceScan" not in quick_actions
+    assert "onClick={() => setComposerText(action.prompt)}" in quick_actions
+    assert "quickMaintenanceScanPrompt" in quick_actions
+    assert "React.useEffect" not in action
+    assert "submitPreviewRequest" not in action
+    assert "socket" not in action
+    assert "JSON.stringify" not in action
+    assert "requestMaintenanceAction" not in action
+    assert "new URL('/maintenance/scan', API_URL)" in api
+    assert "record.scan_version === 'maintenance-scan/1'" in api
+    assert "record.read_only === true" in api
+    assert "typeof (summary as Record<string, unknown>).status === 'string'" in api
+
+
+def test_maintenance_scan_operator_action_has_no_forbidden_runtime_surfaces() -> None:
+    action = _read("features/operator-shell/components/OperatorMaintenanceScanAction.tsx")
+
+    for forbidden_call in (
+        "completeModelGateway(",
+        "probeModelGateway(",
+        "requestMaintenanceAction(",
+        "runMaintenanceScan(",
+        "sendCommand(",
+        "socket.emit(",
+        "fetch(",
+        "approve",
+        "verifier",
+    ):
+        assert forbidden_call not in action
+
+
 def test_composer_attachment_is_disabled_and_model_controls_are_preferences() -> None:
     composer = _read("features/operator-shell/components/OperatorComposer.tsx")
 

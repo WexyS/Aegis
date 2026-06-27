@@ -593,6 +593,16 @@ export interface RuntimeHealth {
   pending_action_proposal_count?: number;
 }
 
+export interface MaintenanceScanReport extends Record<string, unknown> {
+  scan_version: 'maintenance-scan/1';
+  read_only: true;
+  started_at?: number;
+  completed_at?: number;
+  summary: RuntimeHealth;
+  findings?: MaintenanceFinding[];
+  checks?: Record<string, unknown>;
+}
+
 export interface RuntimeHealthProjection {
   status?: string;
   raw_status?: string;

@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, HelpCircle, MemoryStick, MonitorCog, Search, Wand2 } from 'lucide-react';
+import { FileText, HelpCircle, MemoryStick, MonitorCog, Search, Wand2, Wrench } from 'lucide-react';
 
 import { dictionaryFor } from '@/i18n';
 import { useOperatorStore } from '@/store/useOperatorStore';
@@ -11,6 +11,7 @@ export const OperatorQuickActions = () => {
   const t = dictionaryFor(language).operatorShell;
   const setComposerText = useOperatorStore((state) => state.setComposerText);
   const actions = [
+    { label: t.quickMaintenanceScan, prompt: t.quickMaintenanceScanPrompt, icon: <Wrench size={17} /> },
     { label: t.quickInspectStatus, prompt: t.quickInspectStatusPrompt, icon: <HelpCircle size={17} /> },
     { label: t.quickDraftCodexPrompt, prompt: t.quickDraftCodexPromptPrompt, icon: <FileText size={17} /> },
     { label: t.quickAnalyzeUiIssue, prompt: t.quickAnalyzeUiIssuePrompt, icon: <MonitorCog size={17} /> },

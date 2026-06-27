@@ -47,6 +47,26 @@ def test_capability_assessment_preserves_non_authority_contract() -> None:
         assert assessment[field] is expected, field
 
 
+@pytest.mark.parametrize(
+    "prompt",
+    (
+        "Run Maintenance Scan",
+        "Maintenance Scan",
+        "Bakım Taramasını Çalıştır",
+        "Bakım Taraması",
+    ),
+)
+def test_maintenance_scan_assessment_requires_separate_explicit_action(prompt: str) -> None:
+    assessment = build_operator_route_preview(prompt)["capability_assessment"]
+
+    assert assessment["classification"] == "observe_only"
+    assert "separate explicit user action" in assessment["rationale"]
+    assert "no scan has run yet" in assessment["boundary"]
+    assert "no authority or execution permission was granted" in assessment["boundary"]
+    for field, expected in NO_ACTION_FLAGS.items():
+        assert assessment[field] is expected, field
+
+
 def test_capability_assessment_does_not_mutate_route_metadata() -> None:
     route_preview = {
         "route_id": "safe_plan_builder",
@@ -65,5 +85,15 @@ def test_provider_metadata_never_becomes_readiness() -> None:
 
     assert assessment["classification"] == "provider_unavailable"
     assert "disabled" in assessment["rationale"]
+    assert assessment["provider_call_performed"] is False
+    assert assessment["execution_authorized"] is False
+
+
+def test_provider_unavailable_still_precedes_maintenance_scan_wording() -> None:
+    assessment = build_operator_route_preview(
+        "Run maintenance scan with cloud provider"
+    )["capability_assessment"]
+
+    assert assessment["classification"] == "provider_unavailable"
     assert assessment["provider_call_performed"] is False
     assert assessment["execution_authorized"] is False

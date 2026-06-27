@@ -10,6 +10,7 @@ import { useUIStore } from '@/store/useUIStore';
 import { OperatorComposer } from './OperatorComposer';
 import { OperatorContextPanel } from './OperatorContextPanel';
 import { OperatorLocalProposalPanel } from './OperatorLocalProposalPanel';
+import { OperatorMaintenanceScanAction } from './OperatorMaintenanceScanAction';
 import { OperatorMemoryCandidateAction } from './OperatorMemoryCandidateAction';
 import { OperatorQuickActions } from './OperatorQuickActions';
 import { OperatorResponseDraft } from './OperatorResponseDraft';
@@ -96,6 +97,7 @@ export const UnifiedOperatorShell = () => {
                 </div>
               </div>
               <OperatorResponseDraft />
+              <OperatorMaintenanceScanAction key={lastDecision.id} decision={lastDecision} />
               <OperatorLocalProposalPanel />
               <OperatorMemoryCandidateAction />
               <div className="mt-4"><OperatorRoutePreview decision={lastDecision} /></div>

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import unicodedata
 from collections.abc import Mapping
 from typing import Any
 
@@ -13,6 +15,15 @@ CLASSIFICATION_APPROVAL_REQUIRED = "approval_required"
 CLASSIFICATION_EXECUTION_UNAVAILABLE = "execution_unavailable"
 CLASSIFICATION_PROVIDER_UNAVAILABLE = "provider_unavailable"
 CLASSIFICATION_UNSUPPORTED = "unsupported_or_ambiguous"
+
+_BOUNDED_MAINTENANCE_SCAN_REQUESTS = frozenset(
+    {
+        "maintenance scan",
+        "run maintenance scan",
+        "bakim taramasi",
+        "bakim taramasini calistir",
+    }
+)
 
 NO_ACTION_FLAGS: dict[str, bool] = {
     "action_performed": False,
@@ -117,6 +128,16 @@ def _classify(
             "The request references an external provider path that is disabled.",
             "No provider was selected or called, and no fallback is allowed.",
         )
+    if (
+        route_id == "status_explainer"
+        and primary_intent == "ask_status"
+        and _is_bounded_maintenance_scan_request(normalized)
+    ):
+        return (
+            CLASSIFICATION_OBSERVE_ONLY,
+            "The existing backend-owned read-only Maintenance Scan requires a separate explicit user action.",
+            "Preview only: no scan has run yet, and no authority or execution permission was granted.",
+        )
     if route_id in {"command_approval_preview", "research_plan", "vision_review_plan", "vision_to_code_prompt"}:
         return (
             CLASSIFICATION_EXECUTION_UNAVAILABLE,
@@ -172,5 +193,12 @@ def _contains_any(value: str, terms: tuple[str, ...]) -> bool:
     return any(term in value for term in terms)
 
 
+def _is_bounded_maintenance_scan_request(normalized: str) -> bool:
+    return normalized.rstrip(" .!?") in _BOUNDED_MAINTENANCE_SCAN_REQUESTS
+
+
 def _normalize(value: str) -> str:
-    return " ".join(value.casefold().replace("ı", "i").split())
+    lowered = value.casefold().replace("ı", "i")
+    normalized = unicodedata.normalize("NFKD", lowered)
+    without_marks = "".join(character for character in normalized if not unicodedata.combining(character))
+    return re.sub(r"\s+", " ", without_marks).strip()

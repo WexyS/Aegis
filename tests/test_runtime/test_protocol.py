@@ -26,6 +26,16 @@ FRONTEND_RUNTIME_STORE = ROOT / "frontend" / "src" / "store" / "useRuntimeStore.
 FRONTEND_DASHBOARD = ROOT / "frontend" / "src" / "app" / "page.tsx"
 FRONTEND_RUNTIME_STATS = ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "RuntimeStatsPanel.tsx"
 FRONTEND_API = ROOT / "frontend" / "src" / "lib" / "api.ts"
+FRONTEND_OPERATOR_MAINTENANCE = (
+    ROOT
+    / "frontend"
+    / "src"
+    / "features"
+    / "operator-shell"
+    / "components"
+    / "OperatorMaintenanceScanAction.tsx"
+)
+ROUTES_COMMAND = ROOT / "src" / "aegis" / "api" / "routes_command.py"
 FRONTEND_VISION = ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "VisionLabPanel.tsx"
 FRONTEND_CHAOS = ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "ChaosShieldPanel.tsx"
 FRONTEND_TIMELINE = ROOT / "frontend" / "src" / "features" / "runtime" / "components" / "ScientificTimeline.tsx"
@@ -412,6 +422,22 @@ def test_frontend_snapshot_truth_sync_uses_backend_snapshot_as_authority() -> No
     assert "syncActionTimelineSnapshot(payload.runtime?.action_timeline)" in socket_source
     assert "Object.prototype.hasOwnProperty.call(runtime, 'maintenance_scan')" in socket_source
     assert "runtimeStore.setMaintenanceScan(runtime.maintenance_scan" in socket_source
+
+
+def test_operator_maintenance_reuses_existing_http_contract_without_protocol_expansion() -> None:
+    api_source = FRONTEND_API.read_text(encoding="utf-8")
+    action_source = FRONTEND_OPERATOR_MAINTENANCE.read_text(encoding="utf-8")
+    routes_source = ROUTES_COMMAND.read_text(encoding="utf-8")
+    event_values = {event.value for event in ProtocolEventType}
+
+    assert "new URL('/maintenance/scan', API_URL)" in api_source
+    assert '@router.get("/maintenance/scan")' in routes_source
+    assert "fetchMaintenanceScan()" in action_source
+    assert "socket.emit(" not in action_source
+    assert "MAINTENANCE_SCAN_STARTED" in event_values
+    assert "MAINTENANCE_SCAN_COMPLETED" in event_values
+    assert "MAINTENANCE_SCAN_FAILED" not in event_values
+    assert "/operator/maintenance" not in routes_source
 
 
 def test_frontend_live_events_upsert_missing_timeline_steps_from_backend_payload() -> None:

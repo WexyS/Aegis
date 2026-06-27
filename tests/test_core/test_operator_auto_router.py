@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from aegis.core.operator_auto_router import (
     CONTRACT_NAME,
     EMPTY_STATUS,
@@ -38,6 +40,43 @@ def test_status_request_routes_to_status_explainer() -> None:
     assert preview["primary_intent"] == "ask_status"
     assert preview["route_id"] == "status_explainer"
     assert preview["capability_assessment"]["classification"] == "observe_only"
+    _assert_no_action_flags(preview)
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    (
+        "Run Maintenance Scan",
+        "Maintenance Scan",
+        "Bakım Taramasını Çalıştır",
+        "Bakım Taraması",
+    ),
+)
+def test_bounded_maintenance_scan_request_routes_to_observe_only(prompt: str) -> None:
+    preview = build_operator_route_preview(prompt)
+
+    assert preview["primary_intent"] == "ask_status"
+    assert preview["route_id"] == "status_explainer"
+    assert preview["capability_assessment"]["classification"] == "observe_only"
+    assert "no scan has run yet" in preview["capability_assessment"]["boundary"]
+    _assert_no_action_flags(preview)
+
+
+@pytest.mark.parametrize(
+    ("prompt", "classification"),
+    (
+        ("Run maintenance scan and delete a file", "execution_unavailable"),
+        ("Run maintenance scan then open browser", "execution_unavailable"),
+        ("Run maintenance scan and execute shell command", "execution_unavailable"),
+        ("Run maintenance scan with cloud provider", "provider_unavailable"),
+        ("Run maintenance scan and write Memory", "execution_unavailable"),
+    ),
+)
+def test_mixed_maintenance_scan_request_remains_unavailable(prompt: str, classification: str) -> None:
+    preview = build_operator_route_preview(prompt)
+
+    assert preview["route_id"] != "status_explainer"
+    assert preview["capability_assessment"]["classification"] == classification
     _assert_no_action_flags(preview)
 
 
